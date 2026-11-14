@@ -26,6 +26,26 @@ def main(argv: list[str] | None = None) -> int:
     status.add_argument("--json", action="store_true", help="输出 JSON")
     status.add_argument("--workspace", default=None, help="只看这个工作区的工作")
 
+    suspend = sub.add_parser("suspend", help="把一条工作挂起（保留在册）")
+    suspend.add_argument("work_id")
+
+    resume = sub.add_parser("resume", help="恢复挂起的工作")
+    resume.add_argument("work_id")
+
+    archive = sub.add_parser("archive", help="归档一条工作（不删除，可恢复）")
+    archive.add_argument("work_id")
+
+    gc = sub.add_parser("gc", help="把挂起超期的工作归档")
+    gc.add_argument("--days", type=float, default=14.0)
+
+    report = sub.add_parser("report", help="周期复盘（事实层，文字版交给 Agent）")
+    report.add_argument("--days", type=float, default=7.0)
+    report.add_argument("--json", action="store_true")
+
+    serve = sub.add_parser("serve", help="本地 dashboard")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
+
     args = parser.parse_args(argv)
 
     if args.command in (None, "status"):
@@ -34,6 +54,33 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(summary, ensure_ascii=False, indent=2))
         else:
             print(core.format_status(summary))
+        return 0
+
+    if args.command == "suspend":
+        print("suspended" if core.set_work_state(args.work_id, "suspended") else "not found")
+        return 0
+    if args.command == "resume":
+        print("resumed" if core.set_work_state(args.work_id, "open") else "not found")
+        return 0
+    if args.command == "archive":
+        print("archived" if core.archive_work(args.work_id) else "not found")
+        return 0
+    if args.command == "report":
+        summary = core.period_summary(args.days)
+        if getattr(args, "json", False):
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            print(core.format_report(summary))
+        return 0
+
+    if args.command == "serve":
+        from crop_serve import serve  # noqa: PLC0415
+        serve(args.host, args.port)
+        return 0
+
+    if args.command == "gc":
+        archived = core.archive_stale(args.days)
+        print(f"archived {len(archived)}" + (": " + ", ".join(archived) if archived else ""))
         return 0
 
     parser.print_help()

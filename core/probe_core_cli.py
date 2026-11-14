@@ -60,6 +60,14 @@ def dispatch(payload: dict):
         return core.maybe_reminder(sid)
     if op == "work_status":
         return core.work_status_line(workspace)
+    if op == "work_suspend":
+        return core.set_work_state(payload.get("work_id") or "", "suspended")
+    if op == "work_resume":
+        return core.set_work_state(payload.get("work_id") or "", "open")
+    if op == "work_archive":
+        return core.archive_work(payload.get("work_id") or "", payload.get("reason") or "manual")
+    if op == "work_archive_stale":
+        return core.archive_stale(float(payload.get("days") or 14))
     if op == "first_prompt":
         return not any(event.get("ev") == "prompt" for event in core.load_events(sid=sid))
     raise ValueError(f"unknown op: {op}")

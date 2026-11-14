@@ -110,6 +110,7 @@ def paths(data: str | None = None) -> dict[str, str]:
         "open": os.path.join(root, "tasks", "open.json"),
         "closed_dir": os.path.join(root, "tasks", "closed"),
         "reports_dir": os.path.join(root, "reports"),
+        "archive_dir": os.path.join(root, "tasks", "archive"),
         "blocks_dir": os.path.join(root, "blocks"),
         "runtime": os.path.join(root, "runtime"),
         "config": os.path.join(root, "config.json"),
@@ -391,6 +392,9 @@ def validate_report(args: dict) -> dict:
     difficulty = _text(args.get("difficulty"), "difficulty").lower()
     if difficulty and difficulty not in DIFFICULTIES:
         raise ValueError(f"difficulty must be one of {', '.join(DIFFICULTIES)}")
+    what = _text(args.get("what"), "what")
+    cost = _text(args.get("cost"), "cost")
+    next_time = _text(args.get("next_time"), "next_time")
     if phase == "blocked" and (not cause or not category):
         raise ValueError("blocked reports require both cause and category")
     return {
@@ -403,6 +407,9 @@ def validate_report(args: dict) -> dict:
         "goal": goal,
         "type": work_type,
         "difficulty": difficulty,
+        "what": what,
+        "cost": cost,
+        "next_time": next_time,
     }
 
 
@@ -445,6 +452,19 @@ def record_report(args: dict, context: dict | None = None) -> dict:
     append_jsonl(os.path.join(paths()["reports_dir"], f"{today()}.jsonl"), record)
     append_event({**record, "ev": "probe_report"})
     if report["phase"] == "end":
+        if report.get("what") or report.get("cost") or report.get("next_time"):
+            append_event({
+                "ev": "work_summary",
+                "work_id": report["task_id"],
+                "what": report.get("what", ""),
+                "cost": report.get("cost", ""),
+                "next_time": report.get("next_time", ""),
+            })
+            append_jsonl(os.path.join(paths()["reports_dir"], f"{today()}.jsonl"), {
+                "t": now_ms(), "host": host(), "sid": sid, "work_id": report["task_id"],
+                "ev": "work_summary", "what": report.get("what", ""),
+                "cost": report.get("cost", ""), "next_time": report.get("next_time", ""),
+            })
         close_task(report["task_id"])
     else:
         _upsert_task(record, workspace)
@@ -711,3 +731,153 @@ def work_status_line(workspace: str | None = None) -> str:
         f"[crop] 当前工作：{aim}（{task.get('task_id')}）；上次更新 {stale}。"
         "状态有变就调 probe_report 更新一行。"
     )
+
+
+# ---------------------------------------------------------------------------
+# Work state machine: open -> suspended -> archived
+
+
+def set_work_state(work_id: str, state: str) -> bool:
+    work_id = normalize_task_id(work_id)
+    value = load_open()
+    tasks = value.setdefault("tasks", {})
+    task = tasks.get(work_id)
+    if not task:
+        return False
+    task["state"] = state
+    task["state_changed_at"] = now_ms()
+    save_open(value)
+    append_event({"ev": "work_" + ("suspend" if state == "suspended" else "resume"),
+                  "work_id": work_id})
+    return True
+
+
+def archive_work(work_id: str, reason: str = "manual") -> bool:
+    work_id = normalize_task_id(work_id)
+    value = load_open()
+    tasks = value.setdefault("tasks", {})
+    task = tasks.pop(work_id, None)
+    if not task:
+        return False
+    task["state"] = "archived"
+    task["archived_at"] = now_ms()
+    task["archive_reason"] = reason
+    save_open(value)
+    append_jsonl(os.path.join(paths()["archive_dir"], f"{today()}.jsonl"), task)
+    append_event({"ev": "work_archive", "work_id": work_id, "reason": reason})
+    return True
+
+
+def archive_stale(days: float = 14.0, now: int | None = None) -> list[str]:
+    """Archive works suspended longer than `days`. Returns archived ids."""
+    cutoff = (now if now is not None else now_ms()) - int(days * 86400000)
+    value = load_open()
+    tasks = value.get("tasks", {})
+    def _changed_at(task: dict) -> int:
+        value = task.get("state_changed_at")
+        if value is None:
+            value = task.get("last_seen_at")
+        return int(value or 0)
+
+    stale = [
+        work_id for work_id, task in tasks.items()
+        if task.get("state") == "suspended" and _changed_at(task) < cutoff
+    ]
+    for work_id in stale:
+        archive_work(work_id, reason=f"suspended>{days:g}d")
+    return stale
+
+
+def works_needing_check(days: float = 1.0, now: int | None = None) -> list[dict]:
+    """Open works untouched longer than `days` — the host asks the user about them."""
+    cutoff = (now if now is not None else now_ms()) - int(days * 86400000)
+    return [
+        task for task in load_open().get("tasks", {}).values()
+        if task.get("state", "open") == "open"
+        and int(task.get("last_seen_at") or 0) < cutoff
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Report (weekly / arbitrary window)
+
+
+def _events_between(start_ms: int, end_ms: int) -> list[dict]:
+    events = load_events(limit=200000)
+    return [event for event in events if start_ms <= int(event.get("t") or 0) <= end_ms]
+
+
+def period_summary(days: float = 7.0, now: int | None = None) -> dict:
+    end = now if now is not None else now_ms()
+    start = end - int(days * 86400000)
+    events = _events_between(start, end)
+    blocks = [event for event in events if event.get("ev") == "stop"]
+    reports = [event for event in events if event.get("ev") == "probe_report"]
+    waits = [event for event in events if event.get("ev") == "user_wait"]
+    gaps = [event for event in events if event.get("ev") == "idle_gap"]
+    summaries = [event for event in events if event.get("ev") == "work_summary"]
+
+    minutes_by_day: dict[str, float] = {}
+    for block in blocks:
+        day = datetime.fromtimestamp(int(block.get("t") or 0) / 1000).strftime("%Y-%m-%d")
+        minutes_by_day[day] = minutes_by_day.get(day, 0.0) + float(block.get("minutes") or 0)
+
+    works: dict[str, dict] = {}
+    for report in reports:
+        work_id = str(report.get("work_id") or report.get("task_id") or "")
+        if not work_id:
+            continue
+        item = works.setdefault(work_id, {
+            "work_id": work_id, "goal": "", "type": "", "difficulty": "",
+            "updates": 0, "minutes": 0.0,
+        })
+        item["updates"] += 1
+        item["minutes"] += float(report.get("minutes") or 0)
+        for key in ("goal", "type", "difficulty"):
+            if report.get(key):
+                item[key] = report[key]
+
+    top = sorted(works.values(), key=lambda item: item["minutes"], reverse=True)[:3]
+    return {
+        "days": days,
+        "start": start,
+        "end": end,
+        "events": len(events),
+        "blocks": len(blocks),
+        "total_minutes": round(sum(float(block.get("minutes") or 0) for block in blocks), 1),
+        "minutes_by_day": {day: round(value, 1) for day, value in sorted(minutes_by_day.items())},
+        "works": sorted(works.values(), key=lambda item: item["minutes"], reverse=True),
+        "top_works": top,
+        "human_wait_ms": sum(int(event.get("waiting_ms") or 0) for event in waits),
+        "idle_gaps": len(gaps),
+        "summaries": summaries,
+    }
+
+
+def format_report(summary: dict) -> str:
+    days = summary.get("days", 7)
+    total = summary.get("total_minutes", 0)
+    top = summary.get("top_works") or []
+    lines = [f"Crop 周报（近 {days:g} 天）", ""]
+    lines.append(
+        f"这 {days:g} 天里，一共 {summary.get('blocks', 0)} 个回合、{round(total)} 分钟，"
+        f"涉及 {len(summary.get('works') or [])} 个工作。"
+    )
+    if top:
+        lines.append("")
+        lines.append("最花时间的工作：")
+        for item in top:
+            goal = item.get("goal") or item.get("work_id")
+            lines.append(f"  - {goal}（{round(item['minutes'])} 分钟，类型 {item.get('type') or '未标'}）")
+    wait_min = (summary.get("human_wait_ms") or 0) / 60000
+    if wait_min:
+        lines.append("")
+        lines.append(f"其中等你回话 {wait_min:.0f} 分钟，有 {summary.get('idle_gaps', 0)} 次长时间离开。")
+    if summary.get("summaries"):
+        lines.append("")
+        lines.append("你的收尾小结：")
+        for item in summary["summaries"][:3]:
+            lines.append(f"  - {item.get('what') or item.get('work_id')}；花在 {item.get('cost') or '未记'}；下次 {item.get('next_time') or '未记'}")
+    lines.append("")
+    lines.append("（以上为事实层，文字版由 Agent 任务改写。）")
+    return "\n".join(lines)

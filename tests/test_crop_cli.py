@@ -56,7 +56,7 @@ class StatusViewTest(unittest.TestCase):
     def test_idle_gap_when_gap_exceeds_threshold(self):
         core = self.core
         previous = core.IDLE_MIN
-        core.IDLE_MIN = 0.0
+        core.IDLE_MIN = -1.0  # any non-negative gap exceeds the threshold
         try:
             core.record_prompt("s1", "开工", "/tmp/ws")
             core.record_stop("s1")
@@ -76,6 +76,50 @@ class StatusViewTest(unittest.TestCase):
         line = core.work_status_line("/tmp/ws")
         self.assertIn("[crop]", line)
         self.assertIn("把探针开源", line)
+
+    def test_suspend_resume_archive(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "w1", "summary": "做设计", "goal": "目标"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        self.assertTrue(core.set_work_state("w1", "suspended"))
+        self.assertEqual(core.load_open()["tasks"]["w1"]["state"], "suspended")
+        self.assertTrue(core.set_work_state("w1", "open"))
+        self.assertTrue(core.archive_work("w1"))
+        self.assertNotIn("w1", core.load_open()["tasks"])
+        archived = os.path.join(self.data, "tasks", "archive")
+        files = [name for name in os.listdir(archived)] if os.path.isdir(archived) else []
+        self.assertTrue(files)
+
+    def test_work_summary_written_on_end(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "w2", "summary": "做设计"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        core.record_report({"phase": "end", "task_id": "w2", "summary": "完成",
+                            "what": "写了设计", "cost": "查资料", "next_time": "先定目录"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        kinds = [event["ev"] for event in core.load_events()]
+        self.assertIn("work_summary", kinds)
+
+    def test_gc_archives_stale_suspended(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "w3", "summary": "旧活"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        core.set_work_state("w3", "suspended")
+        value = core.load_open()
+        value["tasks"]["w3"]["state_changed_at"] = 0
+        core.save_open(value)
+        archived = core.archive_stale(14.0)
+        self.assertIn("w3", archived)
+        self.assertNotIn("w3", core.load_open()["tasks"])
+
+    def test_period_summary_counts_blocks(self):
+        core = self.core
+        core.record_prompt("s1", "开工", "/tmp/ws")
+        core.record_stop("s1")
+        summary = core.period_summary(1)
+        self.assertGreaterEqual(summary["blocks"], 1)
+        self.assertIn("total_minutes", summary)
+        self.assertTrue(core.format_report(summary).startswith("Crop 周报"))
 
     def test_cli_json_output(self):
         out = subprocess.run(
