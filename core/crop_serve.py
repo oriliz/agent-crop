@@ -39,6 +39,9 @@ li{margin:4px 0}
 </style></head><body>
 <header><h1>Agent Crop</h1><span class="sub" id="asof"></span></header>
 <main>
+  <div><button class="range" data-days="7">7 天</button>
+    <button class="range" data-days="14">14 天</button>
+    <button class="range" data-days="30">30 天</button></div>
   <div class="cards" id="cards"></div>
   <section><h2>近 14 天（点一行看当天明细）</h2>
     <table><thead><tr><th>日期</th><th>回合</th><th>分钟</th><th>工具</th><th>失败</th><th>工作</th></tr></thead>
@@ -50,7 +53,11 @@ li{margin:4px 0}
   <section><h2>进行中的工作</h2><ul id="tasks"></ul></section>
 </main>
 <script>
-let current = null;
+let rangeDays = 14;
+document.querySelectorAll('button.range').forEach(button => button.addEventListener('click', () => {
+  rangeDays = Number(button.dataset.days) || 14;
+  load();
+}));
 async function showDay(date, row){
   document.querySelectorAll('tr.day').forEach(el=>el.style.background='');
   row.style.background='#1b1f27';
@@ -61,7 +68,7 @@ async function showDay(date, row){
     `${d.date}：${d.blocks} 个回合，${Math.round(d.minutes)} 分钟，工具 ${d.events} 个事件，失败 ${d.failures} 次\n工具分布：${tools}\n涉及工作：${works}`;
 }
 async function load(){
-  const r = await fetch('/api/summary'); const d = await r.json();
+  const r = await fetch('/api/summary?days=' + rangeDays); const d = await r.json();
   const s = d.status||{}, p = d.period||{};
   document.getElementById('asof').textContent = 'updated ' + new Date().toLocaleTimeString();
   const cards = [
@@ -85,12 +92,12 @@ load(); setInterval(load, 5000);
 """
 
 
-def _summary() -> dict:
+def _summary(days: float = 14.0) -> dict:
     return {
         "status": core.status_summary(),
-        "period": core.period_summary(14),
-        "daily": core.daily_breakdown(14),
-        "types": core.type_breakdown(30),
+        "period": core.period_summary(days),
+        "daily": core.daily_breakdown(days),
+        "types": core.type_breakdown(max(days, 30.0)),
     }
 
 
@@ -119,7 +126,13 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if self.path.startswith("/api/summary"):
-            body = json.dumps(_summary(), ensure_ascii=False).encode()
+            days = 14.0
+            if "days=" in self.path:
+                try:
+                    days = float(self.path.split("days=", 1)[1].split("&", 1)[0])
+                except ValueError:
+                    days = 14.0
+            body = json.dumps(_summary(days), ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Access-Control-Allow-Origin", "*")
