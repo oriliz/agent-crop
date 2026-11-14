@@ -1,0 +1,51 @@
+name: 功能建议
+description: 先说真实场景，再说方案——这样讨论才不会跑偏
+title: "[建议] "
+labels: ["needs-triage", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Agent Crop 的边界是固定的：只本地观察、数据不出本机（`~/.agentcrop`）、不自动改代码、不评估人、不替代测试。
+        落在这四条之外的请求（比如「自动帮我改代码」「把数据传到云端做排行」）不会被接受，先说清楚能省一轮讨论。
+
+        > ⚠️ 请不要贴任何凭证：token、API key、cookie、SSH key，一条都不要贴。
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 想解决的真实场景
+      description: 讲你实际遇到的事：什么时候、你在干什么、哪一步卡住了。贴之前删掉用户名、token、私有路径。
+      placeholder: |
+        例如：一次重构跑了三小时，我想知道时间花在「等工具」还是「等我自己确认」上，
+        但现在的面板只给了一个总时长。
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: 现在怎么将就
+      description: 你现在用什么替代办法（手动记时间、翻 events.jsonl、看别的工具…）。贴之前删掉用户名、token、私有路径。
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 你希望它长什么样；有具体字段、命令或面板布局更好。贴之前删掉用户名、token、私有路径。
+    validations:
+      required: false
+
+  - type: dropdown
+    id: will-pr
+    attributes:
+      label: 是否愿意自己提 PR
+      description: 愿意的话我们会先帮你把范围收窄到一个能验证的小改动。
+      options:
+        - 愿意，我可以提 PR
+        - 愿意，但需要有人指路
+        - 暂时不方便，只提建议
+    validations:
+      required: true
