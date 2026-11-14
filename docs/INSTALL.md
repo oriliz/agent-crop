@@ -69,7 +69,8 @@ ln -sf ~/agent-crop/bin/crop /usr/local/bin/crop   # 或放进你自己的 bin �
 | 数据目录 | `~/.agentcrop/data`（0700） |
 | 事件库 | `data/events.jsonl` |
 | 工作列表 | `data/tasks/open.json`、`tasks/archive/` |
-| 红线 | 30 分钟（`KIT_TASK_RED_MIN`） |
+| 黄线（工作级提醒） | 10 分钟（`KIT_TASK_YELLOW_MIN`） |
+| 红线（单轮） | 30 分钟（`KIT_TASK_RED_MIN`） |
 | 工作时段 | 10:00–18:00（`KIT_WORK_START` / `KIT_WORK_END`） |
 | 离开阈值 | 15 分钟（`KIT_IDLE_MIN`） |
 | 面板端口 | 8765（`KIT_DASHBOARD=0` 可禁用自动启动） |

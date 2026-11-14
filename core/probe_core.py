@@ -211,6 +211,7 @@ def load_events(limit: int = MAX_EVENTS_READ, sid: str | None = None) -> list[di
 
 
 DEFAULT_CONFIG = {
+    "yellow_min": 10.0,
     "red_min": 30.0,
     "remind_min": 15.0,
     "user_facing": True,
@@ -229,6 +230,7 @@ def load_config() -> dict:
     except Exception:
         pass
     for env, key, cast in (
+        ("KIT_TASK_YELLOW_MIN", "yellow_min", float),
         ("KIT_TASK_RED_MIN", "red_min", float),
         ("KIT_TASK_REMIND_MIN", "remind_min", float),
     ):
@@ -639,7 +641,7 @@ def maybe_work_reminder(sid: str) -> str:
     if not task_id:
         return ""
     health = work_health(task_id)
-    if not health or health["minutes"] < 0.6 * health["baseline"]:
+    if not health or health["minutes"] < float(config.get("yellow_min", 10.0)):
         return ""
     for event in reversed(load_events(sid=sid)):
         if event.get("ev") == "reminder" and event.get("work_id") == task_id:
