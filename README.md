@@ -10,15 +10,15 @@
 
 **Agent Crop 是给 AI 的一根马鞭：催它交活，逼它复盘，让它自己越用越顺。**
 
-<sub>测量 → 归因 → 优化 → 验证 · 一次工作一条 trace · 本地 JSONL · 不上传</sub>
+<sub>测量 → 归因 → 优化 → 验证 · 本地 JSONL · 不上传</sub>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Runtime](https://img.shields.io/badge/Runtime-DeepSeek%20Harness%20·%20Claude%20Code%20·%20Qoder%20·%20Codex-blueviolet)](#安装)
+[![Runtime](https://img.shields.io/badge/Runtime-DeepSeek%20Harness%20·%20Claude%20Code%20·%20Qoder%20·%20Codex-blueviolet)](#安装与卸载)
 [![Data](https://img.shields.io/badge/Data-Stays%20Local-green)](#它不做什么)
 
 <br>
 
-[这套方法](#这套方法不是我们发明的) · [它治的几种浪费](#它治的几种浪费) · [安装](#安装) · [它不做什么](#它不做什么)
+[这套方法](#这套方法不是我们发明的) · [案例分析](#案例分析) · [安装](#安装与卸载) · [它记了什么](#它记了什么在哪记)
 
 </div>
 
@@ -28,9 +28,7 @@
 
 它说「抱歉，这个拖得有点久」。
 
-你不知道那两小时去哪了。
-
-你不知道是它慢，还是你在想。
+你不知道那两小时去哪了。你不知道是它慢，还是你在想。
 
 **Agent Crop 就是来回答这个问题的。**
 
@@ -64,25 +62,7 @@ Agent Crop 只是把对象换成了「人和 AI 一起干活」：
 
 ---
 
-## 它治的几种浪费
-
-AI 浪费时间，不止一种。产品里每种都有名字：
-
-| 症状 | 分类 | 典型现场 |
-|---|---|---|
-| 没问清楚就开始干 | `spec-drift` / `decision-batching` | 你要一条过街的路，它造了半艘航母 |
-| 反复查工具怎么用 | `tool-misuse` / `repeat-pitfall` | 同一个接口查了四十分钟，Skill 写得不好它也不说 |
-| 做不到也不停手 | `no-evidence` | 缺背景知识，硬啃两个小时，最后交上来一个空的 |
-
-还有 `serial-wait`（串行等待）、`design-churn`（设计反复）等六类，完整词表见 [docs/EVENTS.md](docs/EVENTS.md)。
-
-**有了词表，才谈得上归因；有了归因，才谈得上改。**
-
-不过最常被误判的，不是这三种。
-
----
-
-## 我自己的一个样本
+## 案例分析
 
 我们有个环境部署工具，子命令很多。AI 每次用都得先 `help` 一层层翻，再挨个试——对应的 Skill 写得不完整。
 
@@ -92,108 +72,26 @@ Agent Crop 把这件事记了下来：同一个命令反复翻 help、反复试�
 
 同一个动作，下一次：**10 分钟，变成 30 秒**。
 
-这是我个人使用中的一个成果，它确实帮到了我。但它还不是一个完善的测评——这个工具还在开发中，请大家多多包容。
+这是我个人使用中的一个成果，它确实帮到了我。但它还不是一个完善的测评——这个工具还在开发中，请大家多多包容。不过我相信，这样一套方法论是行之有效的。
 
-不过我相信，这样一套方法论是行之有效的：**数据 → 即刻反思 → 自我修复 → 同一口径验证**。哪一步翻了 help、翻了几次，都有事件记录。
+同样的症状还有：没问清楚就开始干（`spec-drift`）、做不到也不停手（`no-evidence`）、串行等待（`serial-wait`）。一共九类，见 [docs/EVENTS.md](docs/EVENTS.md)。
 
 ---
 
-## 为什么需要一条新的 trace
+## Crop 和传统 Trace 的对比
 
-AI 干活没有这层基础设施。你知道它跑了 40 分钟，但不知道：
-多少在推理、多少在等工具、多少在等你、多少在原地打转。
-
-传统 Trace 的 span 是中间件、DB、RPC；Agent Crop 的 span 是人、agent、模型、工具。
-
-| 维度 | 传统 Trace | Crop Trace |
+| 维度 | 传统 Trace | Agent Crop |
 |---|---|---|
 | 单位 | 一次请求 | 一次工作（可跨会话、跨天） |
 | 节点 | 中间件 / DB / RPC | 人 / agent / 模型 / 工具 / 等待 |
 | 等待 | IO 阻塞 | **等人的时间单独成一类** |
-| 归因 | 按 span 确定性归因 | 能算的算，算不出的让 AI 定性判断 |
 | 对象 | 机器 | 人机协作过程 |
 
-等你回话的 20 分钟不是 IO 阻塞，它是真实的瓶颈，所以单独成一类。
-你不在场的时间不算——吃饭时间不会被算成 AI 的慢。
-
-**Agent Crop 不评价你。它只记账。**
+等人不是 IO 阻塞，它是真实的瓶颈，所以单独成一类；你不在场的时间不算。
 
 ---
 
-## 四步：让 AI 自己把账算明白
-
-| 步 | 做什么 | 现在 |
-|---|---|---|
-| **整理** | 把过程记成结构化事件 | ✅ |
-| **反思** | 归因到九类之一，说清为什么慢 | ✅ |
-| **总结** | 趁记忆热写三句：做了什么 / 时间花在哪 / 下次怎么做 | ✅ |
-| **证明** | 改进前后用同一口径对比 | 🚧 在建 |
-
-前三步是记录，第四步才是价值：**没有 before/after 的优化，就是玄学。**
-
-前三步做扎实了，AI 的自我改进才有依据——不是它说自己变好了，是同一口径下数字变了。
-
----
-
-## 它记了什么、在哪记
-
-采集分两路：**机器记事实，AI 报判断**。人负责事后纠偏。
-
-### 一、宿主自动记（不依赖 AI，也不怕它忘）
-
-| 什么时候 | 记什么 |
-|---|---|
-| 会话开始 / 你发消息 | 工作区、任务块起点 |
-| 每次工具返回 | 工具名、成功还是失败 |
-| 回合结束 | 这一轮跑了多久 |
-| 你下一次开口 | 等了你多久；超过阈值记 `idle_gap` |
-| 超红线 | 提醒注入了一次 |
-| 同工具 / 文件反复失败 | 返工信号 |
-
-这些是时间戳和调用结果，机器说了算。
-
-### 二、AI 主动报（系统提示常驻 + 每回合一行兜底）
-
-| 字段 | 什么时候填 | 可能的值 | 性质 |
-|---|---|---|---|
-| `phase` | 每次上报 | `start` 开工 / `progress` 有进展 / `blocked` 卡住 / `end` 收工 | 判断 |
-| `task_id` | 每次上报 | 你给这件事起的短名，比如 `refactor-auth`，以后每次提它都用这个名字 | 标识 |
-| `summary` | 每次上报 | 一句话：现在在做什么 | 判断 |
-| `cause` | `blocked` 必填 | 一句话：为什么慢、卡在哪 | 判断 |
-| `next` | 可选 | 下一步的具体动作 | 判断 |
-| `category` | `blocked` 必填 | 九选一：`serial-wait` `repeat-pitfall` `design-churn` `decision-batching` `tool-misuse` `no-evidence` `spec-drift` `human-wait` `other` | 判断 |
-| `goal` | 开工时 | 一句话目标 | 判断 |
-| `type` | 开工时 | `design` / `implement` / `debug` / `docs` | 判断 |
-| `difficulty` | 开工时 | `s` / `m` / `l` | 判断 |
-
-`category` 不是自由文本，是枚举——填了不在表里的值，调用直接失败。九类词表是锁死的，不会越记越乱。
-
-这些只能是判断，不是事实——所以**自述永远不单独当结论**，要和自动采集的时间、失败数对照着看。
-
-收工时再写三句：做了什么 / 时间花在哪 / 下次怎么更好。
-
-### 三、人
-
-事后标注「哪条改进真的有用」（`adjustment`，在建）。它负责纠偏。
-
-**分界线就是一句话：能自动采的，绝不让 AI 记。** 它忘了也不影响时间账——降级成纯自动采集，丢的只是「这活在干什么」这层语义。
-
-一行事件长这样（AI 报的那层；自动采集的更简单，只有时间戳、工具名、成功失败）：
-
-```json
-{"ev":"probe_report","phase":"blocked","task_id":"refactor-auth",
- "summary":"在等接口契约确认","cause":"接口字段没对齐","next":"先确认契约",
- "category":"spec-drift","minutes":12.3,"host":"dsh","t":1794638837426}
-```
-
-数据只落本机 `~/.agentcrop/data`（权限 0700），可用 `KIT_DATA_DIR` 覆盖。
-不存对话正文，只存 ≤160 字符的片段和一句话摘要。
-
----
-
-## 安装
-
-把仓库地址丢给你的 agent，说「按 README 装一下」就行。手动也只要两行：
+## 安装与卸载
 
 ```bash
 git clone https://github.com/oriliz/agent-crop.git ~/agent-crop
@@ -201,8 +99,7 @@ dsh plugin --profile <你的 profile> add ~/agent-crop
 # 重启 dsh，新会话生效
 ```
 
-装完你不需要改任何配置、不需要动 `AGENTS.md`——探针协议通过插件注册进系统提示，
-卸载时自动移除。
+装完不用改配置、不用动 `AGENTS.md`——协议通过插件注册进系统提示，卸载时自动移除。
 
 <details>
 <summary>其他宿主（Claude Code / Qoder / Codex）</summary>
@@ -215,7 +112,7 @@ claude plugin install ai-coding-efficiency-kit@ai-coding-kit -s user
 # Qoder
 qodercli plugin validate ~/agent-crop && qodercli plugin install ~/agent-crop
 
-# Codex：只完成接线，采集未适配，不产生指标
+# Codex：只接线，采集未适配，不产生指标
 codex plugin marketplace add ~/agent-crop && codex plugin add ai-coding-efficiency-kit@ai-coding-kit
 ```
 
@@ -226,12 +123,11 @@ codex plugin marketplace add ~/agent-crop && codex plugin add ai-coding-efficien
 自检：
 
 ```bash
-crop status                              # 一屏看当前状态
+crop status
 tail -1 ~/.agentcrop/data/events.jsonl   # 应出现 "host":"dsh"
-crop serve                               # 本地 dashboard，127.0.0.1:8765
 ```
 
-`crop` 是仓库里的脚本，第一次用先放进 PATH：
+`crop` 是仓库里的脚本，先放进 PATH：
 
 ```bash
 ln -sf ~/agent-crop/bin/crop /usr/local/bin/crop
@@ -239,32 +135,70 @@ ln -sf ~/agent-crop/bin/crop /usr/local/bin/crop
 
 ![Crop dashboard](docs/assets/dashboard.png)
 
+卸载：
+
+```bash
+dsh plugin --profile <你的 profile> remove ai-coding-efficiency-kit-dsh
+# Claude: claude plugin uninstall ai-coding-efficiency-kit
+```
+
+卸载不动数据。要一起清掉：`rm -rf ~/.agentcrop`
+
+---
+
+## 它记了什么、在哪记
+
+采集分两路：机器记事实，AI 报判断。
+
+### 宿主自动记
+
+| 什么时候 | 记什么 |
+|---|---|
+| 会话开始 / 你发消息 | 工作区、任务块起点 |
+| 每次工具返回 | 工具名、成功还是失败 |
+| 回合结束 | 这一轮跑了多久 |
+| 你下一次开口 | 等了你多久；超阈值记 `idle_gap` |
+| 超红线 | 提醒注入了一次 |
+| 同工具 / 文件反复失败 | 返工信号 |
+
+### AI 主动报
+
+| 字段 | 什么时候填 | 可能的值 |
+|---|---|---|
+| `phase` | 每次上报 | `start` 开工 / `progress` 有进展 / `blocked` 卡住 / `end` 收工 |
+| `task_id` | 每次上报 | 你给这件事起的短名，比如 `refactor-auth` |
+| `summary` | 每次上报 | 一句话：现在在做什么 |
+| `cause` | `blocked` 必填 | 一句话：为什么慢、卡在哪 |
+| `next` | 可选 | 下一步的具体动作 |
+| `category` | `blocked` 必填 | 九选一：`serial-wait` `repeat-pitfall` `design-churn` `decision-batching` `tool-misuse` `no-evidence` `spec-drift` `human-wait` `other` |
+| `goal` | 开工时 | 一句话目标 |
+| `type` | 开工时 | `design` / `implement` / `debug` / `docs` |
+| `difficulty` | 开工时 | `s` / `m` / `l` |
+
+`category` 是枚举，不是自由文本——填错直接失败。九类词表锁死，不会越记越乱。
+
+这些只是判断，不是事实：**自述永远不单独当结论**，要和自动采集的时间、失败数对照着看。
+
+数据只落本机 `~/.agentcrop/data`（权限 0700），可用 `KIT_DATA_DIR` 覆盖。不存对话正文。
+
 ---
 
 ## 接入成本
 
-这套东西会让 AI 多输出一点，但代价压到了最低：
+每回合多注入 100–300 字符，AI 调一次 `probe_report` 约 50–100 token；一个 20 回合的工作，合计约 2k token。
 
-| 增量 | 量级 |
-|---|---|
-| 注入（每回合一行状态 / 红线提醒） | 约 100–300 字符 |
-| 上报（AI 调一次 `probe_report`） | 约 50–100 token |
-| 一个 20 回合的工作合计 | 约 2k token |
+对比「事后去会话里反查」：一条中等会话就是几万 token，长的几十万，根本塞不进上下文。
 
-对比老办法——拿到数据之后**去会话里反查**：读会话文件再塞进上下文分析，
-一条中等长度会话就是几万 token，长的几十万，根本塞不进去。
-
-真正的差别不是省几百 token，而是：**分析不再需要把会话塞进模型**。
-事件是结构化数据，聚合、对比、出周报都在宿主之外用程序算，模型只在需要解释时被叫一次。
+差别不是省几百 token，是**分析不再需要把会话塞进模型**。
 
 ---
 
 ## 它不做什么
 
-- **不打分。** 没有效率分，没有排行榜，没有「你的 AI 使用水平击败了 83% 的用户」。
-- **不上传。** 数据只在这台机器上，目录 0700。
-- **不改你的代码。** 它只观察；所谓「方案」也只影响提示，不碰仓库。
-- **不替代 APM。** 工具内部的性能仍然归 OpenTelemetry。
+- **不打分。** 没有效率分，没有排行榜。
+- **不上传。** 数据只在这台机器上。
+- **不改你的代码。** 只观察；方案也只影响提示。
+- **不替代 APM。** 工具内部性能仍归 OpenTelemetry。
 - **不给你老板看。** 没有云，没有团队看板。
 
 这是镜子，不是裁判。
@@ -273,11 +207,10 @@ ln -sf ~/agent-crop/bin/crop /usr/local/bin/crop
 
 ## 诚实边界
 
-- **样本只有一个。** 五小时到两小时是我自己的体感，不是对照实验。
-- **证明还没做。** 四步里的「证明」目前只有设计（`adjustment` 的 before / after / evidence），代码里没有。
-- **看板还在长。** `crop serve` 的趋势、按类型对比、按天明细已经有了，问题分类视图还没做。
+- **样本只有一个。** 上面那个案例是我自己的体感，不是对照实验。
+- **证明还没做。** 「改进前后对比」只有设计，代码里没有。
+- **看板还在长。** 问题分类视图还没做。
 - **Codex 只接线。** 不产生指标。
-- **红线会误报。** 墙钟超时经常不是 AI 慢，下一步要把「等你」从块时长里扣掉。
 
 **一个不告诉你局限在哪的探针，不值得装。**
 
@@ -285,14 +218,11 @@ ln -sf ~/agent-crop/bin/crop /usr/local/bin/crop
 
 ## 常见问题
 
-**这和 LangSmith / Langfuse 有什么区别？**
-它们量 agent 内部：token、工具调用、延迟。Agent Crop 量协作过程：包括你等人的时间，和 AI 的返工。前者回答「模型花了多少」，后者回答「这件事为什么这么久」。
+**和 LangSmith / Langfuse 有什么区别？**
+它们量 agent 内部：token、工具调用、延迟。Agent Crop 量协作过程，包括你等人的时间和 AI 的返工。
 
 **算监控员工吗？**
-不算，也做不到。数据只在本机，没有云、没有团队看板、没有评分。它记的是时间去向，不是谁对谁错。
-
-**为什么单位是「工作」而不是「任务」？**
-一次工作可能跨几十轮对话、跨天、跨会话。任务块只是采样点，工作才是账本的单位。
+不算。数据只在本机，没有云、没有看板、没有评分。
 
 ---
 
