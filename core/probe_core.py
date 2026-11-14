@@ -42,6 +42,7 @@ CATEGORIES = (
 WORK_START = os.environ.get("KIT_WORK_START", "10:00")
 WORK_END = os.environ.get("KIT_WORK_END", "18:00")
 IDLE_MIN = float(os.environ.get("KIT_IDLE_MIN", "15"))
+CLAIM_TTL_MIN = float(os.environ.get("KIT_CLAIM_TTL_MIN", "120"))
 WORK_TYPES = ("design", "implement", "debug", "docs")
 DIFFICULTIES = ("s", "m", "l")
 MAX_TEXT = 600
@@ -327,6 +328,7 @@ def _upsert_task(report: dict, workspace: str) -> None:
     task["last_phase"] = report["phase"]
     if report.get("sid"):
         task["last_sid"] = report["sid"]
+    task["active_until"] = int(report["t"]) + int(CLAIM_TTL_MIN * 60000)
     task["summary"] = report.get("summary") or task.get("summary", "")
     if report.get("cause"):
         task["cause"] = report["cause"]
@@ -763,11 +765,21 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
     if not tasks:
         return ""
     claimed = next((t for t in tasks if sid and t.get("last_sid") == sid), None)
-    if claimed:
-        aim = claimed.get("goal") or claimed.get("title") or claimed.get("task_id")
-        stale = ago(claimed.get("last_seen_at", 0))
+    inherited = None
+    if not claimed:
+        # 会话重启/fork 会换 sid，认领会断。只要有效期内只有一条活跃工作，
+        # 就不存在“选哪个”的问题，直接接着用；有多条才列候选交给 AI 判断。
+        now = now_ms()
+        active = [t for t in tasks if float(t.get("active_until") or 0) > now]
+        if len(active) == 1:
+            inherited = active[0]
+    current = claimed or inherited
+    if current:
+        aim = current.get("goal") or current.get("title") or current.get("task_id")
+        stale = ago(current.get("last_seen_at", 0))
+        note = "" if claimed else "（上个会话认领，仍在有效期内）"
         return (
-            f"[crop] 当前工作：{aim}（{claimed.get('task_id')}）；上次更新 {stale}。"
+            f"[crop] 当前工作：{aim}（{current.get('task_id')}）{note}；上次更新 {stale}。"
             "状态有变就调 probe_report 更新一行。"
         )
     candidates = "、".join(

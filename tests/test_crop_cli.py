@@ -75,10 +75,10 @@ class StatusViewTest(unittest.TestCase):
         )
         line = core.work_status_line("/tmp/ws")
         self.assertIn("[crop]", line)
-        self.assertIn("t1", line)
-        # 未认领时只能列候选，不能自称“当前工作”
-        self.assertNotIn("当前工作", line)
-        self.assertIn("认领", line)
+        self.assertIn("把探针开源", line)
+        # 只有一条活跃工作时不存在“选哪个”，直接继承（例如重启/换会话）
+        self.assertIn("上个会话认领", line)
+        self.assertNotIn("哪个属于本会话", line)
 
     def test_record_report_syncs_runtime_sid(self):
         core = self.core
@@ -93,12 +93,24 @@ class StatusViewTest(unittest.TestCase):
         line = core.work_status_line("/tmp/ws", "s1")
         self.assertIn("当前工作", line)
         self.assertIn("把探针开源", line)
-        # 认领之后不再劝它认领
+        # 自己认领的，不提示认领
         self.assertNotIn("认领", line)
-        # 别的会话看到的是候选列表，不是别人的“当前工作”
+        # 别的会话看到的是“上个会话认领”，不是认领提示
         other = core.work_status_line("/tmp/ws", "s2")
-        self.assertNotIn("当前工作", other)
-        self.assertIn("认领", other)
+        self.assertIn("上个会话认领", other)
+        self.assertNotIn("哪个属于本会话", other)
+
+    def test_work_status_line_lists_candidates_when_ambiguous(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "a1", "summary": "甲", "goal": "甲"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        core.record_report({"phase": "start", "task_id": "a2", "summary": "乙", "goal": "乙"},
+                           {"sid": "s2", "workspace": "/tmp/ws"})
+        line = core.work_status_line("/tmp/ws", "s3")
+        self.assertIn("未完成的工作", line)
+        self.assertIn("a1", line)
+        self.assertIn("a2", line)
+        self.assertIn("哪个属于本会话", line)
 
     def test_work_status_line_prefers_recent(self):
         core = self.core
