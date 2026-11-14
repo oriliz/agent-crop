@@ -209,6 +209,7 @@ dsh plugin --profile <你的 profile> remove agent-crop-dsh
 
 - [docs/DESIGN.md](docs/DESIGN.md) — 设计原则与边界
 - [docs/EVENTS.md](docs/EVENTS.md) — 采哪些事件、怎么存、谁在用
+- [docs/SESSION-WORK.md](docs/SESSION-WORK.md) — 会话与工作怎么绑定、怎么解绑、失效了怎么办
 - [docs/INSTALL.md](docs/INSTALL.md) — 四个宿主的安装与卸载
 - [docs/LONGEVITY.md](docs/LONGEVITY.md) — 长任务里怎么不被上下文冲刷掉
 
