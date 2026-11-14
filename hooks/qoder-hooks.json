@@ -1,0 +1,84 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${QODER_PLUGIN_ROOT}/hooks/task-metrics/bin/task_tempo_hook.py\" session-start",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${QODER_PLUGIN_ROOT}/hooks/task-metrics/bin/task_tempo_hook.py\" user-prompt-submit",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${QODER_PLUGIN_ROOT}/hooks/task-metrics/bin/harness_scan.py\" inject",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${QODER_PLUGIN_ROOT}/hooks/task-metrics/bin/harness_scan.py\" post-tool",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${QODER_PLUGIN_ROOT}/hooks/task-metrics/bin/task_tempo_hook.py\" stop",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${QODER_PLUGIN_ROOT}/hooks/task-metrics/bin/harness_scan.py\" scan",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${QODER_PLUGIN_ROOT}/hooks/task-metrics/bin/daily_case.py\" --summary",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${QODER_PLUGIN_ROOT}/hooks/task-metrics/bin/harness_scan.py\" scan",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${QODER_PLUGIN_ROOT}/hooks/task-metrics/bin/task_tempo_hook.py\" session-end",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

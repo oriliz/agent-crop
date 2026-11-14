@@ -1,0 +1,9 @@
+{
+  "id": "lsp-autoconfig",
+  "name": "LSP 自动挂载（按主语言写 .mcp.json）",
+  "problem": "查引用靠逐文件翻，导航往返多",
+  "status": "未验证",
+  "events": ["session-start"],
+  "builtin": true,
+  "evidence": "只有产物与单次实测，无对照数据"
+}

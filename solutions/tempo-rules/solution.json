@@ -1,0 +1,12 @@
+{
+  "id": "tempo-rules",
+  "name": "任务节奏纪律（红线复盘 / 压力取舍 / 决策基线）",
+  "problem": "长任务失控、时间压力下走捷径、已拍板事项反复重辩",
+  "status": "试用中",
+  "events": [
+    "session-start",
+    "user-prompt-submit"
+  ],
+  "builtin": true,
+  "evidence": "红线告警带执行/等你/你离开时间账（2026-11-05 起），四行复盘落 data/retros/；无对照实验"
+}

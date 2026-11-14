@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{报告标题}} · {{日期}}</title>
+<style>
+  /* 统一 token：改这里，不要散落硬编码色值 */
+  :root {
+    --bg:#f5f6f8; --card:#ffffff; --ink:#17191c; --muted:#5a636e;
+    --line:#e2e5ea; --accent:#1f4feb; --accent-weak:#eef2fe;
+    --ok:#0d7a45; --ok-bg:#e7f5ed; --bad:#c22929; --bad-bg:#fdeceb;
+    --warn:#9a5b00; --warn-bg:#fff3e2; --code-bg:#f2f4f7;
+    --radius:12px; --radius-s:8px;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.7 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  }
+  main { max-width:1000px; margin:0 auto; padding:44px 22px 90px; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+  code, pre, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:.88em; }
+  code { background:var(--code-bg); padding:1px 6px; border-radius:5px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:var(--radius-s); padding:14px 16px; overflow-x:auto; }
+
+  /* 页头与状态卡 */
+  .eyebrow { color:var(--accent); font-weight:700; letter-spacing:.12em; font-size:12px; text-transform:uppercase; }
+  h1 { font-size:30px; line-height:1.3; margin:8px 0 6px; letter-spacing:-.01em; }
+  .sub { color:var(--muted); margin:0 0 18px; }
+  .statbar { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 22px; }
+  .stat { flex:1 1 200px; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:12px 16px; }
+  .stat b { display:block; font-size:14px; }
+  .stat span { color:var(--muted); font-size:13px; }
+  .stat.ok { border-left:4px solid var(--ok); }
+  .stat.bad { border-left:4px solid var(--bad); }
+  .stat.warn { border-left:4px solid var(--warn); }
+
+  nav { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:10px 16px; margin-bottom:22px; font-size:13.5px; display:flex; flex-wrap:wrap; gap:4px 14px; }
+  nav a { white-space:nowrap; }
+
+  /* 区块卡片 */
+  section { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:26px 30px; margin-top:18px; scroll-margin-top:16px; }
+  h2 { font-size:20px; margin:0 0 14px; display:flex; align-items:baseline; gap:10px; }
+  h2 .no { color:var(--accent); font-size:14px; font-weight:800; font-family:ui-monospace, Menlo, monospace; }
+  h3 { font-size:15px; margin:20px 0 8px; }
+  p { margin:8px 0; }
+  ul, ol { margin:8px 0; padding-left:22px; }
+  li { margin:4px 0; }
+  .muted { color:var(--muted); }
+  .small { font-size:13px; }
+
+  /* 状态徽章与 🆕 变更标记 */
+  .t { display:inline-block; padding:1px 9px; border-radius:99px; font-size:12.5px; font-weight:600; white-space:nowrap; }
+  .t.ok { background:var(--ok-bg); color:var(--ok); }
+  .t.bad { background:var(--bad-bg); color:var(--bad); }
+  .t.warn { background:var(--warn-bg); color:var(--warn); }
+  /* 🆕 标记·新鲜度梯度：越新越亮、越旧越淡。每轮新增时给上一轮的 rN 补"降一档"样式（更小的 rN 越淡），rN≥2 用默认亮色 */
+  .newtag { display:inline-block; background:#b45309; color:#fff; font-size:11.5px; font-weight:700; border-radius:99px; padding:1px 9px; margin-right:7px; vertical-align:2px; white-space:nowrap; }
+  .newtag.r1 { background:#f3f1ec; color:#6e675b; border:1px solid #e6e2d9; padding:0 8px; font-weight:600; }
+
+  /* 表格（窄屏内部滚动） */
+  .tw { overflow-x:auto; margin:12px 0; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th { text-align:left; font-size:12px; letter-spacing:.06em; color:var(--muted); text-transform:uppercase; border-bottom:2px solid var(--line); padding:8px 10px; }
+  td { border-bottom:1px solid var(--line); padding:9px 10px; vertical-align:top; }
+  tr:last-child td { border-bottom:none; }
+
+  /* 色块时间线 */
+  .timeline { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 6px; }
+  .commit { border:1px solid var(--line); border-radius:var(--radius-s); padding:8px 12px; font-size:13px; min-width:128px; }
+  .commit b { font-family:ui-monospace, Menlo, monospace; font-size:12.5px; display:block; }
+  .commit span { color:var(--muted); font-size:12px; display:block; }
+  .commit.ok { background:var(--ok-bg); border-color:#bfe3ce; }
+  .commit.bad { background:var(--bad-bg); border-color:#f3c9c7; }
+  .commit.ok b { color:var(--ok); }
+  .commit.bad b { color:var(--bad); }
+
+  /* 卡片组 / 图 / 文档索引 */
+  .fixgrid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin:12px 0; }
+  .fix { border:1px solid var(--line); border-radius:var(--radius-s); padding:14px 16px; }
+  .fix h4 { margin:0 0 6px; font-size:14.5px; }
+  .fix p { margin:4px 0; font-size:13.5px; }
+  .fix .eta { display:inline-block; margin-top:8px; background:var(--accent-weak); color:var(--accent); border-radius:99px; padding:1px 10px; font-size:12.5px; font-weight:600; }
+  img.arch { width:100%; height:auto; border:1px solid var(--line); border-radius:var(--radius-s); display:block; }
+  figure { margin:14px 0; }
+  figcaption { color:var(--muted); font-size:13px; margin-top:6px; }
+  .doclist { list-style:none; padding:0; margin:10px 0; }
+  .doclist li { border-bottom:1px solid var(--line); padding:9px 0; }
+  .doclist li:last-child { border-bottom:none; }
+  .doclist .why { color:var(--muted); font-size:13px; }
+
+  @media (max-width:640px) {
+    main { padding:24px 12px 60px; }
+    section { padding:20px 16px; }
+    h1 { font-size:24px; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- 页头：标题 + 状态卡（最重要结论各一张）+ 锚点导航 -->
+  <header>
+    <div class="eyebrow">{{分组 / 主题}}</div>
+    <h1>{{报告标题}}</h1>
+    <p class="sub">{{日期}} · {{一句话定位}} · 所有结论附可自查证据 · 章节号与源文档一致，方便按 § 提问 · 更新标记颜色越亮 = 越新：<span class="newtag r2">🆕 更新</span>= 本轮改动，<span class="newtag r1">🆕 更新</span>= 上轮改动（首版无标记时删去本句）</p>
+    <div class="statbar">
+      <div class="stat ok"><b>✅ {{结论 1}}</b><span>{{一句话展开}}</span></div>
+      <div class="stat bad"><b>❌ {{结论 2}}</b><span>{{一句话展开}}</span></div>
+      <div class="stat warn"><b>⏸ {{结论 3}}</b><span>{{一句话展开}}</span></div>
+    </div>
+    <nav>
+      <a href="#s0">§0 一屏速览</a>
+      <a href="#s1">§1 {{章节名}}</a>
+      <!-- 新增 section 时在这里同步加锚点，并保持章节号稳定 -->
+    </nav>
+  </header>
+
+  <!-- §0 一屏速览：结论置顶，加粗前置 -->
+  <section id="s0">
+    <h2><span class="no">§0</span>一屏速览</h2>
+    <ul>
+      <li><b>{{最关键结论}}</b>，{{补充说明}}。</li>
+      <li><b>{{结论}}</b>，{{证据指针（命令 / 文件路径）}}。</li>
+    </ul>
+  </section>
+
+  <!-- §1+ 正文卡片。可视化锦囊（按需取用，多余组件删掉）：
+       · 内嵌图：      <figure><img class="arch" src="相对路径.png" alt="说明"><figcaption>图注</figcaption></figure>
+       · 表格：        <div class="tw"><table><thead><tr><th>…</th></tr></thead><tbody>…</tbody></table></div>
+       · 状态徽章：    <span class="t ok">通</span> / <span class="t bad">红</span> / <span class="t warn">待定</span>
+       · 色块时间线：  <div class="timeline"><div class="commit ok"><b>哈希</b><span>说明</span><span>✅ ✅</span></div></div>
+       · 命令块：      <pre>…</pre>
+       · 卡片组：      <div class="fixgrid"><div class="fix"><h4>① 标题</h4><p>…</p><span class="eta">约 10 分钟</span></div></div>
+       · 文档索引：    <ul class="doclist"><li><a href="相对路径">文件名</a><div class="why">为什么读它</div></li></ul>
+       · 改动处标记：  在段落/标题前插 <span class="newtag rN">🆕 更新</span>，N=批注轮次（本轮 r2、上轮 r1；越小越淡，≥2 用默认亮色） -->
+  <section id="s1">
+    <h2><span class="no">§1</span>{{章节名}}</h2>
+    <p>{{正文。结论旁给证据：命令、文件路径、<code>file://</code> 链接；未验项照实标注。}}</p>
+  </section>
+
+</main>
+</body>
+</html>
