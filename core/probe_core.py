@@ -1028,3 +1028,81 @@ def type_breakdown(days: float = 30.0, now: int | None = None) -> list[dict]:
             "median_minutes": round(median, 1),
         })
     return sorted(rows, key=lambda row: row["minutes"], reverse=True)
+
+
+def session_summary(sid: str, now: int | None = None) -> dict:
+    """Everything a session-scoped panel needs: where the time went and what is off."""
+    sid = str(sid)
+    events = load_events(sid=sid)
+    stop_at = now if now is not None else now_ms()
+    day_start = _start_of_today_ms()
+    blocks = [e for e in events if e.get("ev") == "stop"]
+    tools = [e for e in events if e.get("ev") == "tool"]
+    waits = [e for e in events if e.get("ev") == "user_wait"]
+    reworks = [e for e in events if e.get("ev") == "rework_signal"]
+    reports = [e for e in events if e.get("ev") == "probe_report"]
+
+    tool_counts: dict[str, int] = {}
+    for event in tools:
+        name = str(event.get("name") or "?")
+        tool_counts[name] = tool_counts.get(name, 0) + 1
+    failures = [e for e in tools if e.get("is_error")]
+    failure_counts: dict[str, int] = {}
+    for event in failures:
+        name = str(event.get("name") or "?")
+        failure_counts[name] = failure_counts.get(name, 0) + 1
+
+    block_minutes = sum(float(e.get("minutes") or 0) for e in blocks)
+    wait_ms = sum(int(e.get("waiting_ms") or 0) for e in waits)
+    work_minutes = max(0.0, block_minutes - wait_ms / 60000.0)
+
+    runtime = read_runtime()
+    current = 0.0
+    if runtime.get("sid") == sid and runtime.get("block_start"):
+        try:
+            current = max(0.0, (now_ms() - int(runtime["block_start"])) / 60000.0)
+        except Exception:
+            current = 0.0
+
+    total = work_minutes + wait_ms / 60000.0
+    share = {
+        "work": round(work_minutes / total, 3) if total else 0.0,
+        "wait": round((wait_ms / 60000.0) / total, 3) if total else 0.0,
+    }
+
+    anomalies = []
+    for name, count in sorted(failure_counts.items(), key=lambda pair: pair[1], reverse=True):
+        if name.startswith("call_") or name == "tool":
+            continue  # pre-v1 rows recorded the call id instead of the tool name
+        anomalies.append({"kind": "failure", "tool": name, "count": count})
+        if len(anomalies) >= 3:
+            break
+    for event in reworks[-3:]:
+        anomalies.append({"kind": "rework", "tool": event.get("tool") or "", "count": int(event.get("count") or 0)})
+
+    latest_work = ""
+    goal = ""
+    for report in reversed(reports):
+        if report.get("task_id"):
+            latest_work = str(report["task_id"])
+            if report.get("goal"):
+                goal = report["goal"]
+                break
+
+    return {
+        "sid": sid,
+        "current_minutes": round(current, 1),
+        "blocks": len(blocks),
+        "minutes": round(block_minutes, 1),
+        "work_minutes": round(work_minutes, 1),
+        "wait_minutes": round(wait_ms / 60000.0, 1),
+        "share": share,
+        "tools_total": len(tools),
+        "failures": len(failures),
+        "tool_top": sorted(tool_counts.items(), key=lambda pair: pair[1], reverse=True)[:5],
+        "anomalies": anomalies[:3],
+        "works": len({str(r.get("task_id")) for r in reports if r.get("task_id")}),
+        "latest_work": latest_work,
+        "goal": goal,
+        "today_events": len([e for e in events if int(e.get("t") or 0) >= day_start]),
+    }

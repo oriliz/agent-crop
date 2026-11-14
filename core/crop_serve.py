@@ -125,6 +125,19 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path.startswith("/api/session"):
+            sid = ""
+            if "sid=" in self.path:
+                sid = self.path.split("sid=", 1)[1].split("&", 1)[0]
+            payload = core.session_summary(sid)
+            body = json.dumps(payload, ensure_ascii=False).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/api/summary"):
             days = 14.0
             if "days=" in self.path:
