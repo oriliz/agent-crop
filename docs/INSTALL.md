@@ -1,0 +1,76 @@
+# 安装
+
+Crop 的宿主分两类：DSH 是主力（原生插件 + 系统提示 + 面板），
+Claude Code / Qoder / Codex 走 hook 接线（实验性）。
+
+装之前先拿到仓库：
+
+```bash
+git clone https://github.com/oriliz/agent-crop.git ~/agent-crop
+```
+
+## DeepSeek Harness（推荐）
+
+```bash
+dsh plugin --profile <profile> add ~/agent-crop
+# 重启 dsh
+```
+
+装完即生效：
+
+- 原生工具 `probe_report`
+- 系统提示里常驻 `crop:protocol` 段落（不用改 AGENTS.md）
+- 每回合首步注入一行工作状态；超红线注入提醒
+- 右栏新增 **Crop** 标签页（实时数字）
+
+验证：
+
+```bash
+crop status                     # 仓库里的 bin/crop
+tail -1 ~/.agentcrop/data/events.jsonl   # 应看到 "host":"dsh"
+```
+
+## Claude Code
+
+```bash
+claude plugin marketplace add ~/agent-crop
+claude plugin install ai-coding-efficiency-kit@ai-coding-kit -s user
+claude plugin list
+```
+
+Claude 侧通过 `.mcp.json` 暴露 `probe_report`，hooks 负责注入未完成任务与红线提醒。
+装完需要新开会话。
+
+## Qoder / Codex（实验）
+
+```bash
+qodercli plugin validate ~/agent-crop && qodercli plugin install ~/agent-crop
+codex plugin marketplace add ~/agent-crop && codex plugin add ai-coding-efficiency-kit@ai-coding-kit
+```
+
+Codex 的会话转录格式与 Qoder 不同，当前只完成接线，不产生指标。
+
+## 卸载
+
+```bash
+dsh plugin --profile <profile> remove ai-coding-efficiency-kit-dsh
+# Claude: claude plugin uninstall ai-coding-efficiency-kit
+```
+
+卸载只移除插件与协议段落，**不动数据目录**。要清数据：
+
+```bash
+rm -rf ~/.agentcrop
+```
+
+## 数据与配置
+
+| 项 | 默认 |
+|---|---|
+| 数据目录 | `~/.agentcrop/data`（0700） |
+| 事件库 | `data/events.jsonl` |
+| 工作列表 | `data/tasks/open.json`、`tasks/archive/` |
+| 红线 | 30 分钟（`KIT_TASK_RED_MIN`） |
+| 工作时段 | 10:00–18:00（`KIT_WORK_START` / `KIT_WORK_END`） |
+| 离开阈值 | 15 分钟（`KIT_IDLE_MIN`） |
+| 面板端口 | 8765（`KIT_DASHBOARD=0` 可禁用自动启动） |
