@@ -13,6 +13,64 @@
 
 关键区别：**工作还在不在（state）** 和 **本会话在看哪条（claim）** 是两件事。切走焦点不等于暂停工作。
 
+### 类图
+
+```mermaid
+classDiagram
+    direction LR
+
+    class Workspace {
+        +string path
+    }
+
+    class Session {
+        +string sid
+        +string host
+        +string workspace
+        +int block_start
+    }
+
+    class Work {
+        +string work_id
+        +string goal
+        +string type
+        +string state
+        +string status
+        +int last_seen_at
+        +string last_sid
+        +int active_until
+    }
+
+    class Event {
+        +string ev
+        +int t
+        +string sid
+        +string work_id
+        +string category
+    }
+
+    class Runtime {
+        +string sid
+        +string workspace
+        +int block_start
+        +int updated_at
+    }
+
+    Workspace "1" --> "0..*" Session : 开在
+    Workspace "1" --> "0..*" Work : 属于
+    Session "1" --> "0..*" Event : 产生
+    Work "1" --> "0..*" Event : 归因
+    Session "0..*" --> "0..1" Work : 认领（last_sid）
+    Runtime "1" --> "0..1" Session : 指向（可能过期）
+```
+
+读图要点：
+
+- **认领不是一张独立的表**，它是 `Work` 上的 `last_sid` + `active_until` 两个字段。
+- 一个会话在任一时刻只认领**一条**工作（`0..1`）；一条工作可以被多个会话先后认领，但 `last_sid` 只存最后一个。
+- `Event` 同时挂 `sid` 和 `work_id`：前者回答“哪次会话”，后者回答“哪件事”。**两个都有的才是完整的账。**
+- `Runtime` 是活动指针，不是真相来源——它会过期，所以不能只靠它判断当前会话。
+
 ## 1. 数据落在哪
 
 | 文件 | 存什么 | 在映射里的角色 |
