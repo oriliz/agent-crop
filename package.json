@@ -1,7 +1,7 @@
 {
   "name": "ai-coding-efficiency-kit-dsh",
-  "version": "0.4.0",
-  "description": "DSH plugin for the AI coding efficiency probe: native probe_report tool plus long-task reminders.",
+  "version": "0.5.0",
+  "description": "Agent Crop: a local probe for coding agents — task-block timing, red-line nudges, structured self-reports and a live panel.",
   "type": "module",
   "main": "./dsh/lib/index.js",
   "exports": {
