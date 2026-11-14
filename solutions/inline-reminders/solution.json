@@ -1,9 +1,0 @@
-{
-  "id": "inline-reminders",
-  "name": "实时提示（sleep / 前台部署 / 导航过多 / 超线）",
-  "problem": "串行等待、读多定位少、长回合无人管",
-  "status": "试用中",
-  "events": ["user-prompt-submit", "post-tool-use", "stop"],
-  "builtin": true,
-  "evidence": "RULE-005 跟进 77.8%，A/B 样本不足；RULE-004 跟进 0/17 且 11-03 导航调用上升，疑似反作用"
-}

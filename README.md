@@ -11,7 +11,7 @@
 <sub>测量 → 归因 → 优化 → 验证 · 本地 JSONL · 不上传</sub>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Runtime](https://img.shields.io/badge/Runtime-DeepSeek%20Harness%20·%20Claude%20Code%20·%20Qoder%20·%20Codex-blueviolet)](#安装与卸载)
+[![Runtime](https://img.shields.io/badge/Runtime-DeepSeek%20Harness%20·%20Claude%20Code-blueviolet)](#安装与卸载)
 [![Data](https://img.shields.io/badge/Data-Stays%20Local-green)](#它不做什么)
 
 <br>
@@ -107,7 +107,7 @@ dsh plugin --profile <你的 profile> add ~/agent-crop
 
 装完不用改配置、不用动 `AGENTS.md`——协议通过插件注册进系统提示，卸载时自动移除。
 
-Claude Code / Qoder / Codex 的装法见 [docs/INSTALL.md](docs/INSTALL.md)。Codex 目前只接线，不产生指标。
+Claude Code 的装法见 [docs/INSTALL.md](docs/INSTALL.md)。
 
 自检：
 

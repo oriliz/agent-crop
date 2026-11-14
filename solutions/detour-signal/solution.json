@@ -1,9 +1,0 @@
-{
-  "id": "detour-signal",
-  "name": "弯路信号（声明 + 证据 + 恢复判据）",
-  "problem": "卡住后反复试同一路径，失败不落记录、事后判不出是路径错还是执行慢",
-  "status": "试用中",
-  "events": ["session-start", "stop"],
-  "builtin": true,
-  "evidence": "2026-11-05 上线；用 data/detours 的声明数/恢复率判断是否真被用上"
-}

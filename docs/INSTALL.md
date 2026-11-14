@@ -1,7 +1,7 @@
 # 安装
 
 Crop 的宿主分两类：DSH 是主力（原生插件 + 系统提示 + 面板），
-Claude Code / Qoder / Codex 走 hook 接线（实验性）。
+Claude Code 走 hook 接线。
 
 装之前先拿到仓库：
 
@@ -40,15 +40,6 @@ claude plugin list
 
 Claude 侧通过 `.mcp.json` 暴露 `probe_report`，hooks 负责注入未完成任务与红线提醒。
 装完需要新开会话。
-
-## Qoder / Codex（实验）
-
-```bash
-qodercli plugin validate ~/agent-crop && qodercli plugin install ~/agent-crop
-codex plugin marketplace add ~/agent-crop && codex plugin add ai-coding-efficiency-kit@ai-coding-kit
-```
-
-Codex 的会话转录格式与 Qoder 不同，当前只完成接线，不产生指标。
 
 ## 卸载
 
