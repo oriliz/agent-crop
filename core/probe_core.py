@@ -461,6 +461,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         "minutes": round(minutes, 1),
     }
     append_jsonl(os.path.join(paths()["reports_dir"], f"{today()}.jsonl"), record)
+    write_runtime(sid, workspace, block_start)
     append_event({**record, "ev": "probe_report"})
     if report["phase"] == "end":
         if report.get("what") or report.get("cost") or report.get("next_time"):

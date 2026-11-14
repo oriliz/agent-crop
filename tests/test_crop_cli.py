@@ -80,6 +80,12 @@ class StatusViewTest(unittest.TestCase):
         self.assertNotIn("当前工作", line)
         self.assertIn("认领", line)
 
+    def test_record_report_syncs_runtime_sid(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "把探针开源"},
+                           {"sid": "s-fork", "workspace": "/tmp/ws"})
+        self.assertEqual(core.read_runtime().get("sid"), "s-fork")
+
     def test_work_status_line_reflects_claim(self):
         core = self.core
         core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "把探针开源"},
