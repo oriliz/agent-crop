@@ -657,7 +657,10 @@ def format_start_hint(tasks: list[dict]) -> str:
     body = format_open_tasks(tasks)
     text = head + ("\n" + body if body else "")
     if tasks:
-        text += f"\n拿不准就跟最近活跃的那条：crop switch {tasks[0].get('task_id')}"
+        text += (
+            f"\n跟最近活跃的那条：crop switch {tasks[0].get('task_id')}；"
+            "都对不上就新建一条。"
+        )
     return text
 
 
