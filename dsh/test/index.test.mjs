@@ -94,3 +94,15 @@ test('agent/pre-step injects the start hint and a reminder', async (t) => {
   assert.ok(decision.messages.some((message) => message.content[0].text.includes('[探针]')));
   assert.equal(decision.messages[0].source.kind, 'ai-coding-efficiency-kit');
 });
+
+test('registers the crop protocol as a system prompt section', () => {
+  const sections = [];
+  const ctx = fakeCtx();
+  ctx.systemPrompt = { section(section) { sections.push(section); return () => {}; } };
+  apply(ctx, { python: 'python3' });
+
+  assert.equal(sections.length, 1);
+  assert.equal(sections[0].name, 'crop:protocol');
+  assert.equal(typeof sections[0].order, 'number');
+  assert.ok(sections[0].text.includes('probe_report'));
+});
