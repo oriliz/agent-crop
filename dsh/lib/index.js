@@ -6,6 +6,7 @@
  * the returned notes at the next model step.  Zero runtime dependencies.
  */
 import { spawn, spawnSync } from 'node:child_process';
+import z from '@deepseek-ai/schemastery';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,8 +64,24 @@ function createNotice(text) {
   };
 }
 
+// Settings shown in 设置 → 插件 → Agent Crop (volatile = applied without restart).
+export const Config = z.object({
+  python: z.string().default('python3'),
+  yellowMin: z.number().min(1).max(240).default(10).volatile()
+    .description('工作级黄线：一个工作累计活跃多少分钟后提醒 AI 判断'),
+  redMin: z.number().min(1).max(480).default(30).volatile()
+    .description('单轮红线：一轮超过多少分钟提醒'),
+  remindMin: z.number().min(1).max(240).default(15).volatile()
+    .description('提醒冷却：同一条提醒多少分钟内不重复'),
+});
+
+function setting(value, fallback) {
+  if (value && typeof value.get === 'function') return value.get();
+  return value === undefined || value === null ? fallback : value;
+}
+
 export function apply(ctx, config = {}) {
-  const python = config?.python || 'python3';
+  const python = setting(config?.python, 'python3');
   const states = new Map();
 
   let dashboard = null;
@@ -109,7 +126,13 @@ export function apply(ctx, config = {}) {
         input: JSON.stringify(payload),
         encoding: 'utf8',
         timeout: 2500,
-        env: { ...process.env, KIT_HOST: 'dsh' },
+        env: {
+          ...process.env,
+          KIT_HOST: 'dsh',
+          KIT_TASK_YELLOW_MIN: String(setting(config.yellowMin, 10)),
+          KIT_TASK_RED_MIN: String(setting(config.redMin, 30)),
+          KIT_TASK_REMIND_MIN: String(setting(config.remindMin, 15)),
+        },
       });
       if (result.error || result.status !== 0 || !result.stdout) return null;
       const parsed = JSON.parse(result.stdout);
