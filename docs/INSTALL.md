@@ -63,6 +63,14 @@ dsh plugin --profile <profile> remove ai-coding-efficiency-kit-dsh
 rm -rf ~/.agentcrop
 ```
 
+## 把 crop 放到 PATH
+
+`crop` 是仓库里的一个可执行脚本，装一下即可：
+
+```bash
+ln -sf ~/agent-crop/bin/crop /usr/local/bin/crop   # 或放进你自己的 bin 目录
+```
+
 ## 数据与配置
 
 | 项 | 默认 |

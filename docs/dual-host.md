@@ -84,10 +84,10 @@ DSH 插件零运行时依赖：工具定义和消息对象都是本地构造，�
 
 ```bash
 # 隔离测试：只加载这个插件目录，不改全局 settings
-KIT_DATA_DIR=/tmp/probe-e2e claude --plugin-dir /Users/lizhi/ai-coding-efficiency-kit
+KIT_DATA_DIR=/tmp/probe-e2e claude --plugin-dir ~/agent-crop
 
 # 正式安装（已执行，user scope）
-claude plugin marketplace add /Users/lizhi/ai-coding-efficiency-kit
+claude plugin marketplace add ~/agent-crop
 claude plugin install ai-coding-efficiency-kit@ai-coding-kit -s user
 
 # 核对
@@ -109,7 +109,7 @@ claude plugin marketplace remove ai-coding-kit
 ```bash
 # 独立 profile，避免影响线上 web / 小橘
 dsh --profile coding --from-default-profile web --dump-config
-dsh plugin --profile coding add /Users/lizhi/ai-coding-efficiency-kit
+dsh plugin --profile coding add ~/agent-crop
 dsh --profile coding --port 3081 --no-open
 ```
 

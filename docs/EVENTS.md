@@ -46,6 +46,9 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `side_issue` | 发现主线外的枝节 | `work_id` `note` `suggest`(new_session/later) | D4 / D10 |
 | `adjustment` | 采纳了一个改进 | `work_id` `before` `after` `evidence` | D13 |
 | `rework_signal` | 检测到返工痕迹 | `work_id` `kind`(repeat-tool/repeat-file/test-red/redo) `count` | D3 / D5 |
+
+`tool` 事件的 `name` 来自 `tool/call`（插件先记 callId→name，`tool/result` 再回填）；
+早期数据里出现过 callId 当工具名的情况，属于 v1 之前的问题，不回溯修。
 | `work_summary` | 工作结束时趁记忆热写的复盘 | `work_id` `what` `cost` `next_time` | D1 / D13 |
 
 ### 1.3 派生而非新增采集

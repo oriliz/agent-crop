@@ -13,6 +13,10 @@ Agent Crop 补的就是这一层：**给一次工作打一条 crop trace**。
 
 ![Crop 面板](docs/assets/panel.png)
 
+会话内右栏 tab 只放数字；看趋势和明细用 `crop serve` 的本地 dashboard：
+
+![Crop dashboard](docs/assets/dashboard.png)
+
 ## 它做三件事
 
 | 动作 | 说明 |
