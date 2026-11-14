@@ -77,6 +77,30 @@ class StatusViewTest(unittest.TestCase):
         self.assertIn("[crop]", line)
         self.assertIn("把探针开源", line)
 
+    def test_work_status_line_prefers_recent(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "t-old", "summary": "旧任务", "goal": "旧目标"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        core.record_report({"phase": "start", "task_id": "t-new", "summary": "新任务", "goal": "新目标"},
+                           {"sid": "s2", "workspace": "/tmp/ws"})
+        value = core.load_open()
+        value["tasks"]["t-old"]["last_seen_at"] = 1000
+        value["tasks"]["t-new"]["last_seen_at"] = 2000
+        core.save_open(value)
+        self.assertIn("新目标", core.work_status_line("/tmp/ws"))
+
+    def test_work_status_line_prefers_same_session(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "t-old", "summary": "旧任务", "goal": "旧目标"},
+                           {"sid": "s-me", "workspace": "/tmp/ws"})
+        core.record_report({"phase": "start", "task_id": "t-new", "summary": "新任务", "goal": "新目标"},
+                           {"sid": "s-other", "workspace": "/tmp/ws"})
+        value = core.load_open()
+        value["tasks"]["t-old"]["last_seen_at"] = 1000
+        value["tasks"]["t-new"]["last_seen_at"] = 2000
+        core.save_open(value)
+        self.assertIn("旧目标", core.work_status_line("/tmp/ws", "s-me"))
+
     def test_suspend_resume_archive(self):
         core = self.core
         core.record_report({"phase": "start", "task_id": "w1", "summary": "做设计", "goal": "目标"},

@@ -59,7 +59,7 @@ def dispatch(payload: dict):
     if op == "maybe_reminder":
         return core.maybe_reminder(sid)
     if op == "work_status":
-        return core.work_status_line(workspace)
+        return core.work_status_line(workspace, sid)
     if op == "work_suspend":
         return core.set_work_state(payload.get("work_id") or "", "suspended")
     if op == "work_resume":

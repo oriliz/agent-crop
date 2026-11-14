@@ -292,13 +292,22 @@ def save_open(value: dict) -> None:
     write_json(paths()["open"], value)
 
 
-def open_tasks(workspace: str | None = None, limit: int = 3) -> list[dict]:
+def open_tasks(workspace: str | None = None, limit: int = 3, sid: str | None = None) -> list[dict]:
+    """Open tasks, best candidate first.
+
+    Rank: same session > same workspace > most recently touched.
+    Sorting by workspace alone is not enough: when every task shares a workspace
+    the stable sort keeps the dict's insertion order, so the oldest task wins.
+    """
     value = load_open()
     tasks = [task for task in value.get("tasks", {}).values() if task.get("status", "open") == "open"]
-    if workspace:
-        tasks.sort(key=lambda task: 0 if task.get("workspace") == workspace else 1)
-    else:
-        tasks.sort(key=lambda task: task.get("last_seen_at", 0), reverse=True)
+
+    def rank(task: dict) -> tuple:
+        same_session = 0 if (sid and task.get("last_sid") == sid) else 1
+        same_workspace = 0 if (not workspace or task.get("workspace") == workspace) else 1
+        return (same_session, same_workspace, -float(task.get("last_seen_at", 0)))
+
+    tasks.sort(key=rank)
     return tasks[:limit]
 
 
@@ -316,6 +325,8 @@ def _upsert_task(report: dict, workspace: str) -> None:
     }
     task["last_seen_at"] = report["t"]
     task["last_phase"] = report["phase"]
+    if report.get("sid"):
+        task["last_sid"] = report["sid"]
     task["summary"] = report.get("summary") or task.get("summary", "")
     if report.get("cause"):
         task["cause"] = report["cause"]
@@ -739,9 +750,9 @@ def format_status(summary: dict) -> str:
     return "\n".join(lines)
 
 
-def work_status_line(workspace: str | None = None) -> str:
+def work_status_line(workspace: str | None = None, sid: str | None = None) -> str:
     """One line for the turn-start injection: current work and how stale it is."""
-    tasks = open_tasks(workspace, 3)
+    tasks = open_tasks(workspace, 3, sid)
     if not tasks:
         return ""
     task = tasks[0]
