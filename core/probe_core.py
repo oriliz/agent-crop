@@ -301,7 +301,10 @@ def open_tasks(workspace: str | None = None, limit: int = 3, sid: str | None = N
     the stable sort keeps the dict's insertion order, so the oldest task wins.
     """
     value = load_open()
-    tasks = [task for task in value.get("tasks", {}).values() if task.get("status", "open") == "open"]
+    tasks = [
+        task for task in value.get("tasks", {}).values()
+        if task.get("status", "open") == "open" and task.get("state", "open") == "open"
+    ]
 
     def rank(task: dict) -> tuple:
         same_session = 0 if (sid and task.get("last_sid") == sid) else 1

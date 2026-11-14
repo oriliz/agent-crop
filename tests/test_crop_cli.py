@@ -137,6 +137,14 @@ class StatusViewTest(unittest.TestCase):
         core.save_open(value)
         self.assertIn("旧目标", core.work_status_line("/tmp/ws", "s-me"))
 
+    def test_suspended_task_is_hidden_from_open(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "暂停我"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        self.assertTrue(core.set_work_state("t1", "suspended"))
+        ids = [t["task_id"] for t in core.open_tasks("/tmp/ws", 5)]
+        self.assertNotIn("t1", ids)
+
     def test_suspend_resume_archive(self):
         core = self.core
         core.record_report({"phase": "start", "task_id": "w1", "summary": "做设计", "goal": "目标"},
