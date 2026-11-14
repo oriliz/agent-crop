@@ -223,6 +223,22 @@ class StatusViewTest(unittest.TestCase):
         self.assertIn("w3", archived)
         self.assertNotIn("w3", core.load_open()["tasks"])
 
+    def test_work_level_reminder_fires_past_sixty_percent(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "w9", "summary": "慢活", "goal": "慢活"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        original = core.work_health
+        core.work_health = lambda work_id=None: {
+            "work_id": "w9", "goal": "慢活", "minutes": 25.0,
+            "baseline": 30.0, "ratio": 0.83, "level": "yellow",
+        }
+        try:
+            text = core.maybe_work_reminder("s1")
+        finally:
+            core.work_health = original
+        self.assertIn("[crop]", text)
+        self.assertIn("verdict", text)
+
     def test_period_summary_counts_blocks(self):
         core = self.core
         core.record_prompt("s1", "开工", "/tmp/ws")

@@ -625,14 +625,42 @@ def record_session_end(sid: str) -> None:
     append_event({"ev": "session_end", "sid": sid})
 
 
+def _latest_work_for_session(sid: str) -> str | None:
+    for event in reversed(load_events(sid=sid)):
+        if event.get("ev") == "probe_report" and event.get("task_id"):
+            return str(event["task_id"])
+    return None
+
+
+def maybe_work_reminder(sid: str) -> str:
+    """Work-level red line: the current work is past 60% of its baseline."""
+    config = load_config()
+    task_id = _latest_work_for_session(sid)
+    if not task_id:
+        return ""
+    health = work_health(task_id)
+    if not health or health["minutes"] < 0.6 * health["baseline"]:
+        return ""
+    for event in reversed(load_events(sid=sid)):
+        if event.get("ev") == "reminder" and event.get("work_id") == task_id:
+            if now_ms() - int(event.get("t") or 0) < float(config["remind_min"]) * 60000:
+                return ""
+            break
+    append_event({
+        "ev": "reminder", "sid": sid, "work_id": task_id,
+        "minutes": health["minutes"], "kind": "work",
+    })
+    return format_work_reminder(health, config)
+
+
 def maybe_reminder(sid: str) -> str:
     config = load_config()
     start = current_block_start(sid)
     if not start:
-        return ""
+        return maybe_work_reminder(sid)
     minutes = max(0.0, (now_ms() - start) / 60000.0)
     if minutes < float(config["red_min"]):
-        return ""
+        return maybe_work_reminder(sid)
     last = None
     for event in reversed(load_events(sid=sid)):
         if event.get("ev") == "reminder" and event.get("block_start") == start:
@@ -1421,3 +1449,16 @@ def work_health(work_id: str | None = None) -> dict | None:
         "ratio": ratio,
         "level": level,
     }
+
+
+def format_work_reminder(health: dict, config: dict) -> str:
+    minutes = health.get("minutes", 0)
+    baseline = health.get("baseline", 0)
+    goal = health.get("goal") or health.get("work_id")
+    return "\n".join([
+        f"[crop] 这个工作已经 {minutes:.0f} 分钟（基线 {baseline:.0f}，{health.get('ratio', 0):.2f}×）。",
+        f"工作：{goal}",
+        "请判断这次偏慢是不是合理，并调用 probe_report 写一行：",
+        '- cause="为什么这么久"',
+        '- verdict="justified"（任务本身难）或 "not-justified"（自己走错路）',
+    ])
