@@ -78,6 +78,28 @@ Agent Crop 把这件事记了下来：同一个命令反复翻 help、反复试�
 
 ---
 
+## 一次工作长什么样
+
+```mermaid
+flowchart LR
+    A[你发消息] --> B[开始计时]
+    B --> C[AI 干活]
+    C -->|每次工具调用| D[记一笔]
+    C --> E{超过红线?}
+    E -->|是| F[注入一行提醒]
+    F --> G[AI 即刻反思]
+    G --> C
+    E -->|否| H[回合结束]
+    H --> I[记时长 / 失败 / 返工]
+    I --> J[收工: 三句小结]
+    J --> K[周报 / 月报]
+    K --> C
+```
+
+那条回到「AI 干活」的环，就是马鞭：提醒 → 反思 → 改工作方式 → 再干。
+
+---
+
 ## Crop 和传统 Trace 的对比
 
 | 维度 | 传统 Trace | Agent Crop |
@@ -101,24 +123,7 @@ dsh plugin --profile <你的 profile> add ~/agent-crop
 
 装完不用改配置、不用动 `AGENTS.md`——协议通过插件注册进系统提示，卸载时自动移除。
 
-<details>
-<summary>其他宿主（Claude Code / Qoder / Codex）</summary>
-
-```bash
-# Claude Code
-claude plugin marketplace add ~/agent-crop
-claude plugin install ai-coding-efficiency-kit@ai-coding-kit -s user
-
-# Qoder
-qodercli plugin validate ~/agent-crop && qodercli plugin install ~/agent-crop
-
-# Codex：只接线，采集未适配，不产生指标
-codex plugin marketplace add ~/agent-crop && codex plugin add ai-coding-efficiency-kit@ai-coding-kit
-```
-
-完整说明见 [docs/INSTALL.md](docs/INSTALL.md)。
-
-</details>
+Claude Code / Qoder / Codex 的装法见 [docs/INSTALL.md](docs/INSTALL.md)。Codex 目前只接线，不产生指标。
 
 自检：
 
@@ -133,7 +138,6 @@ tail -1 ~/.agentcrop/data/events.jsonl   # 应出现 "host":"dsh"
 ln -sf ~/agent-crop/bin/crop /usr/local/bin/crop
 ```
 
-![Crop dashboard](docs/assets/dashboard.png)
 
 卸载：
 
@@ -147,8 +151,6 @@ dsh plugin --profile <你的 profile> remove ai-coding-efficiency-kit-dsh
 ---
 
 ## 它记了什么、在哪记
-
-采集分两路：机器记事实，AI 报判断。
 
 ### 宿主自动记
 
