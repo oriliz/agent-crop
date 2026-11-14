@@ -138,11 +138,10 @@ tail -1 ~/.agentcrop/data/events.jsonl   # 应出现 "host":"dsh"
 ln -sf ~/agent-crop/bin/crop /usr/local/bin/crop
 ```
 
-
 卸载：
 
 ```bash
-dsh plugin --profile <你的 profile> remove ai-coding-efficiency-kit-dsh
+dsh plugin --profile <你的 profile> remove agent-crop-dsh
 # Claude: claude plugin uninstall ai-coding-efficiency-kit
 ```
 
