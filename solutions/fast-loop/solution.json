@@ -1,0 +1,10 @@
+{
+  "id": "fast-loop",
+  "name": "开工三件套 + 强制拆分并行（skill + 规则块）",
+  "problem": "设计反复、串行等待、老坑重踩",
+  "status": "未验证",
+  "events": [],
+  "builtin": false,
+  "install": "skill 随插件安装；规则块 rules/task-tempo.md 仅在自助安装时注入",
+  "evidence": "无对照实验"
+}

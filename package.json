@@ -1,0 +1,34 @@
+{
+  "name": "ai-coding-efficiency-kit-dsh",
+  "version": "0.4.0",
+  "description": "DSH plugin for the AI coding efficiency probe: native probe_report tool plus long-task reminders.",
+  "type": "module",
+  "main": "./dsh/lib/index.js",
+  "exports": {
+    ".": "./dsh/lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dsh",
+    "core",
+    "hooks",
+    "skills",
+    "rules",
+    "config",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./dsh/cordis.patch.yml"
+    },
+    "compatibility": {
+      "dsh": "0.2.1-rc.5",
+      "profiles": [
+        "web"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=22.19"
+  }
+}

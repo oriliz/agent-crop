@@ -1,0 +1,5 @@
+- insert:
+    - id: ai-coding-efficiency-kit-dsh
+      name: 'ai-coding-efficiency-kit-dsh'
+      config:
+        python: python3

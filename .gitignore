@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Node
+node_modules/
+*.log
+
+# Runtime data (never commit local metrics)
+data/
+*.lock
+
+# Local overrides
+.env
+config/kit.env

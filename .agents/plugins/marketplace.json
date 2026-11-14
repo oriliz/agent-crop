@@ -1,0 +1,20 @@
+{
+  "name": "ai-coding-kit",
+  "interface": {
+    "displayName": "AI Coding 提效套件"
+  },
+  "plugins": [
+    {
+      "name": "ai-coding-efficiency-kit",
+      "source": {
+        "source": "local",
+        "path": "."
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

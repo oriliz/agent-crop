@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ai-coding-kit",
+  "description": "Local marketplace for the AI coding efficiency probe.",
+  "owner": {
+    "name": "lizhi"
+  },
+  "plugins": [
+    {
+      "name": "ai-coding-efficiency-kit",
+      "source": "./",
+      "description": "本地 AI Coding 提效探针：长任务提醒 + probe_report 工具 + 共享任务数据。",
+      "category": "productivity"
+    }
+  ]
+}

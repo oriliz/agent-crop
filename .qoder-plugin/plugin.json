@@ -1,0 +1,23 @@
+{
+  "name": "ai-coding-efficiency-kit",
+  "displayName": "AI Coding 提效套件",
+  "version": "0.3.0",
+  "description": "本地探针 + 待验证提效方案：采集任务块时长与工具分布，按需启用方案，数据只落本机。",
+  "author": {
+    "name": "生意AI技术"
+  },
+  "keywords": [
+    "ai coding",
+    "提效",
+    "计时",
+    "复盘",
+    "看板",
+    "harness",
+    "hook"
+  ],
+  "hooks": "./hooks/qoder-hooks.json",
+  "skills": [
+    "./skills/fast-loop",
+    "./skills/html-report-loop"
+  ]
+}

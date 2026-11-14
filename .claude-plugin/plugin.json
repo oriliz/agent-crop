@@ -1,0 +1,9 @@
+{
+  "name": "ai-coding-efficiency-kit",
+  "version": "0.4.0",
+  "description": "本地 AI Coding 提效探针：机械计时长任务，让 AI 调用 probe_report 记录任务上下文；数据只落本机。",
+  "author": {
+    "name": "生意AI技术"
+  },
+  "hooks": "./hooks/claude-hooks.json"
+}
