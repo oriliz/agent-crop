@@ -566,14 +566,5 @@ def format_reminder(minutes: float, config: dict) -> str:
     return "\n".join(lines)
 
 
-def is_completion_message(text: str) -> bool:
-    if not isinstance(text, str):
-        return False
-    return bool(re.search(r"好了|可以了|完成了|搞定|没问题|结束吧|收工", text))
-
-
-def completion_hint() -> str:
-    return (
-        "[探针] 用户表示可以收尾了。如果这个任务确实完成，请调用 "
-        'probe_report(phase="end", task_id="...", summary="做完了什么")。'
-    )
+# Completion detection is intentionally model-side: keyword matching misfires on
+# questions and negations (2026-11-14: four false positives in one session).

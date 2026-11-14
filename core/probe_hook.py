@@ -79,8 +79,6 @@ def main() -> None:
         if first:
             tasks = core.open_tasks(workspace, core.load_config().get("max_open_tasks", 3))
             lines.append(core.format_start_hint(tasks))
-        elif core.is_completion_message(prompt):
-            lines.append(core.completion_hint())
         output_text("\n\n".join(line for line in lines if line))
         return
 

@@ -58,10 +58,6 @@ def dispatch(payload: dict):
         return core.format_open_tasks(tasks)
     if op == "maybe_reminder":
         return core.maybe_reminder(sid)
-    if op == "completion_hint":
-        return core.completion_hint()
-    if op == "is_completion":
-        return core.is_completion_message(payload.get("text") or "")
     if op == "first_prompt":
         return not any(event.get("ev") == "prompt" for event in core.load_events(sid=sid))
     raise ValueError(f"unknown op: {op}")
