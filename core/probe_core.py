@@ -1335,7 +1335,12 @@ def work_minutes(work_id: str) -> float:
         if not start:
             continue
         linked.append(start)
-        total += table.get(start, 0.0)
+        # JS block start and the core's prompt timestamp differ by milliseconds
+        best = None
+        for block_start, block_minutes in table.items():
+            if abs(block_start - start) <= 5000:
+                best = max(best or 0.0, block_minutes)
+        total += best or 0.0
 
     # the block that has not closed yet, on whichever session opened this work
     task = load_open().get("tasks", {}).get(work_id) or {}

@@ -96,7 +96,10 @@ window.__ModuleLoader__.load({
         h('div', null,
           h('div', { style: S.goal }, work ? work.goal || work.work_id : '本会话还没有工作'),
           h('div', { style: S.sub }, work ? `${work.work_id} · 进行中` : '')),
-        h('div', { style: S.timer }, work ? mmss(work.minutes) : '--:--'));
+        h('div', { style: { textAlign: 'right' } },
+          h('div', { style: S.timer },
+            work ? h('i', { style: { ...S.lamp(color), verticalAlign: 'middle', marginRight: '8px' } }) : null,
+            work ? mmss(work.minutes) : '--:--')));
 
       const verdictCard = h('div', { key: 'verdict', style: { ...S.card, borderLeftColor: verdict.color } },
         h('div', null,
