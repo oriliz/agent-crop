@@ -43,7 +43,7 @@
 
 Agent Crop 只是把对象换成了「人和 AI 一起干活」：
 
-![传统性能优化 vs Agent 工作范式优化](docs/assets/paradigm.png)
+![传统性能优化 vs Agent 工作范式优化：上半是一次请求的 span 瀑布，DB 查询最长；下半是一次工作的时间去向，等你回答最长](docs/assets/paradigm.jpg)
 
 上图是一次请求的 span，下图是一次工作的时间去向。四步不变：测量、归因、优化、验证。
 
