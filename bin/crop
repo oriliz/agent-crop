@@ -26,6 +26,10 @@ def main(argv: list[str] | None = None) -> int:
     status.add_argument("--json", action="store_true", help="输出 JSON")
     status.add_argument("--workspace", default=None, help="只看这个工作区的工作")
 
+    side = sub.add_parser("side", help="记一条支线（不改当前工作，不打断对话）")
+    side.add_argument("note")
+    side.add_argument("--suggest", default="later", choices=["later", "new-session", "ignore"])
+
     switch = sub.add_parser("switch", help="把当前会话的焦点切到一条工作（不改状态）")
     switch.add_argument("work_id")
 
@@ -59,6 +63,9 @@ def main(argv: list[str] | None = None) -> int:
             print(core.format_status(summary))
         return 0
 
+    if args.command == "side":
+        print("noted" if core.record_side_issue(args.note, args.suggest) else "empty")
+        return 0
     if args.command == "switch":
         sid = (core.read_runtime() or {}).get("sid") or ""
         print("switched" if core.switch_claim(args.work_id, sid) else "not found")

@@ -32,8 +32,9 @@ const CATEGORIES = [
 
 const PROTOCOL_TEXT = [
   'Crop 探针协议：',
-  '- 开工前用一句话回显这次工作的目标，并调用 probe_report(phase="start", task_id="<kebab>", summary="<一句话>") 登记。',
+  '- 开工先绑定工作：续接已有工作用 crop switch <work_id>，新开工作用 probe_report(phase="start", task_id="<kebab>", summary="<一句话>")。没绑定不要开始干活。',
   '- 收到 [crop] 提醒时，先对用户说一句人话，再调用 probe_report(phase="blocked" 或 "progress", ...)，写清卡在哪 / 为什么 / 证据。',
+  '- 与当前工作无关的问题：先用一句话回答，然后 crop side "<一句话>" 记为枝节并建议另开会话；不要顺手展开成新任务，除非用户明确要求现在做。',
   '- 用户表示满意或明确结束时调用 probe_report(phase="end", ...)，顺手写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',
 ].join('\n');
 

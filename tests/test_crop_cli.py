@@ -137,6 +137,26 @@ class StatusViewTest(unittest.TestCase):
         core.save_open(value)
         self.assertIn("旧目标", core.work_status_line("/tmp/ws", "s-me"))
 
+    def test_start_hint_requires_binding(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "甲"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        hint = core.format_start_hint(core.open_tasks("/tmp/ws", 3))
+        self.assertIn("绑定", hint)
+        self.assertIn("crop switch", hint)
+        self.assertIn("crop switch t1", hint)
+
+    def test_side_issue_does_not_change_claim(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "a", "summary": "甲", "goal": "甲"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        self.assertTrue(core.record_side_issue("DSH 不渲染 mermaid", "later"))
+        events = [e for e in core.load_events() if e.get("ev") == "side_issue"]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["suggest"], "later")
+        # 记录支线不改变当前工作
+        self.assertIn("甲", core.work_status_line("/tmp/ws", "s1"))
+
     def test_suspended_task_is_hidden_from_open(self):
         core = self.core
         core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "暂停我"},

@@ -649,12 +649,43 @@ def format_open_tasks(tasks: list[dict]) -> str:
 
 def format_start_hint(tasks: list[dict]) -> str:
     head = (
-        "[探针] 开工前先认一下任务：如果是新任务，调用 probe_report("
-        'phase="start", task_id="<kebab-slug>", summary="<一句话>")；'
-        "如果是续接，沿用已有 task_id。"
+        "[探针] 开工前先绑定工作（一句话说给用户，不用解释规则）：\n"
+        "- 续接下面某条：crop switch <work_id>\n"
+        '- 新开一条：probe_report(phase="start", task_id="<kebab-slug>", summary="<一句话>")\n'
+        "没绑定之前不要开始干活。"
     )
     body = format_open_tasks(tasks)
-    return head + ("\n" + body if body else "")
+    text = head + ("\n" + body if body else "")
+    if tasks:
+        text += f"\n拿不准就跟最近活跃的那条：crop switch {tasks[0].get('task_id')}"
+    return text
+
+
+def record_side_issue(note: str, suggest: str = "later") -> bool:
+    """Record an off-topic thread without moving the current work.
+
+    A side issue is a note, not a task: it must be cheap enough to record in the
+    middle of real work, and it must never steal the session's claim.
+    """
+    note = (note or "").strip()
+    if not note:
+        return False
+    runtime = read_runtime()
+    sid = str(runtime.get("sid") or "")
+    workspace = str(runtime.get("workspace") or os.getcwd())
+    active = ""
+    for task in open_tasks(workspace, 5, sid):
+        if sid and task.get("last_sid") == sid:
+            active = task.get("task_id", "")
+            break
+    append_event({
+        "ev": "side_issue",
+        "sid": sid,
+        "work_id": active,
+        "note": note[:200],
+        "suggest": suggest,
+    })
+    return True
 
 
 def format_reminder(minutes: float, config: dict) -> str:

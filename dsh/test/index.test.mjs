@@ -74,6 +74,14 @@ test('tool execute records a report through the Python core', async (t) => {
   assert.match(report, /"phase": "blocked"/);
 });
 
+test('protocol forbids starting work before claiming and forces side issues aside', async () => {
+  const source = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8');
+  assert.match(source, /crop switch/);
+  assert.match(source, /没绑定不要开始干活/);
+  assert.match(source, /记为枝节/);
+  assert.match(source, /不要顺手展开成新任务/);
+});
+
 test('agent/pre-step injects the start hint and a reminder', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
