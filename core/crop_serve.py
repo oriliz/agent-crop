@@ -82,6 +82,7 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(_summary(), ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -106,3 +107,13 @@ def serve(host: str = "127.0.0.1", port: int = 8765) -> None:
         pass
     finally:
         server.server_close()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Agent Crop local dashboard")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    options = parser.parse_args()
+    serve(options.host, options.port)

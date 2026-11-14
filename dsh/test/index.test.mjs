@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+process.env.KIT_DASHBOARD = '0';
+
 import { apply } from '../lib/index.js';
 
 function fakeCtx() {

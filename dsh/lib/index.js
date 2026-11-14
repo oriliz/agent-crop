@@ -5,7 +5,7 @@
  * This plugin only translates DSH session events into core calls and injects
  * the returned notes at the next model step.  Zero runtime dependencies.
  */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,7 @@ export const inject = ['tools'];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CORE_CLI = join(HERE, '..', '..', 'core', 'probe_core_cli.py');
+const DASHBOARD = join(HERE, '..', '..', 'core', 'crop_serve.py');
 
 const PHASES = ['start', 'progress', 'blocked', 'end'];
 const CATEGORIES = [
@@ -64,6 +65,22 @@ function createNotice(text) {
 export function apply(ctx, config = {}) {
   const python = config?.python || 'python3';
   const states = new Map();
+
+  let dashboard = null;
+  try {
+    if (process.env.KIT_DASHBOARD === '0') throw new Error('dashboard disabled');
+    dashboard = spawn(python, [DASHBOARD, '--host', '127.0.0.1', '--port', '8765'], {
+      stdio: 'ignore', detached: true,
+    });
+    dashboard.unref();
+    dashboard.on('error', () => { dashboard = null; });
+    dashboard.on('exit', () => { dashboard = null; });
+  } catch {
+    dashboard = null;
+  }
+  ctx.effect(() => () => {
+    try { dashboard?.kill(); } catch { /* already gone */ }
+  }, 'crop: dashboard server');
 
   // Persistent protocol section: assembled into the system prompt on every step,
   // removed automatically when the plugin is disposed (clean uninstall).

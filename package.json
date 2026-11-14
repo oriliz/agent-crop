@@ -6,6 +6,7 @@
   "main": "./dsh/lib/index.js",
   "exports": {
     ".": "./dsh/lib/index.js",
+    "./client": "./dsh/lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -25,6 +26,13 @@
       "dsh": "0.2.1-rc.5",
       "profiles": [
         "web"
+      ]
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-renderer"
       ]
     }
   },
