@@ -133,6 +133,9 @@ export function apply(ctx, config = {}) {
         cause: { type: 'string' },
         next: { type: 'string' },
         category: { type: 'string', enum: CATEGORIES },
+        goal: { type: 'string', description: 'One-line goal of this piece of work' },
+        type: { type: 'string', enum: ['design', 'implement', 'debug', 'docs'] },
+        difficulty: { type: 'string', enum: ['s', 'm', 'l'] },
       },
       required: ['phase', 'task_id', 'summary'],
     },
@@ -216,6 +219,11 @@ export function apply(ctx, config = {}) {
         return;
       }
 
+      if (event.type === 'compaction/end') {
+        state.forceInject = true;
+        return;
+      }
+
       if (event.type === 'turn/end') {
         callCore({ op: 'record_stop', context: { sid, workspace } });
         state.blockStart = null;
@@ -238,6 +246,7 @@ export function apply(ctx, config = {}) {
       const state = stateFor(sid);
       const notes = [];
 
+      const startedAlready = state.started;
       if (!state.started) {
         state.started = true;
         callCore({ op: 'record_session_start', context: { sid, workspace } });
@@ -248,6 +257,13 @@ export function apply(ctx, config = {}) {
       if (state.pending.length) {
         notes.push(...state.pending);
         state.pending = [];
+      }
+
+      // Turn-start (step 1) or post-compaction: one line of current work state.
+      if (startedAlready && (payload.step === 1 || state.forceInject)) {
+        state.forceInject = false;
+        const status = callCore({ op: 'work_status', context: { sid, workspace } });
+        if (status) notes.push(status);
       }
 
       const reminder = callCore({ op: 'maybe_reminder', context: { sid, workspace } });

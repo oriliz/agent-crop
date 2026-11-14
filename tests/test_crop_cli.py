@@ -41,6 +41,17 @@ class StatusViewTest(unittest.TestCase):
         self.assertIn("Crop 状态", text)
         self.assertIn("今日事件", text)
 
+    def test_work_status_line_has_goal(self):
+        core = self.core
+        core.record_report(
+            {"phase": "start", "task_id": "t1", "summary": "做设计",
+             "goal": "把探针开源", "type": "design", "difficulty": "m"},
+            {"sid": "s1", "workspace": "/tmp/ws"},
+        )
+        line = core.work_status_line("/tmp/ws")
+        self.assertIn("[crop]", line)
+        self.assertIn("把探针开源", line)
+
     def test_cli_json_output(self):
         out = subprocess.run(
             [sys.executable, os.path.join(ROOT, "bin", "crop"), "status", "--json"],

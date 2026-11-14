@@ -106,3 +106,29 @@ test('registers the crop protocol as a system prompt section', () => {
   assert.equal(typeof sections[0].order, 'number');
   assert.ok(sections[0].text.includes('probe_report'));
 });
+
+test('injects the work status line at turn start', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const session = fakeSession('s-turn');
+  const event = ctx.handlers.get('session/event');
+  const preStep = ctx.handlers.get('agent/pre-step');
+  event(session, {
+    type: 'user/message',
+    data: { source: { kind: 'user' }, content: [{ type: 'text', text: '开始' }] },
+  });
+
+  const tool = ctx.registered[0];
+  await tool.execute(
+    { phase: 'start', task_id: 'open-crop', summary: '把探针开源', goal: '把探针开源', type: 'design', difficulty: 'm' },
+    { agent: { session } },
+  );
+
+  await preStep({ agent: { session }, turn: 1, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
+  const decision = await preStep({ agent: { session }, turn: 2, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
+  assert.ok(decision.messages.some((message) => message.content[0].text.includes('[crop]')));
+});

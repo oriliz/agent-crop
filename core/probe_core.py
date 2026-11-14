@@ -39,6 +39,8 @@ CATEGORIES = (
     "human-wait",
     "other",
 )
+WORK_TYPES = ("design", "implement", "debug", "docs")
+DIFFICULTIES = ("s", "m", "l")
 MAX_TEXT = 600
 MAX_EVENTS_READ = 4000
 
@@ -317,6 +319,12 @@ def _upsert_task(report: dict, workspace: str) -> None:
         task["next"] = report["next"]
     if report.get("category"):
         task["category"] = report["category"]
+    if report.get("goal"):
+        task["goal"] = report["goal"]
+    if report.get("type"):
+        task["type"] = report["type"]
+    if report.get("difficulty"):
+        task["difficulty"] = report["difficulty"]
     if not task.get("title") or task["title"] == task_id:
         task["title"] = report.get("summary") or task_id
     task["status"] = "open"
@@ -373,6 +381,13 @@ def validate_report(args: dict) -> dict:
     category = _text(args.get("category"), "category").lower()
     if category and category not in CATEGORIES:
         raise ValueError(f"category must be one of {', '.join(CATEGORIES)}")
+    goal = _text(args.get("goal"), "goal")
+    work_type = _text(args.get("type"), "type").lower()
+    if work_type and work_type not in WORK_TYPES:
+        raise ValueError(f"type must be one of {', '.join(WORK_TYPES)}")
+    difficulty = _text(args.get("difficulty"), "difficulty").lower()
+    if difficulty and difficulty not in DIFFICULTIES:
+        raise ValueError(f"difficulty must be one of {', '.join(DIFFICULTIES)}")
     if phase == "blocked" and (not cause or not category):
         raise ValueError("blocked reports require both cause and category")
     return {
@@ -382,6 +397,9 @@ def validate_report(args: dict) -> dict:
         "cause": cause,
         "next": nxt,
         "category": category,
+        "goal": goal,
+        "type": work_type,
+        "difficulty": difficulty,
     }
 
 
@@ -413,6 +431,9 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         "cause": report["cause"],
         "next": report["next"],
         "category": report["category"],
+        "goal": report.get("goal", ""),
+        "type": report.get("type", ""),
+        "difficulty": report.get("difficulty", ""),
         "turn": context.get("turn"),
         "step": context.get("step"),
         "block_start": block_start,
@@ -639,3 +660,17 @@ def format_status(summary: dict) -> str:
         lines.append("进行中的工作：无")
     lines.append(f"数据目录  {summary.get('data_dir', '')}")
     return "\n".join(lines)
+
+
+def work_status_line(workspace: str | None = None) -> str:
+    """One line for the turn-start injection: current work and how stale it is."""
+    tasks = open_tasks(workspace, 3)
+    if not tasks:
+        return ""
+    task = tasks[0]
+    aim = task.get("goal") or task.get("title") or task.get("task_id")
+    stale = ago(task.get("last_seen_at", 0))
+    return (
+        f"[crop] 当前工作：{aim}（{task.get('task_id')}）；上次更新 {stale}。"
+        "状态有变就调 probe_report 更新一行。"
+    )
