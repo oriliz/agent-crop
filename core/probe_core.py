@@ -568,3 +568,74 @@ def format_reminder(minutes: float, config: dict) -> str:
 
 # Completion detection is intentionally model-side: keyword matching misfires on
 # questions and negations (2026-11-14: four false positives in one session).
+
+
+# ---------------------------------------------------------------------------
+# Status view (crop status)
+
+
+def _start_of_today_ms() -> int:
+    now = datetime.now()
+    return int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+
+
+def status_summary(workspace: str | None = None) -> dict:
+    runtime = read_runtime()
+    sid = str(runtime.get("sid") or "")
+    events = load_events(limit=5000, sid=sid) if sid else []
+    today = [event for event in events if int(event.get("t") or 0) >= _start_of_today_ms()]
+    kinds: dict[str, int] = {}
+    for event in today:
+        kind = str(event.get("ev") or "unknown")
+        kinds[kind] = kinds.get(kind, 0) + 1
+    block_start = runtime.get("block_start")
+    minutes = 0.0
+    if block_start:
+        try:
+            minutes = max(0.0, (now_ms() - int(block_start)) / 60000.0)
+        except Exception:
+            minutes = 0.0
+    config = load_config()
+    return {
+        "host": host(),
+        "sid": sid,
+        "workspace": runtime.get("workspace", ""),
+        "current_block_minutes": round(minutes, 1),
+        "red_min": float(config["red_min"]),
+        "today_events": len(today),
+        "today_by_kind": kinds,
+        "open_tasks": open_tasks(workspace, 5),
+        "data_dir": data_dir(),
+    }
+
+
+def format_status(summary: dict) -> str:
+    lines = [
+        f"Crop 状态 — {summary.get('host', 'unknown')}  "
+        f"{datetime.now().strftime('%Y-%m-%d %H:%M')}",
+    ]
+    minutes = summary.get("current_block_minutes", 0)
+    red = summary.get("red_min", 30)
+    if minutes:
+        flag = "（超红线）" if minutes >= red else ""
+        lines.append(f"当前任务块  {minutes:.0f} 分钟{flag} / 红线 {red:.0f}")
+    else:
+        lines.append("当前任务块  空闲")
+    kinds = summary.get("today_by_kind") or {}
+    order = ("prompt", "tool", "stop", "reminder", "probe_report", "session_start")
+    parts = [f"{name} {kinds[name]}" for name in order if kinds.get(name)]
+    extra = sum(v for k, v in kinds.items() if k not in order)
+    if extra:
+        parts.append(f"其它 {extra}")
+    lines.append(f"今日事件  {summary.get('today_events', 0)} 条" + ("：" + "、".join(parts) if parts else ""))
+    tasks = summary.get("open_tasks") or []
+    if tasks:
+        lines.append("进行中的工作：")
+        for task in tasks:
+            title = task.get("title") or task.get("summary") or task.get("task_id")
+            nxt = task.get("next") or "未记录"
+            lines.append(f"  - {task.get('task_id')} — {title}（下一步：{nxt}）")
+    else:
+        lines.append("进行中的工作：无")
+    lines.append(f"数据目录  {summary.get('data_dir', '')}")
+    return "\n".join(lines)
