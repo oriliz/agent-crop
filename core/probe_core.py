@@ -798,6 +798,28 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
 # Work state machine: open -> suspended -> archived
 
 
+def switch_claim(work_id: str, sid: str) -> bool:
+    """Point this session at another work without touching its state.
+
+    Focus and state are different things: switching away from a work does not
+    mean it is suspended. Only the claim moves; the other task stays open.
+    """
+    if not sid:
+        return False
+    value = load_open()
+    tasks = value.setdefault("tasks", {})
+    target = tasks.get(normalize_task_id(work_id))
+    if not target:
+        return False
+    for other in tasks.values():
+        if other is not target and other.get("last_sid") == sid:
+            other.pop("last_sid", None)
+    target["last_sid"] = sid
+    save_open(value)
+    append_event({"ev": "work_claim", "work_id": target["task_id"], "sid": sid})
+    return True
+
+
 def set_work_state(work_id: str, state: str) -> bool:
     work_id = normalize_task_id(work_id)
     value = load_open()

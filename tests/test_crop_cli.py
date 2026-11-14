@@ -145,6 +145,19 @@ class StatusViewTest(unittest.TestCase):
         ids = [t["task_id"] for t in core.open_tasks("/tmp/ws", 5)]
         self.assertNotIn("t1", ids)
 
+    def test_switch_moves_focus_without_state_change(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "a", "summary": "甲", "goal": "甲"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        core.record_report({"phase": "start", "task_id": "b", "summary": "乙", "goal": "乙"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        self.assertIn("乙", core.work_status_line("/tmp/ws", "s1"))
+        self.assertTrue(core.switch_claim("a", "s1"))
+        self.assertIn("甲", core.work_status_line("/tmp/ws", "s1"))
+        tasks = core.load_open()["tasks"]
+        self.assertEqual(tasks["a"].get("state", "open"), "open")
+        self.assertEqual(tasks["b"].get("state", "open"), "open")
+
     def test_suspend_resume_archive(self):
         core = self.core
         core.record_report({"phase": "start", "task_id": "w1", "summary": "做设计", "goal": "目标"},

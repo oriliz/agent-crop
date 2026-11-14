@@ -26,6 +26,9 @@ def main(argv: list[str] | None = None) -> int:
     status.add_argument("--json", action="store_true", help="输出 JSON")
     status.add_argument("--workspace", default=None, help="只看这个工作区的工作")
 
+    switch = sub.add_parser("switch", help="把当前会话的焦点切到一条工作（不改状态）")
+    switch.add_argument("work_id")
+
     suspend = sub.add_parser("suspend", help="把一条工作挂起（保留在册）")
     suspend.add_argument("work_id")
 
@@ -56,6 +59,10 @@ def main(argv: list[str] | None = None) -> int:
             print(core.format_status(summary))
         return 0
 
+    if args.command == "switch":
+        sid = (core.read_runtime() or {}).get("sid") or ""
+        print("switched" if core.switch_claim(args.work_id, sid) else "not found")
+        return 0
     if args.command == "suspend":
         print("suspended" if core.set_work_state(args.work_id, "suspended") else "not found")
         return 0
