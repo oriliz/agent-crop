@@ -67,7 +67,8 @@ test('tool execute records a report through the Python core', async (t) => {
   assert.equal(result.turn, 2);
   assert.equal(result.step, 3);
 
-  const day = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const report = await readFile(join(directory, 'reports', `${day}.jsonl`), 'utf8');
   assert.match(report, /"host": "dsh"/);
   assert.match(report, /"phase": "blocked"/);
@@ -153,7 +154,8 @@ test('tool results record the tool name captured from tool/call', async (t) => {
     data: { message: { toolCallId: 'call-1' }, turn: 1, step: 1 },
   });
 
-  const day = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const text = await readFile(join(directory, 'events.jsonl'), 'utf8');
   const tools = text.trim().split('\n').map((line) => JSON.parse(line)).filter((row) => row.ev === 'tool');
   assert.equal(tools.at(-1).name, 'Bash');
