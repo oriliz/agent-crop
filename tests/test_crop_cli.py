@@ -87,6 +87,8 @@ class StatusViewTest(unittest.TestCase):
         line = core.work_status_line("/tmp/ws", "s1")
         self.assertIn("当前工作", line)
         self.assertIn("把探针开源", line)
+        # 认领之后不再劝它认领
+        self.assertNotIn("认领", line)
         # 别的会话看到的是候选列表，不是别人的“当前工作”
         other = core.work_status_line("/tmp/ws", "s2")
         self.assertNotIn("当前工作", other)
