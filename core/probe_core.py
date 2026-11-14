@@ -531,8 +531,28 @@ def current_block_start(sid: str) -> int | None:
     return None
 
 
+REPEAT_TOOL_THRESHOLD = int(os.environ.get("KIT_REPEAT_TOOL", "5"))
+
+
 def record_tool(sid: str, name: str, is_error: bool) -> None:
-    append_event({"ev": "tool", "sid": sid, "name": str(name or "")[:80], "is_error": bool(is_error)})
+    tool = str(name or "")[:80]
+    append_event({"ev": "tool", "sid": sid, "name": tool, "is_error": bool(is_error)})
+    try:
+        start = current_block_start(sid)
+        recent = [
+            event for event in load_events(sid=sid)
+            if event.get("ev") == "tool" and (not start or int(event.get("t") or 0) >= start)
+        ]
+        tail = recent[-REPEAT_TOOL_THRESHOLD:]
+        if len(tail) >= REPEAT_TOOL_THRESHOLD and all(event.get("name") == tool for event in tail):
+            failures = sum(1 for event in tail if event.get("is_error"))
+            append_event({
+                "ev": "rework_signal", "sid": sid, "work_id": "",
+                "kind": "repeat-tool", "tool": tool,
+                "count": len(tail), "failures": failures,
+            })
+    except Exception:
+        pass
 
 
 def record_stop(sid: str) -> None:
@@ -881,3 +901,101 @@ def format_report(summary: dict) -> str:
     lines.append("")
     lines.append("（以上为事实层，文字版由 Agent 任务改写。）")
     return "\n".join(lines)
+
+
+def daily_breakdown(days: float = 14.0, now: int | None = None) -> list[dict]:
+    end = now if now is not None else now_ms()
+    start = end - int(days * 86400000)
+    events = _events_between(start, end)
+    buckets: dict[str, dict] = {}
+    for event in events:
+        stamp = int(event.get("t") or 0)
+        day = datetime.fromtimestamp(stamp / 1000).strftime("%Y-%m-%d")
+        bucket = buckets.setdefault(day, {
+            "date": day, "events": 0, "blocks": 0, "minutes": 0.0,
+            "tools": 0, "failures": 0, "waits": 0, "rework": 0, "works": set(),
+        })
+        bucket["events"] += 1
+        kind = event.get("ev")
+        if kind == "stop":
+            bucket["blocks"] += 1
+            bucket["minutes"] += float(event.get("minutes") or 0)
+        elif kind == "tool":
+            bucket["tools"] += 1
+            if event.get("is_error"):
+                bucket["failures"] += 1
+        elif kind == "user_wait":
+            bucket["waits"] += 1
+        elif kind == "rework_signal":
+            bucket["rework"] += 1
+        elif kind == "probe_report":
+            work_id = event.get("work_id") or event.get("task_id")
+            if work_id:
+                bucket["works"].add(work_id)
+    rows = []
+    for day, bucket in sorted(buckets.items()):
+        bucket["works"] = len(bucket["works"])
+        bucket["minutes"] = round(bucket["minutes"], 1)
+        rows.append(bucket)
+    return rows
+
+
+def similar_works(work_type: str, difficulty: str | None = None, days: float = 30.0) -> list[dict]:
+    end = now_ms()
+    start = end - int(days * 86400000)
+    reports = [
+        event for event in _events_between(start, end)
+        if event.get("ev") == "probe_report" and event.get("type") == work_type
+        and (not difficulty or event.get("difficulty") == difficulty)
+    ]
+    groups: dict[str, dict] = {}
+    for report in reports:
+        work_id = str(report.get("work_id") or "")
+        if not work_id:
+            continue
+        item = groups.setdefault(work_id, {"work_id": work_id, "minutes": 0.0, "updates": 0})
+        item["minutes"] += float(report.get("minutes") or 0)
+        item["updates"] += 1
+    return sorted(groups.values(), key=lambda item: item["minutes"], reverse=True)
+
+
+def day_detail(date: str, now: int | None = None) -> dict:
+    """Everything the dashboard needs for one day (YYYY-MM-DD)."""
+    try:
+        start = int(datetime.strptime(date, "%Y-%m-%d").timestamp() * 1000)
+    except Exception:
+        raise ValueError("date must be YYYY-MM-DD")
+    end = start + 86400000
+    events = [event for event in _events_between(start, end)]
+    tools: dict[str, int] = {}
+    failures = 0
+    blocks = []
+    works: dict[str, dict] = {}
+    for event in events:
+        kind = event.get("ev")
+        if kind == "tool":
+            tools[str(event.get("name") or "?")] = tools.get(str(event.get("name") or "?"), 0) + 1
+            if event.get("is_error"):
+                failures += 1
+        elif kind == "stop":
+            blocks.append({
+                "t": event.get("t"), "minutes": float(event.get("minutes") or 0),
+                "sid": event.get("sid"),
+            })
+        elif kind == "probe_report":
+            work_id = str(event.get("work_id") or event.get("task_id") or "")
+            if work_id:
+                item = works.setdefault(work_id, {"work_id": work_id, "goal": "", "minutes": 0.0, "updates": 0})
+                item["updates"] += 1
+                item["minutes"] = round(item["minutes"] + float(event.get("minutes") or 0), 1)
+                if event.get("goal"):
+                    item["goal"] = event["goal"]
+    return {
+        "date": date,
+        "events": len(events),
+        "blocks": len(blocks),
+        "minutes": round(sum(block["minutes"] for block in blocks), 1),
+        "failures": failures,
+        "tools": sorted(tools.items(), key=lambda pair: pair[1], reverse=True)[:10],
+        "works": sorted(works.values(), key=lambda item: item["minutes"], reverse=True),
+    }

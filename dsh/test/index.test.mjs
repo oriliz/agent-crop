@@ -134,3 +134,27 @@ test('injects the work status line at turn start', async (t) => {
   const decision = await preStep({ agent: { session }, turn: 2, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
   assert.ok(decision.messages.some((message) => message.content[0].text.includes('[crop]')));
 });
+
+test('tool results record the tool name captured from tool/call', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const session = fakeSession('s-tools');
+  const event = ctx.handlers.get('session/event');
+  event(session, {
+    type: 'tool/call',
+    data: { callId: 'call-1', name: 'Bash', turn: 1, step: 1, arguments: '{}' },
+  });
+  event(session, {
+    type: 'tool/result',
+    data: { message: { toolCallId: 'call-1' }, turn: 1, step: 1 },
+  });
+
+  const day = new Date().toISOString().slice(0, 10);
+  const text = await readFile(join(directory, 'events.jsonl'), 'utf8');
+  const tools = text.trim().split('\n').map((line) => JSON.parse(line)).filter((row) => row.ev === 'tool');
+  assert.equal(tools.at(-1).name, 'Bash');
+});

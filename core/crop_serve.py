@@ -21,63 +21,98 @@ header{padding:20px 28px;border-bottom:1px solid #23262d;display:flex;gap:16px;a
 h1{font-size:18px;margin:0;font-weight:600}
 .sub{color:#8b93a1;font-size:12px}
 main{padding:24px 28px;display:grid;gap:18px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px}
 .card{background:#161920;border:1px solid #23262d;border-radius:10px;padding:14px 16px}
 .card .k{color:#8b93a1;font-size:12px}
-.card .v{font-size:24px;font-weight:600;margin-top:4px}
+.card .v{font-size:22px;font-weight:600;margin-top:4px}
 section{background:#161920;border:1px solid #23262d;border-radius:10px;padding:16px}
 h2{font-size:13px;color:#8b93a1;margin:0 0 12px;font-weight:600;letter-spacing:.04em}
-.bars{display:flex;align-items:flex-end;gap:6px;height:120px}
-.bar{flex:1;background:#3b82f6;border-radius:3px 3px 0 0;min-height:2px}
-.labels{display:flex;gap:6px;color:#5b6270;font-size:10px;margin-top:6px}
-.labels span{flex:1;text-align:center}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #1e2128}
+th{color:#8b93a1;font-weight:500}
+tr.day{cursor:pointer}
+tr.day:hover{background:#1b1f27}
+.muted{color:#8b93a1}
 ul{margin:0;padding-left:18px}
 li{margin:4px 0}
-.muted{color:#8b93a1}
+#detail{white-space:pre-wrap}
 </style></head><body>
 <header><h1>Agent Crop</h1><span class="sub" id="asof"></span></header>
 <main>
   <div class="cards" id="cards"></div>
-  <section><h2>近 14 天 每分钟总量</h2><div class="bars" id="bars"></div><div class="labels" id="labels"></div></section>
-  <section><h2>最花时间的三个工作</h2><ul id="top"></ul></section>
+  <section><h2>近 14 天（点一行看当天明细）</h2>
+    <table><thead><tr><th>日期</th><th>回合</th><th>分钟</th><th>工具</th><th>失败</th><th>工作</th></tr></thead>
+    <tbody id="days"></tbody></table></section>
+  <section><h2>当天明细</h2><div id="detail" class="muted">点上面任意一行</div></section>
+  <section><h2>最花时间的三个工作（14 天）</h2><ul id="top"></ul></section>
   <section><h2>进行中的工作</h2><ul id="tasks"></ul></section>
 </main>
 <script>
+let current = null;
+async function showDay(date, row){
+  document.querySelectorAll('tr.day').forEach(el=>el.style.background='');
+  row.style.background='#1b1f27';
+  const r = await fetch('/api/day?date=' + date); const d = await r.json();
+  const tools = (d.tools||[]).map(([n,c])=>`${n}×${c}`).join('、') || '无';
+  const works = (d.works||[]).map(w=>`${w.goal||w.work_id}（${Math.round(w.minutes)} 分）`).join('、') || '无';
+  document.getElementById('detail').textContent =
+    `${d.date}：${d.blocks} 个回合，${Math.round(d.minutes)} 分钟，工具 ${d.events} 个事件，失败 ${d.failures} 次\n工具分布：${tools}\n涉及工作：${works}`;
+}
 async function load(){
   const r = await fetch('/api/summary'); const d = await r.json();
-  const s = d.status || {}, p = d.period || {};
+  const s = d.status||{}, p = d.period||{};
   document.getElementById('asof').textContent = 'updated ' + new Date().toLocaleTimeString();
   const cards = [
     ['当前任务块', (s.current_block_minutes||0).toFixed(0) + ' 分'],
-    ['今日事件', s.today_events || 0],
-    ['近 7 天回合', p.blocks || 0],
+    ['今日事件', s.today_events||0],
+    ['近 7 天回合', p.blocks||0],
     ['近 7 天时长', Math.round(p.total_minutes||0) + ' 分'],
     ['等你回话', Math.round((p.human_wait_ms||0)/60000) + ' 分'],
   ];
-  document.getElementById('cards').innerHTML = cards.map(([k,v]) =>
-    `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
-  const days = Object.keys(p.minutes_by_day||{});
-  const vals = Object.values(p.minutes_by_day||{});
-  const max = Math.max(1, ...vals);
-  document.getElementById('bars').innerHTML = vals.map(v =>
-    `<div class="bar" style="height:${Math.round(v/max*100)}%" title="${v} 分"></div>`).join('');
-  document.getElementById('labels').innerHTML = days.map(d => `<span>${d.slice(5)}</span>`).join('');
-  document.getElementById('top').innerHTML = (p.top_works||[]).map(w =>
-    `<li>${w.goal||w.work_id} <span class="muted">${Math.round(w.minutes)} 分</span></li>`).join('') || '<li class="muted">暂无</li>';
-  document.getElementById('tasks').innerHTML = (s.open_tasks||[]).map(t =>
-    `<li>${t.task_id} — ${t.title||t.summary||''}</li>`).join('') || '<li class="muted">暂无</li>';
+  document.getElementById('cards').innerHTML = cards.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  document.getElementById('days').innerHTML = (d.daily||[]).slice().reverse().map(row=>
+    `<tr class="day" data-date="${row.date}"><td>${row.date.slice(5)}</td><td>${row.blocks}</td><td>${Math.round(row.minutes)}</td><td>${row.tools}</td><td>${row.failures}</td><td>${row.works}</td></tr>`).join('');
+  document.querySelectorAll('tr.day').forEach(row=>row.addEventListener('click',()=>showDay(row.dataset.date,row)));
+  document.getElementById('top').innerHTML = (p.top_works||[]).map(w=>`<li>${w.goal||w.work_id} <span class="muted">${Math.round(w.minutes)} 分</span></li>`).join('') || '<li class="muted">暂无</li>';
+  document.getElementById('tasks').innerHTML = (s.open_tasks||[]).map(t=>`<li>${t.task_id} — ${t.title||t.summary||''}</li>`).join('') || '<li class="muted">暂无</li>';
 }
-load(); setInterval(load, 3000);
+load(); setInterval(load, 5000);
 </script></body></html>
 """
 
 
 def _summary() -> dict:
-    return {"status": core.status_summary(), "period": core.period_summary(14)}
+    return {
+        "status": core.status_summary(),
+        "period": core.period_summary(14),
+        "daily": core.daily_breakdown(14),
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
+        if self.path.startswith("/api/day"):
+            date = "1970-01-01"
+            if "date=" in self.path:
+                date = self.path.split("date=", 1)[1].split("&", 1)[0]
+            try:
+                payload = core.day_detail(date)
+            except Exception as error:
+                body = json.dumps({"error": str(error)}, ensure_ascii=False).encode()
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            body = json.dumps(payload, ensure_ascii=False).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/api/summary"):
             body = json.dumps(_summary(), ensure_ascii=False).encode()
             self.send_response(200)

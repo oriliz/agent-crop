@@ -96,7 +96,7 @@ export function apply(ctx, config = {}) {
   const stateFor = (sid) => {
     let state = states.get(sid);
     if (!state) {
-      state = { started: false, blockStart: null, pending: [], injected: new Set() };
+      state = { started: false, blockStart: null, pending: [], injected: new Set(), calls: new Map() };
       states.set(sid, state);
     }
     return state;
@@ -229,9 +229,18 @@ export function apply(ctx, config = {}) {
         return;
       }
 
+      if (event.type === 'tool/call') {
+        const callId = event.data?.callId;
+        const name = event.data?.name;
+        if (callId && name) state.calls.set(String(callId), String(name));
+        return;
+      }
+
       if (event.type === 'tool/result') {
         const isError = Boolean(event.data?.error || event.data?.message?.isError);
-        const toolName = event.data?.message?.toolCallId || event.data?.message?.source?.callId || 'tool';
+        const callId = event.data?.message?.toolCallId;
+        const toolName = (callId && state.calls.get(String(callId))) || 'tool';
+        if (callId) state.calls.delete(String(callId));
         callCore({ op: 'record_tool', context: { sid, workspace }, name: toolName, is_error: isError });
         return;
       }
