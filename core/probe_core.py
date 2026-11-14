@@ -18,7 +18,7 @@ import re
 import tempfile
 import time
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     import fcntl
@@ -348,6 +348,8 @@ def _upsert_task(report: dict, workspace: str) -> None:
     if not task.get("title") or task["title"] == task_id:
         task["title"] = report.get("summary") or task_id
     task["status"] = "open"
+    if report.get("sid"):
+        task["sid"] = report["sid"]
     tasks[task_id] = task
     save_open(value)
 
@@ -1203,8 +1205,36 @@ def session_summary(sid: str, now: int | None = None) -> dict:
                     })
     except Exception:
         recent = []
+    # works touched in this session, with health for each
+    ordered: list[str] = []
+    for report in reversed(reports):
+        task_id = str(report.get("task_id") or "")
+        if task_id and task_id not in ordered:
+            ordered.append(task_id)
+    session_works = []
+    for task_id in ordered[:6]:
+        health = work_health(task_id)
+        if health:
+            session_works.append(health)
+    active = session_works[0] if session_works else work_health()
+
+    latest_cause = ""
+    latest_category = ""
+    latest_at = 0
+    for report in reversed(reports):
+        if report.get("cause") or report.get("category"):
+            latest_cause = str(report.get("cause") or "")
+            latest_category = str(report.get("category") or "")
+            latest_at = int(report.get("t") or 0)
+            break
+
     return {
+        "latest_cause": latest_cause,
+        "latest_category": latest_category,
+        "latest_at": latest_at,
         "sid": sid,
+        "active_work": active,
+        "session_works": session_works,
         "recent_blocks": recent[-5:][::-1],
         "current_minutes": round(current, 1),
         "blocks": len(blocks),
@@ -1220,4 +1250,134 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         "latest_work": latest_work,
         "goal": goal,
         "today_events": len([e for e in events if int(e.get("t") or 0) >= day_start]),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Work health: active minutes, baseline, lamp
+
+DIFFICULTY_DEFAULT_MINUTES = {"s": 10.0, "m": 30.0, "l": 90.0}
+
+
+def _block_minutes(days: int = 5) -> dict[int, float]:
+    table: dict[int, float] = {}
+    for offset in range(days):
+        day = (datetime.now() - timedelta(days=offset)).strftime("%Y-%m-%d")
+        path = os.path.join(paths()["blocks_dir"], f"{day}.jsonl")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        row = json.loads(line)
+                    except Exception:
+                        continue
+                    start = int(row.get("start") or 0)
+                    if start:
+                        table[start] = float(row.get("minutes") or 0)
+        except Exception:
+            continue
+    return table
+
+
+def work_minutes(work_id: str) -> float:
+    """Active minutes of one work = closed linked blocks + the session's open block."""
+    table = _block_minutes()
+    events = load_events(limit=200000)
+    prompts = [(int(event.get("t") or 0), event.get("sid")) for event in events if event.get("ev") == "prompt"]
+
+    def sid_for(start: int):
+        # the JS block start and the Python prompt timestamp differ by milliseconds
+        for stamp, sid in prompts:
+            if abs(stamp - start) < 5000:
+                return sid
+        return None
+    total = 0.0
+    linked: list[int] = []
+    for event in events:
+        if event.get("ev") != "task_link" or event.get("task_id") != work_id:
+            continue
+        start = int(event.get("block_start") or 0)
+        if not start:
+            continue
+        linked.append(start)
+        total += table.get(start, 0.0)
+
+    # the block that has not closed yet, on whichever session opened this work
+    task = load_open().get("tasks", {}).get(work_id) or {}
+    sid = task.get("sid") or next((sid_for(start) for start in linked if sid_for(start)), None)
+    if sid:
+        open_start = None
+        for event in events:
+            if event.get("sid") != sid:
+                continue
+            if event.get("ev") == "prompt":
+                open_start = int(event.get("t") or 0)
+            elif event.get("ev") == "stop":
+                open_start = None
+        if open_start and open_start not in linked:
+            total += max(0.0, (now_ms() - open_start) / 60000.0)
+    return round(total, 1)
+
+
+def _all_known_works() -> list[dict]:
+    works = list(load_open().get("tasks", {}).values())
+    for folder in ("closed_dir", "archive_dir"):
+        directory = paths()[folder]
+        try:
+            for name in os.listdir(directory):
+                if not name.endswith(".jsonl"):
+                    continue
+                with open(os.path.join(directory, name), encoding="utf-8") as handle:
+                    for line in handle:
+                        try:
+                            works.append(json.loads(line))
+                        except Exception:
+                            continue
+        except Exception:
+            continue
+    return works
+
+
+def baseline_minutes(work_type: str | None, difficulty: str | None) -> tuple[float, str]:
+    """Median active minutes of same type x difficulty; defaults when too few samples."""
+    samples = []
+    if work_type and difficulty:
+        for task in _all_known_works():
+            if task.get("type") != work_type or task.get("difficulty") != difficulty:
+                continue
+            minutes = work_minutes(str(task.get("task_id") or ""))
+            if minutes > 0:
+                samples.append(minutes)
+    if len(samples) >= 3:
+        samples.sort()
+        middle = len(samples) // 2
+        median = samples[middle] if len(samples) % 2 else (samples[middle - 1] + samples[middle]) / 2
+        return round(median, 1), "history"
+    return float(DIFFICULTY_DEFAULT_MINUTES.get(difficulty or "m", 30.0)), "default"
+
+
+def work_health(work_id: str | None = None) -> dict | None:
+    works = [task for task in load_open().get("tasks", {}).values() if task.get("state", "open") == "open"]
+    if not works:
+        return None
+    if work_id:
+        task = next((item for item in works if item.get("task_id") == work_id), None)
+        if task is None:
+            return None
+    else:
+        task = max(works, key=lambda item: int(item.get("last_seen_at") or 0))
+    minutes = work_minutes(str(task.get("task_id") or ""))
+    baseline, source = baseline_minutes(task.get("type"), task.get("difficulty"))
+    ratio = round(minutes / baseline, 2) if baseline else 0.0
+    level = "green" if ratio < 0.6 else ("yellow" if ratio < 1.5 else "red")
+    return {
+        "work_id": task.get("task_id"),
+        "goal": task.get("goal") or task.get("title") or "",
+        "type": task.get("type") or "",
+        "difficulty": task.get("difficulty") or "",
+        "minutes": minutes,
+        "baseline": baseline,
+        "baseline_source": source,
+        "ratio": ratio,
+        "level": level,
     }
