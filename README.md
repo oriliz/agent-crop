@@ -154,16 +154,23 @@ AI 干活没有这层基础设施。你知道它跑了 40 分钟，但不知道�
 
 ### 二、AI 主动报（系统提示常驻 + 每回合一行兜底）
 
-| 字段 | 内容 | 性质 |
-|---|---|---|
-| `goal` / `type` | 这件事在干什么 | 判断 |
-| `summary` | 现在做到哪 | 判断 |
-| `cause` | 为什么慢 | 判断 |
-| `category` | 九类里的哪一类 | 判断 |
-| `next` | 下一步 | 判断 |
-| `work_summary` | 收工三句 | 判断 |
+| 字段 | 什么时候填 | 可能的值 | 性质 |
+|---|---|---|---|
+| `phase` | 每次上报 | `start` 开工 / `progress` 有进展 / `blocked` 卡住 / `end` 收工 | 判断 |
+| `task_id` | 每次上报 | 自己起的 kebab-case 名字，跨会话复用 | 标识 |
+| `summary` | 每次上报 | 一句话：现在在做什么 | 判断 |
+| `cause` | `blocked` 必填 | 一句话：为什么慢、卡在哪 | 判断 |
+| `next` | 可选 | 下一步的具体动作 | 判断 |
+| `category` | `blocked` 必填 | 九选一：`serial-wait` `repeat-pitfall` `design-churn` `decision-batching` `tool-misuse` `no-evidence` `spec-drift` `human-wait` `other` | 判断 |
+| `goal` | 开工时 | 一句话目标 | 判断 |
+| `type` | 开工时 | `design` / `implement` / `debug` / `docs` | 判断 |
+| `difficulty` | 开工时 | `s` / `m` / `l` | 判断 |
+
+`category` 不是自由文本，是枚举——填了不在表里的值，调用直接失败。九类词表是锁死的，不会越记越乱。
 
 这些只能是判断，不是事实——所以**自述永远不单独当结论**，要和自动采集的时间、失败数对照着看。
+
+收工时再写三句：做了什么 / 时间花在哪 / 下次怎么更好。
 
 ### 三、人
 
