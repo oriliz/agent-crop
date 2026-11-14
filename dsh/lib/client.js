@@ -1,12 +1,9 @@
 /**
  * DSH web client half for Agent Crop.
  *
- * Adds a "Crop" tab next to 对话 / 轨迹 in the conversation view. It is a
- * session-scoped reading surface: where the time went, what is off, and one
- * sentence about what to change. Numbers come from the local dashboard server.
- *
- * Hand-written in the client module system's lazy-CJS factory format, so the
- * package needs no build step.
+ * A "lap board" for one work session: the running round, the recent splits,
+ * and one sentence about what to change. It sits as a view tab next to 轨迹.
+ * Hand-written in the client module system's lazy-CJS factory format.
  */
 window.__ModuleLoader__.load({
   id: 'ai-coding-efficiency-kit-dsh',
@@ -19,20 +16,33 @@ window.__ModuleLoader__.load({
     const VIEW_ID = 'crop';
     const ENDPOINT = 'http://127.0.0.1:8765/api/session';
 
-    const ui = {
-      page: { padding: '20px 24px', display: 'grid', gap: '14px', maxWidth: '760px' },
-      row: { display: 'flex', alignItems: 'baseline', gap: '10px' },
-      label: { fontSize: '12px', opacity: 0.55, letterSpacing: '0.02em' },
-      big: { fontSize: '28px', fontWeight: 600, fontVariantNumeric: 'tabular-nums' },
-      mid: { fontSize: '18px', fontWeight: 600, fontVariantNumeric: 'tabular-nums' },
-      card: { border: '1px solid rgba(127,127,127,.22)', borderRadius: '10px', padding: '14px 16px' },
-      bar: { display: 'flex', height: '10px', borderRadius: '5px', overflow: 'hidden', marginTop: '10px', background: 'rgba(127,127,127,.15)' },
-      legend: { display: 'flex', gap: '16px', marginTop: '8px', fontSize: '12px', opacity: 0.7, flexWrap: 'wrap' },
-      dot: (color) => ({ display: 'inline-block', width: '8px', height: '8px', borderRadius: '4px', background: color, marginRight: '6px' }),
-      list: { margin: '8px 0 0', paddingLeft: '16px', fontSize: '13px' },
-      empty: { fontSize: '13px', opacity: 0.45, marginTop: '8px' },
-      hint: { fontSize: '12px', opacity: 0.45 },
+    const S = {
+      page: { padding: '22px 26px 26px', display: 'grid', gap: '18px', maxWidth: '720px', fontSize: '13px' },
+      head: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '16px' },
+      timer: { fontSize: '34px', fontWeight: 600, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' },
+      caption: { fontSize: '12px', opacity: 0.55, marginTop: '6px' },
+      redline: { fontSize: '12px', opacity: 0.55, fontVariantNumeric: 'tabular-nums' },
+      track: { height: '3px', background: 'currentColor', opacity: 0.12, position: 'relative', marginTop: '10px' },
+      fill: (percent, over) => ({ position: 'absolute', inset: '0 auto 0 0', width: `${Math.min(100, percent)}%`, background: over ? '#e5484d' : '#3b82f6', opacity: 1 }),
+      verdict: { borderLeft: '3px solid #3b82f6', padding: '2px 0 2px 12px', fontSize: '14px', lineHeight: 1.5 },
+      table: { width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' },
+      th: { textAlign: 'right', fontWeight: 500, fontSize: '11px', opacity: 0.5, padding: '0 0 6px', borderBottom: '1px solid currentColor' },
+      thLeft: { textAlign: 'left', fontWeight: 500, fontSize: '11px', opacity: 0.5, padding: '0 0 6px', borderBottom: '1px solid currentColor' },
+      td: { textAlign: 'right', padding: '6px 0', borderBottom: '1px solid rgba(127,127,127,.16)' },
+      tdLeft: { textAlign: 'left', padding: '6px 0', borderBottom: '1px solid rgba(127,127,127,.16)' },
+      mark: (live) => ({ display: 'inline-block', width: '6px', height: '6px', borderRadius: '3px', background: live ? '#3b82f6' : 'transparent', border: live ? 'none' : '1px solid rgba(127,127,127,.5)', marginRight: '8px', verticalAlign: 'middle' }),
+      warn: { color: '#e5484d' },
+      quiet: { fontSize: '12px', opacity: 0.5 },
+      chips: { display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '12px' },
+      chip: { border: '1px solid rgba(127,127,127,.35)', padding: '2px 8px', borderRadius: '3px' },
     };
+
+    function fmt(minutes) {
+      const value = Math.round((minutes || 0) * 60);
+      const m = Math.floor(value / 60);
+      const s = value % 60;
+      return `${m}:${String(s).padStart(2, '0')}`;
+    }
 
     function useSessionSummary(sessionId) {
       const [state, setState] = React.useState({ data: null, error: null });
@@ -54,86 +64,55 @@ window.__ModuleLoader__.load({
       return state;
     }
 
-    function conclusion(data) {
-      const share = data.share || {};
-      const wait = Math.round((share.wait || 0) * 100);
-      const anomalies = data.anomalies || [];
-      const failure = anomalies.find((item) => item.kind === 'failure');
-      const rework = anomalies.find((item) => item.kind === 'rework');
-      if (wait >= 25) return `时间主要在等你回话（${wait}%）——这不是 AI 慢，是节奏断了。`;
-      if (failure && failure.count >= 2) return `${failure.tool} 失败了 ${failure.count} 次，先看它，比继续跑更省时间。`;
-      if (rework) return `工具在反复重试（${rework.tool || '同一类'}），大概在原地打转。`;
-      if (data.failures > 0) return `有 ${data.failures} 次工具失败，没有集中在一处，属于正常损耗。`;
-      return '这一轮没有明显卡点。';
-    }
-
-    function Section({ title, children }) {
-      return h('div', { style: ui.card },
-        h('div', { style: ui.label }, title),
-        children);
+    function verdict(data) {
+      const wait = Math.round(((data.share || {}).wait || 0) * 100);
+      const failure = (data.anomalies || []).find((item) => item.kind === 'failure');
+      if (wait >= 25) return `花在等你回话的时间占 ${wait}%，这次慢不在 AI 身上。`;
+      if (failure && failure.count >= 2) return `${failure.tool} 失败 ${failure.count} 次，先看它比继续跑更省。`;
+      if (data.failures > 0) return `有 ${data.failures} 次工具失败，分散在不同工具上，属于正常损耗。`;
+      return '这一轮没有明显卡点，可以继续。';
     }
 
     function View({ sessionId }) {
       const { data, error } = useSessionSummary(sessionId);
       if (error || !data) {
-        return h('div', { style: ui.page },
-          h('div', { style: ui.label }, 'Crop'),
-          h('div', { style: ui.hint }, '数据服务没起来：先运行 crop serve（或重启 dsh）'));
+        return h('div', { style: S.page },
+          h('div', { style: S.timer }, '--:--'),
+          h('div', { style: S.quiet }, '数据服务没起来。运行 crop serve，或重启 dsh 后再看。'));
       }
-      const share = data.share || {};
-      const workPct = Math.round((share.work || 0) * 100);
-      const waitPct = Math.round((share.wait || 0) * 100);
-      const restPct = Math.max(0, 100 - workPct - waitPct);
-      const anomalies = data.anomalies || [];
-      const tools = data.tool_top || [];
-      return h('div', { style: ui.page },
-        // 1. what is happening now
+      const minutes = data.current_minutes || 0;
+      const percent = Math.round((minutes / 30) * 100);
+      const over = minutes >= 30;
+      const splits = data.recent_blocks || [];
+      return h('div', { style: S.page },
         h('div', null,
-          h('div', { style: ui.label }, data.latest_work ? `当前工作 · ${data.latest_work}` : '当前工作'),
-          h('div', { style: { fontSize: '15px', marginTop: '4px' } },
-            data.goal || '还没有登记目标（下次开工让 AI 回显一句）')),
-        // 2. the three numbers that matter
-        h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' } },
-          h('div', { style: ui.card },
-            h('div', { style: ui.label }, '进行中'),
-            h('div', { style: ui.big }, `${Math.round(data.current_minutes || 0)}m`),
-            h('div', { style: ui.hint }, `红线 30m`)),
-          h('div', { style: ui.card },
-            h('div', { style: ui.label }, '本会话'),
-            h('div', { style: ui.big }, `${Math.round(data.minutes || 0)}m`),
-            h('div', { style: ui.hint }, `${data.blocks} 个回合 · ${data.tools_total} 次工具`)),
-          h('div', { style: ui.card },
-            h('div', { style: ui.label }, '等你回话'),
-            h('div', { style: ui.big }, `${Math.round(data.wait_minutes || 0)}m`),
-            h('div', { style: ui.hint }, `${waitPct}% 的时间`))),
-        // 3. composition
-        h(Section, { title: '时间花在哪' },
-          h('div', { style: ui.bar },
-            h('div', { style: { width: `${workPct}%`, background: '#3b82f6' } }),
-            h('div', { style: { width: `${waitPct}%`, background: '#f59e0b' } }),
-            h('div', { style: { width: `${restPct}%`, background: 'rgba(127,127,127,.25)' } })),
-          h('div', { style: ui.legend },
-            h('span', null, h('i', { style: ui.dot('#3b82f6') }), `推进 ${workPct}%`),
-            h('span', null, h('i', { style: ui.dot('#f59e0b') }), `等你 ${waitPct}%`),
-            h('span', null, h('i', { style: ui.dot('rgba(127,127,127,.4)') }), `未细分 ${restPct}%`))),
-        // 4. what is off
-        h(Section, { title: '异常' },
-          anomalies.length
-            ? h('ul', { style: ui.list }, anomalies.map((item, index) =>
-                h('li', { key: index },
-                  item.kind === 'failure'
-                    ? `${item.tool} 失败 ${item.count} 次`
-                    : `${item.tool || '同一工具'} 连续调用 ${item.count} 次`)))
-            : h('div', { style: ui.empty }, '没有异常')),
-        // 5. where the calls went
-        h(Section, { title: '工具分布' },
-          tools.length
-            ? h('div', { style: { display: 'flex', gap: '14px', flexWrap: 'wrap', marginTop: '8px', fontSize: '13px' } },
-                tools.map(([name, count]) => h('span', { key: name }, `${name} ×${count}`)))
-            : h('div', { style: ui.empty }, '还没有工具调用')),
-        // 6. one sentence
-        h(Section, { title: '一句话' },
-          h('div', { style: { fontSize: '14px', marginTop: '6px' } }, conclusion(data))));
+          h('div', { style: S.head },
+            h('div', null,
+              h('div', { style: S.timer, ...(over ? S.warn : {}) }, fmt(minutes)),
+              h('div', { style: S.caption }, `这一轮 · ${data.latest_work || '未登记工作'}`)),
+            h('div', { style: S.redline }, `红线 ${fmt(30)}`)),
+          h('div', { style: S.track }, h('div', { style: S.fill(percent, over) }))),
+        h('div', { style: S.verdict }, verdict(data)),
+        h('div', null,
+          h('table', { style: S.table },
+            h('thead', null, h('tr', null,
+              h('th', { style: S.thLeft }, '最近几轮'),
+              h('th', { style: S.th }, '用时'),
+              h('th', { style: S.th }, '工具'),
+              h('th', { style: S.th }, '失败'))),
+            h('tbody', null, splits.length
+              ? splits.map((row, index) => h('tr', { key: index },
+                  h('td', { style: S.tdLeft }, h('i', { style: S.mark(index === 0) }), index === 0 ? '本轮结束' : `上 ${index} 轮`),
+                  h('td', { style: S.td }, fmt(row.minutes)),
+                  h('td', { style: S.td }, row.tools),
+                  h('td', { style: { ...S.td, ...(row.failed ? S.warn : {}) } }, row.failed)))
+              : h('tr', null, h('td', { style: S.tdLeft, colSpan: 4 }, h('span', { style: S.quiet }, '还没有完成的轮次')))))),
+        h('div', { style: S.chips },
+          h('span', { style: S.chip }, `本会话 ${fmt(data.minutes)}`),
+          h('span', { style: S.chip }, `${data.blocks} 轮`),
+          h('span', { style: S.chip }, `工具 ${data.tools_total} 次`),
+          h('span', { style: S.chip }, `失败 ${data.failures} 次`),
+          h('span', { style: S.chip }, `等你 ${fmt(data.wait_minutes)}`)));
     }
 
     function apply(ctx) {

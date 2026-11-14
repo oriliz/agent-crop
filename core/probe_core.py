@@ -1089,8 +1089,26 @@ def session_summary(sid: str, now: int | None = None) -> dict:
                 goal = report["goal"]
                 break
 
+    recent = []
+    try:
+        block_file = os.path.join(paths()["blocks_dir"], f"{today()}.jsonl")
+        with open(block_file, encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if row.get("sid") == sid:
+                    recent.append({
+                        "minutes": round(float(row.get("minutes") or 0), 1),
+                        "tools": int(row.get("tools") or 0),
+                        "failed": int(row.get("failed_tools") or 0),
+                    })
+    except Exception:
+        recent = []
     return {
         "sid": sid,
+        "recent_blocks": recent[-5:][::-1],
         "current_minutes": round(current, 1),
         "blocks": len(blocks),
         "minutes": round(block_minutes, 1),
