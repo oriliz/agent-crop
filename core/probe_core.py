@@ -37,6 +37,7 @@ CATEGORIES = (
     "no-evidence",
     "spec-drift",
     "human-wait",
+    "side-issue",
     "other",
 )
 WORK_START = os.environ.get("KIT_WORK_START", "10:00")
@@ -467,6 +468,21 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         "block_start": block_start,
         "minutes": round(minutes, 1),
     }
+    if report.get("category") == "side-issue":
+        # 支线只记账，不认领、不改任务、不新建工作
+        append_event({
+            "ev": "side_issue",
+            "t": record["t"],
+            "host": record["host"],
+            "sid": sid,
+            "workspace": workspace,
+            "work_id": report["task_id"],
+            "note": (report.get("summary") or "")[:200],
+            "suggest": report.get("next") or "later",
+        })
+        write_runtime(sid, workspace, block_start)
+        return {**record, "side_issue": True}
+
     append_jsonl(os.path.join(paths()["reports_dir"], f"{today()}.jsonl"), record)
     write_runtime(sid, workspace, block_start)
     append_event({**record, "ev": "probe_report"})

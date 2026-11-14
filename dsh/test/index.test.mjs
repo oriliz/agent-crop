@@ -77,9 +77,9 @@ test('tool execute records a report through the Python core', async (t) => {
 test('protocol forbids starting work before claiming and forces side issues aside', async () => {
   const source = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8');
   assert.match(source, /crop switch/);
-  assert.match(source, /没绑定不要开始干活/);
-  assert.match(source, /记为枝节/);
-  assert.match(source, /不要顺手展开成新任务/);
+  assert.match(source, /先绑定，再侦察/);
+  assert.match(source, /category="side-issue"/);
+  assert.match(source, /禁止新建任务/);
 });
 
 test('agent/pre-step injects the start hint and a reminder', async (t) => {

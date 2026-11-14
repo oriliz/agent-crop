@@ -146,6 +146,16 @@ class StatusViewTest(unittest.TestCase):
         self.assertIn("crop switch", hint)
         self.assertIn("crop switch t1", hint)
 
+    def test_side_issue_report_does_not_create_task(self):
+        core = self.core
+        core.record_report({"phase": "progress", "task_id": "side-x",
+                            "summary": "支线：mermaid 渲染", "category": "side-issue"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        self.assertNotIn("side-x", core.load_open()["tasks"])
+        events = [e for e in core.load_events() if e.get("ev") == "side_issue"]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["note"], "支线：mermaid 渲染")
+
     def test_side_issue_does_not_change_claim(self):
         core = self.core
         core.record_report({"phase": "start", "task_id": "a", "summary": "甲", "goal": "甲"},
