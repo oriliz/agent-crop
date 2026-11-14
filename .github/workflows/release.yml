@@ -1,0 +1,66 @@
+name: Release
+
+# 只在 tag 上触发：PR 与分支 push 都不会进这里
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # gh release create
+  id-token: write # npm --provenance
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: 重跑三条测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: python3 -m unittest tests.test_crop_cli -v
+        run: python3 -m unittest tests.test_crop_cli -v
+      - name: node --test dsh/test/index.test.mjs
+        run: node --test dsh/test/index.test.mjs
+      - name: bash tests/probe-smoke.sh
+        run: bash tests/probe-smoke.sh
+
+  publish:
+    name: npm publish --provenance
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: 检查 NPM_TOKEN（缺失即失败，不静默跳过）
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "::error::缺少 repository secret NPM_TOKEN，发布中止。请在 Settings -> Secrets and variables -> Actions 添加 NPM_TOKEN（npm Automation token，具备 publish 权限）。"
+            exit 1
+          fi
+          echo "NPM_TOKEN 已配置（长度 ${#NODE_AUTH_TOKEN}）"
+      - name: npm pack --dry-run 自检
+        run: npm pack --dry-run
+      - name: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
+      - name: 创建 GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes

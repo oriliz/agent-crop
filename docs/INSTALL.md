@@ -26,9 +26,11 @@ dsh plugin --profile <profile> add ~/agent-crop
 验证：
 
 ```bash
-crop status                     # 仓库里的 bin/crop
+crop status                     # 仓库里的 bin/crop；最后一行打印真实数据目录
 tail -1 ~/.agentcrop/data/events.jsonl   # 应看到 "host":"dsh"
 ```
+
+> 数据目录历史名 `~/.ai-coding-efficiency`，新版名 `~/.agentcrop`。没有后者时以 `crop status` 末行为准，或 `ln -s ~/.ai-coding-efficiency ~/.agentcrop`，也可用 `KIT_SHARED_HOME` 覆盖。
 
 ## Claude Code
 

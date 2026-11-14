@@ -3,19 +3,50 @@
   "version": "0.5.8",
   "description": "Agent Crop: local probe for coding agents — task-block timing, red-line nudges, structured self-reports and a live panel.",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oriliz/agent-crop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/oriliz/agent-crop/issues"
+  },
+  "homepage": "https://github.com/oriliz/agent-crop#readme",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "coding-agent",
+    "observability",
+    "tracing",
+    "claude-code"
+  ],
   "main": "./dsh/lib/index.js",
+  "bin": {
+    "crop": "./bin/crop"
+  },
   "exports": {
     ".": "./dsh/lib/index.js",
     "./client": "./dsh/lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
-    "dsh",
+    "bin",
+    "dsh/lib",
+    "dsh/cordis.patch.yml",
     "core",
     "hooks",
     "config",
-    "README.md"
+    "README.md",
+    "!**/__pycache__",
+    "!**/*.pyc"
   ],
+  "scripts": {
+    "test": "node --test dsh/test/index.test.mjs && python3 -m unittest tests.test_crop_cli && bash tests/probe-smoke.sh",
+    "test:node": "node --test dsh/test/index.test.mjs",
+    "test:python": "python3 -m unittest tests.test_crop_cli",
+    "test:smoke": "bash tests/probe-smoke.sh"
+  },
   "dsh": {
     "bundle": {
       "patch": "./dsh/cordis.patch.yml"

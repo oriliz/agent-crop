@@ -1,0 +1,129 @@
+name: Bug 报告
+description: 行为不对、数据不对、面板显示不对——请贴够信息，我们才能复现
+title: "[Bug] "
+labels: ["needs-triage", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Agent Crop 只在本地观察：数据不出本机（`~/.agentcrop`）、不自动改代码、不评估人、不替代测试。
+        如果问题出在「装不上」「装完面板没反应」，请改用 **安装求助** 模板。
+
+        > ⚠️ 请不要贴任何凭证：token、API key、cookie、SSH key、OAuth 回调串，一条都不要贴。
+        > 贴诊断信息之前先删掉：用户名、token、私有路径（把 `/Users/yourname/...` 换成 `/Users/<user>/...`）。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 描述你实际看到的现象。贴之前删掉用户名、token、私有路径。
+      placeholder: 例如：`crop status` 里「进行中的工作」显示的不是我这个会话的任务。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望什么
+      description: 你认为正确的行为是什么样。贴之前删掉用户名、token、私有路径。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 一步一步写，从新会话开始最好。贴之前删掉用户名、token、私有路径。
+      placeholder: |
+        1. 打开宿主，进入 /path/to/project
+        2. 发一条消息：「...」
+        3. 运行 crop status
+        4. 看到 ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: host
+    attributes:
+      label: 宿主
+      description: 问题出在哪个宿主里。贴之前删掉用户名、token、私有路径。
+      options:
+        - DSH（DeepSeek Harness）
+        - Claude Code
+        - Codex
+        - 其他（请在「发生了什么」里写明）
+    validations:
+      required: true
+
+  - type: input
+    id: dsh-version
+    attributes:
+      label: 宿主版本
+      description: 运行 `dsh --version` 粘贴输出（Claude Code / Codex 就填它们自己的版本）。贴之前删掉用户名、token、私有路径。
+      placeholder: 0.2.2-rc.3
+    validations:
+      required: false
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: 插件版本
+      description: 在仓库目录里运行 `node -p "require('./package.json').version"`。贴之前删掉用户名、token、私有路径。
+      placeholder: 0.5.8
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      description: 系统与版本，例如 macOS 15.3 / Ubuntu 24.04。贴之前删掉用户名、token、私有路径。
+      placeholder: macOS 15.3 (arm64)
+    validations:
+      required: false
+
+  - type: textarea
+    id: crop-status
+    attributes:
+      label: crop status 输出
+      description: |
+        运行 `crop status`，把输出原样贴进来（也就是下面这些行）。
+        贴之前删掉用户名、token、私有路径——把工作目录里的真实路径换成 `<path>`。
+      placeholder: |
+        Crop 状态 — dsh  2026-11-15 01:23
+        当前任务块  空闲
+        今日事件  92 条：prompt 4、tool 66、stop 4、session_start 1、其它 17
+        数据目录  <path>/data
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: event-lines
+    attributes:
+      label: 相关事件行（可选）
+      description: |
+        只贴与问题有关的那几行，不要把整天的事件全贴上来。
+        `crop status` 最后一行会打印「数据目录」，事件就在那个目录下的 `events.jsonl`。
+        贴之前删掉用户名、token、私有路径。
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图（可选）
+      description: 直接拖图进来。面板问题请说明发生在哪个页面。贴之前删掉用户名、token、私有路径。
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已经删掉了本次内容里的用户名、token 和私有路径
+          required: true
+        - label: 我贴的内容里不含任何凭证（token / API key / cookie / 私钥）
+          required: true

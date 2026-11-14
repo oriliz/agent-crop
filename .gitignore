@@ -16,6 +16,9 @@ node_modules/
 data/
 *.lock
 
+# CI artifact (npm pack --dry-run output)
+pack.json
+
 # Local overrides
 .env
 config/kit.env
