@@ -226,6 +226,6 @@ MIT — 随便用，随便改。
 
 **能动手的事，为什么要动口呢？**
 
-<img src="docs/assets/ending.jpg" alt="蓝发鲸鱼娘女仆拉着石磨，眼泪汪汪，一只手握着马鞭指向她" width="100%">
+<img src="docs/assets/ending.jpg" alt="蓝发鲸鱼娘女仆双手推着石磨的磨杆，眼泪汪汪，一只手握着马鞭指向她" width="100%">
 
 </div>
