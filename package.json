@@ -1,7 +1,7 @@
 {
-  "name": "ai-coding-efficiency-kit-dsh",
+  "name": "agent-crop-dsh",
   "version": "0.5.0",
-  "description": "Agent Crop: a local probe for coding agents — task-block timing, red-line nudges, structured self-reports and a live panel.",
+  "description": "Agent Crop: local probe for coding agents — task-block timing, red-line nudges, structured self-reports and a live panel.",
   "type": "module",
   "main": "./dsh/lib/index.js",
   "exports": {

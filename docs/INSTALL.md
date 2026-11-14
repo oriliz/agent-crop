@@ -53,7 +53,7 @@ Codex 的会话转录格式与 Qoder 不同，当前只完成接线，不产生�
 ## 卸载
 
 ```bash
-dsh plugin --profile <profile> remove ai-coding-efficiency-kit-dsh
+dsh plugin --profile <profile> remove agent-crop-dsh
 # Claude: claude plugin uninstall ai-coding-efficiency-kit
 ```
 

@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const name = 'ai-coding-efficiency-kit-dsh';
+export const name = 'agent-crop-dsh';
 export const inject = ['tools'];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -55,7 +55,7 @@ function createNotice(text) {
     role: 'user',
     content: [{ type: 'text', text }],
     source: {
-      kind: 'ai-coding-efficiency-kit',
+      kind: 'agent-crop',
       form: 'notice',
       summary: text.slice(0, 120),
     },
@@ -114,7 +114,7 @@ export function apply(ctx, config = {}) {
       const parsed = JSON.parse(result.stdout);
       return parsed && parsed.ok ? parsed.result : null;
     } catch (error) {
-      ctx.logger?.warn?.('[ai-coding-efficiency-kit] probe core call failed: %o', error);
+      ctx.logger?.warn?.('[crop] probe core call failed: %o', error);
       return null;
     }
   };
@@ -211,7 +211,7 @@ export function apply(ctx, config = {}) {
     },
   };
 
-  ctx.effect(() => ctx.tools.register(tool), 'ai-coding-efficiency-kit.probe_report');
+  ctx.effect(() => ctx.tools.register(tool), 'agent-crop.probe_report');
 
   ctx.on('session/event', (session, event) => {
     try {
@@ -256,7 +256,7 @@ export function apply(ctx, config = {}) {
         state.pending = [];
       }
     } catch (error) {
-      ctx.logger?.warn?.('[ai-coding-efficiency-kit] session event failed: %o', error);
+      ctx.logger?.warn?.('[crop] session event failed: %o', error);
     }
   });
 
@@ -304,7 +304,7 @@ export function apply(ctx, config = {}) {
         messages: [...(decision.messages ?? []), ...notes.map(createNotice)],
       };
     } catch (error) {
-      ctx.logger?.warn?.('[ai-coding-efficiency-kit] pre-step injection failed: %o', error);
+      ctx.logger?.warn?.('[crop] pre-step injection failed: %o', error);
       return decision;
     }
   });

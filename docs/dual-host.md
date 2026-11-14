@@ -118,7 +118,7 @@ dsh --profile coding --port 3081 --no-open
 卸载：
 
 ```bash
-dsh plugin --profile coding remove ai-coding-efficiency-kit-dsh
+dsh plugin --profile coding remove agent-crop-dsh
 rm -rf ~/.dsh/profiles/coding     # 如果整个 profile 都不要了
 # 数据目录不动，手工删除 ~/.ai-coding-efficiency
 ```

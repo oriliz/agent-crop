@@ -6,7 +6,7 @@
  * Hand-written in the client module system's lazy-CJS factory format.
  */
 window.__ModuleLoader__.load({
-  id: 'ai-coding-efficiency-kit-dsh',
+  id: 'agent-crop-dsh',
   factory: (require) => {
     const module = { exports: {} };
     const exports = module.exports;

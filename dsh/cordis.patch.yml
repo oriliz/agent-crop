@@ -1,5 +1,5 @@
 - insert:
-    - id: ai-coding-efficiency-kit-dsh
-      name: 'ai-coding-efficiency-kit-dsh'
+    - id: agent-crop-dsh
+      name: 'agent-crop-dsh'
       config:
         python: python3
