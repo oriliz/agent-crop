@@ -999,3 +999,32 @@ def day_detail(date: str, now: int | None = None) -> dict:
         "tools": sorted(tools.items(), key=lambda pair: pair[1], reverse=True)[:10],
         "works": sorted(works.values(), key=lambda item: item["minutes"], reverse=True),
     }
+
+
+def type_breakdown(days: float = 30.0, now: int | None = None) -> list[dict]:
+    """Per work-type totals and median active minutes (same-type comparison)."""
+    end = now if now is not None else now_ms()
+    start = end - int(days * 86400000)
+    reports = [event for event in _events_between(start, end) if event.get("ev") == "probe_report"]
+    groups: dict[str, dict] = {}
+    for report in reports:
+        work_type = str(report.get("type") or "untyped")
+        work_id = str(report.get("work_id") or "")
+        if not work_id:
+            continue
+        group = groups.setdefault(work_type, {"type": work_type, "works": {}, "minutes": 0.0})
+        group["works"][work_id] = round(group["works"].get(work_id, 0.0) + float(report.get("minutes") or 0), 1)
+    rows = []
+    for work_type, group in groups.items():
+        values = sorted(group["works"].values())
+        if not values:
+            continue
+        middle = len(values) // 2
+        median = values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
+        rows.append({
+            "type": work_type,
+            "count": len(values),
+            "minutes": round(sum(values), 1),
+            "median_minutes": round(median, 1),
+        })
+    return sorted(rows, key=lambda row: row["minutes"], reverse=True)

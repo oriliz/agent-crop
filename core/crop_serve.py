@@ -44,6 +44,8 @@ li{margin:4px 0}
     <table><thead><tr><th>日期</th><th>回合</th><th>分钟</th><th>工具</th><th>失败</th><th>工作</th></tr></thead>
     <tbody id="days"></tbody></table></section>
   <section><h2>当天明细</h2><div id="detail" class="muted">点上面任意一行</div></section>
+  <section><h2>同类工作对比（30 天，按类型）</h2>
+    <table><thead><tr><th>类型</th><th>工作数</th><th>合计</th><th>中位时长</th></tr></thead><tbody id="types"></tbody></table></section>
   <section><h2>最花时间的三个工作（14 天）</h2><ul id="top"></ul></section>
   <section><h2>进行中的工作</h2><ul id="tasks"></ul></section>
 </main>
@@ -73,6 +75,8 @@ async function load(){
   document.getElementById('days').innerHTML = (d.daily||[]).slice().reverse().map(row=>
     `<tr class="day" data-date="${row.date}"><td>${row.date.slice(5)}</td><td>${row.blocks}</td><td>${Math.round(row.minutes)}</td><td>${row.tools}</td><td>${row.failures}</td><td>${row.works}</td></tr>`).join('');
   document.querySelectorAll('tr.day').forEach(row=>row.addEventListener('click',()=>showDay(row.dataset.date,row)));
+  document.getElementById('types').innerHTML = (d.types||[]).map(row=>
+    `<tr><td>${row.type}</td><td>${row.count}</td><td>${Math.round(row.minutes)} 分</td><td>${Math.round(row.median_minutes)} 分</td></tr>`).join('') || '<tr><td colspan="4" class="muted">暂无（先在 probe_report 里带 type）</td></tr>';
   document.getElementById('top').innerHTML = (p.top_works||[]).map(w=>`<li>${w.goal||w.work_id} <span class="muted">${Math.round(w.minutes)} 分</span></li>`).join('') || '<li class="muted">暂无</li>';
   document.getElementById('tasks').innerHTML = (s.open_tasks||[]).map(t=>`<li>${t.task_id} — ${t.title||t.summary||''}</li>`).join('') || '<li class="muted">暂无</li>';
 }
@@ -86,6 +90,7 @@ def _summary() -> dict:
         "status": core.status_summary(),
         "period": core.period_summary(14),
         "daily": core.daily_breakdown(14),
+        "types": core.type_breakdown(30),
     }
 
 
