@@ -44,6 +44,7 @@ WORK_START = os.environ.get("KIT_WORK_START", "10:00")
 WORK_END = os.environ.get("KIT_WORK_END", "18:00")
 IDLE_MIN = float(os.environ.get("KIT_IDLE_MIN", "15"))
 CLAIM_TTL_MIN = float(os.environ.get("KIT_CLAIM_TTL_MIN", "120"))
+VERDICTS = ("justified", "not-justified", "unknown")
 WORK_TYPES = ("design", "implement", "debug", "docs")
 DIFFICULTIES = ("s", "m", "l")
 MAX_TEXT = 600
@@ -276,7 +277,7 @@ def normalize_task_id(value: str) -> str:
     text = str(value or "").strip().lower()
     text = re.sub(r"[^a-z0-9_-]+", "-", text)
     text = re.sub(r"-{2,}", "-", text).strip("-_")
-    return text[:64]
+    return text[:32]
 
 
 def load_open() -> dict:
@@ -342,6 +343,8 @@ def _upsert_task(report: dict, workspace: str) -> None:
         task["category"] = report["category"]
     if report.get("goal"):
         task["goal"] = report["goal"]
+    if report.get("verdict"):
+        task["verdict"] = report["verdict"]
     if report.get("type"):
         task["type"] = report["type"]
     if report.get("difficulty"):
@@ -411,6 +414,9 @@ def validate_report(args: dict) -> dict:
     difficulty = _text(args.get("difficulty"), "difficulty").lower()
     if difficulty and difficulty not in DIFFICULTIES:
         raise ValueError(f"difficulty must be one of {', '.join(DIFFICULTIES)}")
+    verdict = _text(args.get("verdict"), "verdict").lower()
+    if verdict and verdict not in VERDICTS:
+        raise ValueError(f"verdict must be one of {', '.join(VERDICTS)}")
     what = _text(args.get("what"), "what")
     cost = _text(args.get("cost"), "cost")
     next_time = _text(args.get("next_time"), "next_time")
@@ -426,6 +432,7 @@ def validate_report(args: dict) -> dict:
         "goal": goal,
         "type": work_type,
         "difficulty": difficulty,
+        "verdict": verdict,
         "what": what,
         "cost": cost,
         "next_time": next_time,
@@ -461,6 +468,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         "next": report["next"],
         "category": report["category"],
         "goal": report.get("goal", ""),
+        "verdict": report.get("verdict", ""),
         "type": report.get("type", ""),
         "difficulty": report.get("difficulty", ""),
         "turn": context.get("turn"),
@@ -491,6 +499,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
             append_event({
                 "ev": "work_summary",
                 "work_id": report["task_id"],
+                "verdict": report.get("verdict", ""),
                 "what": report.get("what", ""),
                 "cost": report.get("cost", ""),
                 "next_time": report.get("next_time", ""),
@@ -1232,7 +1241,8 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         health = work_health(task_id)
         if health:
             session_works.append(health)
-    active = session_works[0] if session_works else work_health()
+    # never fall back to a work from another session: that reads as "wrong data"
+    active = session_works[0] if session_works else None
 
     latest_cause = ""
     latest_category = ""
@@ -1244,7 +1254,16 @@ def session_summary(sid: str, now: int | None = None) -> dict:
             latest_at = int(report.get("t") or 0)
             break
 
+    tool_rank = []
+    for name, calls in tool_counts.items():
+        if name.startswith("call_") or name == "tool":
+            continue
+        tool_rank.append({"name": name, "calls": calls, "failures": failure_counts.get(name, 0)})
+    tool_rank.sort(key=lambda item: (item["failures"], item["calls"]), reverse=True)
+
     return {
+        "tool_rank": tool_rank[:6],
+        "latest_verdict": str(next((r.get("verdict") for r in reversed(reports) if r.get("verdict")), "")),
         "latest_cause": latest_cause,
         "latest_category": latest_category,
         "latest_at": latest_at,

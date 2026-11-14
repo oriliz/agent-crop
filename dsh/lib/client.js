@@ -1,8 +1,8 @@
 /**
  * DSH web client half for Agent Crop.
  *
- * Session view tab next to 轨迹: is this work going to finish smoothly, and if not,
- * why does the AI itself say it is slow. Numbers from the local dashboard server.
+ * Session view tab next to 轨迹: is this work going to finish smoothly, what does
+ * the AI itself say about the slowdown, and which tool is the bottleneck.
  * Hand-written in the client module system's lazy-CJS factory format.
  */
 window.__ModuleLoader__.load({
@@ -16,41 +16,35 @@ window.__ModuleLoader__.load({
     const VIEW_ID = 'crop';
     const ENDPOINT = 'http://127.0.0.1:8765/api/session';
 
-    // 0 → green, 0.6 → yellow, 1.5 → red; clamped, hue interpolated.
     function lampColor(ratio) {
       const r = Math.max(0, Math.min(1.5, ratio || 0));
       const hue = r < 0.6 ? 140 - (140 - 48) * (r / 0.6) : 48 - 48 * ((r - 0.6) / 0.9);
       return `hsl(${hue.toFixed(0)} 72% 52%)`;
     }
 
-    function lampLabel(level) {
-      return level === 'red' ? '红' : level === 'yellow' ? '黄' : '绿';
-    }
+    const VERDICT = {
+      justified: { label: '合理超时', color: 'hsl(48 72% 52%)' },
+      'not-justified': { label: '不合理', color: 'hsl(0 72% 52%)' },
+      unknown: { label: '说不清', color: 'rgba(255,255,255,.4)' },
+    };
 
     const S = {
-      page: { padding: '22px 26px', display: 'grid', gap: '20px', maxWidth: '720px', fontSize: '13px' },
+      page: { padding: '22px 26px', display: 'grid', gap: '18px', maxWidth: '720px', fontSize: '13px' },
       head: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px' },
       goal: { fontSize: '15px' },
-      id: { fontSize: '12px', opacity: 0.45, fontVariantNumeric: 'tabular-nums', marginTop: '2px' },
-      timer: { fontSize: '34px', fontWeight: 600, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' },
-      unit: { fontSize: '14px', opacity: 0.5, marginLeft: '4px' },
-      badge: (color) => ({ display: 'inline-block', marginLeft: '10px', fontSize: '12px', padding: '1px 8px', borderRadius: '10px', background: color.replace('52%', '52% / .18'), color }),
-      base: { fontSize: '12px', opacity: 0.5, marginTop: '8px' },
-      track: { height: '4px', background: 'rgba(255,255,255,.08)', borderRadius: '2px', marginTop: '10px', overflow: 'hidden' },
-      fill: (color, percent) => ({ height: '100%', width: `${Math.min(100, percent)}%`, background: color }),
-      row: { display: 'flex', justifyContent: 'space-between', fontSize: '12px', opacity: 0.5, marginTop: '6px', fontVariantNumeric: 'tabular-nums' },
-      split: { display: 'flex', height: '10px', borderRadius: '5px', overflow: 'hidden', background: 'rgba(255,255,255,.06)' },
-      legend: { display: 'flex', gap: '18px', fontSize: '12px', opacity: 0.65, marginTop: '8px', flexWrap: 'wrap' },
-      dot: (color) => ({ display: 'inline-block', width: '7px', height: '7px', borderRadius: '4px', marginRight: '6px', verticalAlign: 'middle', background: color }),
-      cause: (color) => ({ borderLeft: `3px solid ${color}`, padding: '2px 0 2px 12px' }),
+      sub: { fontSize: '12px', opacity: 0.45, marginTop: '2px' },
+      lamp: (color) => ({ display: 'inline-block', width: '9px', height: '9px', borderRadius: '5px', background: color, marginRight: '7px' }),
+      timer: { fontSize: '30px', fontWeight: 600, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' },
+      card: { borderLeft: '3px solid', padding: '2px 0 2px 12px' },
       quote: { fontSize: '14px', margin: 0 },
       meta: { fontSize: '12px', opacity: 0.45, marginTop: '4px' },
       caption: { fontSize: '11px', opacity: 0.45, marginBottom: '8px' },
+      tl: { display: 'flex', gap: '3px', height: '34px', alignItems: 'stretch' },
+      axis: { display: 'flex', justifyContent: 'space-between', fontSize: '10px', opacity: 0.35, marginTop: '6px' },
       table: { width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' },
-      th: { textAlign: 'right', fontWeight: 500, fontSize: '11px', opacity: 0.45, padding: '0 0 6px', borderBottom: '1px solid rgba(255,255,255,.18)' },
-      thLeft: { textAlign: 'left', fontWeight: 500, fontSize: '11px', opacity: 0.45, padding: '0 0 6px', borderBottom: '1px solid rgba(255,255,255,.18)' },
-      td: { textAlign: 'right', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,.08)' },
-      tdLeft: { textAlign: 'left', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,.08)' },
+      td: { padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,.07)' },
+      tdRight: { padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,.07)', textAlign: 'right', opacity: 0.75 },
+      fail: { color: '#e5484d' },
       quiet: { fontSize: '12px', opacity: 0.4 },
     };
 
@@ -93,73 +87,66 @@ window.__ModuleLoader__.load({
 
       const work = data.active_work || null;
       const blocks = data.recent_blocks || [];
-      const waitPct = Math.round(((data.share || {}).wait || 0) * 100);
-      const workPct = Math.round(((data.share || {}).work || 0) * 100);
-      const restPct = Math.max(0, 100 - workPct - waitPct);
+      const tools = data.tool_rank || [];
+      const verdict = VERDICT[data.latest_verdict] || VERDICT.unknown;
       const color = work ? lampColor(work.ratio) : 'hsl(140 72% 52%)';
+      const total = blocks.reduce((sum, row) => sum + (row.minutes || 0), 0) || 1;
 
       const header = h('div', { style: S.head, key: 'head' },
         h('div', null,
           h('div', { style: S.goal }, work ? work.goal || work.work_id : '本会话还没有工作'),
-          h('div', { style: S.id }, work ? `${work.work_id} · 进行中` : '')),
-        h('div', { style: S.id }, 'agent-crop'));
+          h('div', { style: S.sub }, work ? `${work.work_id} · 进行中` : '')),
+        h('div', { style: S.timer }, work ? mmss(work.minutes) : '--:--'));
 
-      const timer = work ? h('div', { key: 'timer' },
+      const verdictCard = h('div', { key: 'verdict', style: { ...S.card, borderLeftColor: verdict.color } },
         h('div', null,
-          h('span', { style: S.timer }, mmss(work.minutes)),
-          h('span', { style: S.unit }, '已用'),
-          h('span', { style: S.badge(color) }, lampLabel(work.level))),
-        h('div', { style: S.base },
-          `基线 ${Math.round(work.baseline)} 分 · ${work.baseline_source === 'history' ? '同类历史中位' : '默认值（这类工作还没有样本）'}`),
-        h('div', { style: S.track }, h('div', { style: S.fill(color, (work.ratio / 1.5) * 100) })),
-        h('div', { style: S.row },
-          h('span', null, `${work.ratio.toFixed(2)} × 基线`),
-          h('span', null, '红线上限 1.5 ×'))) : null;
+          h('span', { style: { color: verdict.color, fontWeight: 600 } }, verdict.label),
+          h('span', { style: S.meta }, ` · AI 判断 · ${data.latest_cause ? ago(data.latest_at) : '还没有记录'}`)),
+        h('q', { style: { ...S.quote, marginTop: '6px', display: 'block' } },
+          data.latest_cause || '被红线提醒或卡住时，AI 会在这里写一句为什么'));
 
-      const split = h('div', { key: 'split' },
-        h('div', { style: S.caption }, '时间构成'),
-        h('div', { style: S.split },
-          h('div', { style: { width: `${workPct}%`, background: '#3b82f6' } }),
-          h('div', { style: { width: `${waitPct}%`, background: '#f59e0b' } }),
-          h('div', { style: { width: `${restPct}%`, background: 'rgba(255,255,255,.18)' } })),
-        h('div', { style: S.legend },
-          h('span', null, h('i', { style: S.dot('#3b82f6') }), `推进 ${workPct}%（${mmss(data.work_minutes)}）`),
-          h('span', null, h('i', { style: S.dot('#f59e0b') }), `等你 ${waitPct}%（${mmss(data.wait_minutes)}）`),
-          h('span', null, h('i', { style: S.dot('rgba(255,255,255,.3)') }), `未细分 ${restPct}%`)));
+      const toolRows = tools.length
+        ? h('div', { key: 'tools' },
+            h('div', { style: S.caption }, '工具排行（按失败次数）'),
+            h('table', { style: S.table }, h('tbody', null,
+              tools.map((item) => h('tr', { key: item.name },
+                h('td', { style: S.td }, item.name),
+                h('td', { style: { ...S.tdRight, ...(item.failures ? S.fail : {}) } },
+                  `${item.calls} 次 · 失败 ${item.failures}`))))))
+        : null;
 
-      const cause = h('div', { key: 'cause', style: S.cause(data.latest_cause ? color : 'rgba(255,255,255,.2)') },
-        h('q', { style: S.quote }, data.latest_cause || 'AI 还没有上报归因'),
-        h('div', { style: S.meta },
-          data.latest_cause
-            ? `AI 自述 · ${data.latest_category || '未分类'} · ${ago(data.latest_at)}`
-            : '被红线提醒或卡住时，它会写一句'));
+      const timeline = blocks.length
+        ? h('div', { key: 'timeline' },
+            h('div', { style: S.caption }, '最近几轮的形状（宽度 = 用时，红点 = 有失败）'),
+            h('div', { style: S.tl }, blocks.slice().reverse().map((row, index) => h('div', {
+              key: index,
+              title: `${mmss(row.minutes)} · 工具 ${row.tools} · 失败 ${row.failed}`,
+              style: {
+                width: `${Math.max(3, (row.minutes / total) * 100)}%`,
+                background: '#3b82f6',
+                opacity: index === blocks.length - 1 ? 1 : 0.55,
+                borderRadius: '3px',
+                position: 'relative',
+              },
+            }, row.failed ? h('i', {
+              style: { position: 'absolute', right: '2px', top: '2px', width: '6px', height: '6px', borderRadius: '3px', background: '#e5484d' },
+            }) : null))),
+            h('div', { style: S.axis },
+              h('span', null, '早'),
+              h('span', null, '现在')))
+        : null;
 
-      const sessionWorks = (data.session_works || []).length
+      const works = (data.session_works || []).length
         ? h('div', { key: 'works' },
             h('div', { style: S.caption }, '本会话的工作'),
             h('table', { style: S.table }, h('tbody', null,
               data.session_works.map((item) => h('tr', { key: item.work_id },
-                h('td', { style: S.tdLeft }, h('i', { style: S.dot(lampColor(item.ratio)) }), item.work_id),
-                h('td', { style: S.td }, mmss(item.minutes)))))))
+                h('td', { style: S.td },
+                  h('i', { style: S.lamp(lampColor(item.ratio)) }), item.work_id),
+                h('td', { style: S.tdRight }, mmss(item.minutes)))))))
         : null;
 
-      const rounds = h('div', { key: 'rounds' },
-        h('div', { style: S.caption }, '最近几轮'),
-        h('table', { style: S.table },
-          h('thead', null, h('tr', null,
-            h('th', { style: S.thLeft }, '轮次'),
-            h('th', { style: S.th }, '用时'),
-            h('th', { style: S.th }, '工具'),
-            h('th', { style: S.th }, '失败'))),
-          h('tbody', null, blocks.length
-            ? blocks.map((row, index) => h('tr', { key: index },
-                h('td', { style: S.tdLeft }, index === 0 ? '本轮' : `上 ${index} 轮`),
-                h('td', { style: S.td }, mmss(row.minutes)),
-                h('td', { style: S.td }, row.tools),
-                h('td', { style: S.td }, row.failed)))
-            : h('tr', null, h('td', { style: S.tdLeft, colSpan: 4 }, h('span', { style: S.quiet }, '还没有完成的轮次'))))));
-
-      return h('div', { style: S.page }, [header, timer, split, cause, sessionWorks, rounds]);
+      return h('div', { style: S.page }, [header, verdictCard, toolRows, timeline, works]);
     }
 
     function apply(ctx) {
