@@ -75,7 +75,22 @@ class StatusViewTest(unittest.TestCase):
         )
         line = core.work_status_line("/tmp/ws")
         self.assertIn("[crop]", line)
+        self.assertIn("t1", line)
+        # 未认领时只能列候选，不能自称“当前工作”
+        self.assertNotIn("当前工作", line)
+        self.assertIn("认领", line)
+
+    def test_work_status_line_reflects_claim(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "把探针开源"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        line = core.work_status_line("/tmp/ws", "s1")
+        self.assertIn("当前工作", line)
         self.assertIn("把探针开源", line)
+        # 别的会话看到的是候选列表，不是别人的“当前工作”
+        other = core.work_status_line("/tmp/ws", "s2")
+        self.assertNotIn("当前工作", other)
+        self.assertIn("认领", other)
 
     def test_work_status_line_prefers_recent(self):
         core = self.core
@@ -87,7 +102,8 @@ class StatusViewTest(unittest.TestCase):
         value["tasks"]["t-old"]["last_seen_at"] = 1000
         value["tasks"]["t-new"]["last_seen_at"] = 2000
         core.save_open(value)
-        self.assertIn("新目标", core.work_status_line("/tmp/ws"))
+        line = core.work_status_line("/tmp/ws")
+        self.assertLess(line.index("t-new"), line.index("t-old"))
 
     def test_work_status_line_prefers_same_session(self):
         core = self.core

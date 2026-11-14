@@ -751,16 +751,30 @@ def format_status(summary: dict) -> str:
 
 
 def work_status_line(workspace: str | None = None, sid: str | None = None) -> str:
-    """One line for the turn-start injection: current work and how stale it is."""
+    """One line for the turn-start injection.
+
+    The program never picks "the current work" by itself: several sessions can
+    share a workspace and only the model knows which work this conversation is
+    on. Program shows candidates; the model claims one via probe_report. Once
+    claimed, the line reflects that claim instead of guessing.
+    """
     tasks = open_tasks(workspace, 3, sid)
     if not tasks:
         return ""
-    task = tasks[0]
-    aim = task.get("goal") or task.get("title") or task.get("task_id")
-    stale = ago(task.get("last_seen_at", 0))
+    claimed = next((t for t in tasks if sid and t.get("last_sid") == sid), None)
+    if claimed:
+        aim = claimed.get("goal") or claimed.get("title") or claimed.get("task_id")
+        stale = ago(claimed.get("last_seen_at", 0))
+        return (
+            f"[crop] 当前工作：{aim}（{claimed.get('task_id')}）；上次更新 {stale}。"
+            "状态有变就调 probe_report 更新一行。"
+        )
+    candidates = "、".join(
+        f"{task.get('task_id')}（{ago(task.get('last_seen_at', 0))}）" for task in tasks
+    )
     return (
-        f"[crop] 当前工作：{aim}（{task.get('task_id')}）；上次更新 {stale}。"
-        "状态有变就调 probe_report 更新一行。"
+        f"[crop] 未完成的工作：{candidates}。"
+        "哪个属于本会话？调 probe_report 认领；都不是就新开。"
     )
 
 
