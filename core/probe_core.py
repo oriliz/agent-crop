@@ -39,6 +39,9 @@ CATEGORIES = (
     "human-wait",
     "other",
 )
+WORK_START = os.environ.get("KIT_WORK_START", "10:00")
+WORK_END = os.environ.get("KIT_WORK_END", "18:00")
+IDLE_MIN = float(os.environ.get("KIT_IDLE_MIN", "15"))
 WORK_TYPES = ("design", "implement", "debug", "docs")
 DIFFICULTIES = ("s", "m", "l")
 MAX_TEXT = 600
@@ -458,7 +461,41 @@ def record_session_start(sid: str, workspace: str) -> None:
     write_runtime(sid, workspace, None)
 
 
+def _in_work_hours(at: datetime | None = None) -> bool:
+    moment = at or datetime.now()
+    try:
+        start = datetime.strptime(WORK_START, "%H:%M").time()
+        end = datetime.strptime(WORK_END, "%H:%M").time()
+    except Exception:
+        return True
+    return start <= moment.time() <= end
+
+
+def _last_kind(sid: str, kinds: tuple[str, ...]) -> dict | None:
+    for event in reversed(load_events(sid=sid)):
+        if event.get("ev") in kinds:
+            return event
+    return None
+
+
 def record_prompt(sid: str, prompt: str, workspace: str) -> None:
+    last_stop = _last_kind(sid, ("stop",))
+    if last_stop:
+        try:
+            gap_ms = max(0, now_ms() - int(last_stop.get("t") or 0))
+        except Exception:
+            gap_ms = 0
+        within = _in_work_hours()
+        if gap_ms > IDLE_MIN * 60000 or not within:
+            append_event({
+                "ev": "idle_gap", "sid": sid, "gap_ms": gap_ms,
+                "reason": "off-hours" if not within else "idle",
+            })
+        else:
+            append_event({
+                "ev": "user_wait", "sid": sid,
+                "waiting_ms": gap_ms, "within_work_hours": within,
+            })
     append_event({"ev": "prompt", "sid": sid, "workspace": workspace, "snippet": prompt[:160]})
     write_runtime(sid, workspace, now_ms())
 

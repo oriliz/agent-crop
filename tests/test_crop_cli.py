@@ -19,8 +19,12 @@ class StatusViewTest(unittest.TestCase):
         os.environ.update({"KIT_DATA_DIR": self.data, "KIT_HOST": "test"})
         import probe_core as core
         self.core = core
+        # Tests must not depend on the wall clock: treat all hours as work hours.
+        self._saved = (core.WORK_START, core.WORK_END, core.IDLE_MIN)
+        core.WORK_START, core.WORK_END = "00:00", "23:59"
 
     def tearDown(self):
+        self.core.WORK_START, self.core.WORK_END, self.core.IDLE_MIN = self._saved
         for name in ("KIT_DATA_DIR", "KIT_HOST"):
             os.environ.pop(name, None)
 
@@ -40,6 +44,27 @@ class StatusViewTest(unittest.TestCase):
         text = core.format_status(core.status_summary("/tmp/ws"))
         self.assertIn("Crop 状态", text)
         self.assertIn("今日事件", text)
+
+    def test_user_wait_after_short_gap(self):
+        core = self.core
+        core.record_prompt("s1", "开工", "/tmp/ws")
+        core.record_stop("s1")
+        core.record_prompt("s1", "继续", "/tmp/ws")
+        kinds = [event["ev"] for event in core.load_events(sid="s1")]
+        self.assertIn("user_wait", kinds)
+
+    def test_idle_gap_when_gap_exceeds_threshold(self):
+        core = self.core
+        previous = core.IDLE_MIN
+        core.IDLE_MIN = 0.0
+        try:
+            core.record_prompt("s1", "开工", "/tmp/ws")
+            core.record_stop("s1")
+            core.record_prompt("s1", "继续", "/tmp/ws")
+            kinds = [event["ev"] for event in core.load_events(sid="s1")]
+            self.assertIn("idle_gap", kinds)
+        finally:
+            core.IDLE_MIN = previous
 
     def test_work_status_line_has_goal(self):
         core = self.core
