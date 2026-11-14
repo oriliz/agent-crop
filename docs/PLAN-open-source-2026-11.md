@@ -148,6 +148,10 @@
 
 备选：想更"产品化"选 **Pacer（配速）**；想更"诊断"选 **Vitals（体征）**。
 
+**2026-11-14 决定**：按「XXX Your Agent」句式定名 **Evolve Your Agent**（`evolve-your-agent`），
+仓库已建（private）：<https://github.com/oriliz/evolve-your-agent>。
+备选替换：`know-your-agent` / `see-your-agent` / `coach-your-agent`，改名一条命令即可。
+
 ## 8. 明确不做
 
 - 不做云端、不做团队实时看板（跨人仍靠导出）
@@ -162,3 +166,58 @@
 3. LICENSE 用 MIT 还是 Apache-2.0
 4. 面板先做「现在」还是先做「趋势」
 5. 首版是否包含 Qoder / Codex（这两边采集还是半成品）
+
+## 10. 稳定版 / 开发版分离（2026-11-14 补）
+
+**原则：日常用的那一份永远来自 tag，调试的那一份永远在工作树里。**
+
+两条通道：
+
+| | stable（发布版） | dev（开发版） |
+|---|---|---|
+| 代码来源 | git tag，导出到 `~/.ai-coding-efficiency/install/vX.Y.Z/` | `~/AgentProjects/evolve-your-agent` 工作树 |
+| 谁在用 | Claude Code + DSH 3082 日常会话 | 独立 DSH profile `probe-dev`（:3083）+ 单元测试 |
+| 是否可以改 | 只读，不直接改 | 随便改，改坏不影响别人 |
+| 数据目录 | `~/.ai-coding-efficiency/data` | `~/.ai-coding-efficiency/data-dev`（`KIT_DATA_DIR`） |
+| 升级方式 | 装新 tag → 切 `current` 软链 | git pull / 直接改 |
+
+目录布局：
+
+```
+~/.ai-coding-efficiency/
+├── install/
+│   ├── v0.4.0/          # 从 tag 导出的只读副本
+│   └── v0.5.0/
+├── current -> install/v0.5.0     # 宿主只看这个软链
+└── data/  data-dev/
+```
+
+分支与发布：
+
+- `main` = 可发布状态，只合经过测试的代码；每次发布打 `vX.Y.Z`
+- `dev` = 日常开发；功能分支 `feat/xxx` 合回 dev
+- 发布动作：dev → main → tag → `install.sh --channel stable` → smoke → 切 `current`
+
+部署命令（install.sh 扩两个参数）：
+
+```bash
+./install.sh --channel stable --host claude      # 装到 install/<tag>，切 current
+./install.sh --channel stable --host dsh         # 同上，profile 指 current
+./install.sh --channel dev    --host dsh --profile probe-dev   # 指工作树
+```
+
+切回上一版：`ln -sfn install/v0.4.0 ~/.ai-coding-efficiency/current`。
+
+**为什么值得做**：现在 Claude 和 DSH 3082 都直接吃工作树，我改代码 = 你们在用 bug。
+拆开之后，调试只在 `probe-dev` 和单测里发生，日常使用永远是上一个 tag。
+
+**首次切换步骤**（要动 `~/.dsh-dev`，需报备）：
+
+1. 当前状态打 `v0.4.0` tag
+2. 导出到 `~/.ai-coding-efficiency/install/v0.4.0`，建 `current` 软链
+3. dev profile 的 link 从工作树改指 `current`（`dsh plugin --profile dev add ~/.ai-coding-efficiency/current`）
+4. 重启 3082 生效；Claude 侧重新 `plugin install` 指 `current`
+5. 之后我改代码只在工作树，`probe-dev` 里验证
+
+数据兼容：两条通道共用 schema，dev 改 schema 必须向后兼容 stable 已有数据；
+dev 数据落 `data-dev`，不进稳定统计。
