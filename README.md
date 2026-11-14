@@ -209,38 +209,6 @@ dsh plugin --profile <你的 profile> remove ai-coding-efficiency-kit-dsh
 
 ---
 
-## 诚实边界
-
-- **样本只有一个。** 上面那个案例是我自己的体感，不是对照实验。
-- **证明还没做。** 「改进前后对比」只有设计，代码里没有。
-- **看板还在长。** 问题分类视图还没做。
-- **Codex 只接线。** 不产生指标。
-
-**一个不告诉你局限在哪的探针，不值得装。**
-
----
-
-## 常见问题
-
-**和 LangSmith / Langfuse 有什么区别？**
-它们量 agent 内部：token、工具调用、延迟。Agent Crop 量协作过程，包括你等人的时间和 AI 的返工。
-
-**算监控员工吗？**
-不算。数据只在本机，没有云、没有看板、没有评分。
-
----
-
-## 为什么叫 Crop
-
-Crop 是骑手的短鞭。
-
-不是抽打，是轻点一下：马跑慢了，催一句，不换马。
-
-顺便说一句，DSH 生态里已经有一只鲸鱼娘了（[dsh-pet](https://github.com/zhu1090093659/dsh-pet)，美术 powerdog996 / DreamSkin）。
-一个负责哄你，一个负责记账，分工明确。与本项目无隶属关系，此处仅为致意。
-
----
-
 ## 文档
 
 - [docs/DESIGN.md](docs/DESIGN.md) — 设计原则与边界
@@ -256,15 +224,8 @@ MIT — 随便用，随便改。
 
 <div align="center">
 
-**传统 Trace 记录机器做了什么。**<br>
-**Agent Crop 记录你和它一起做了什么。**
+**能动手的事，为什么要动口呢？**
 
-<br>
-
-**你的时间，也该有日志。**
-
-<br>
-
-MIT License © [oriliz](https://github.com/oriliz)
+<img src="docs/assets/ending.jpg" alt="蓝发鲸鱼娘女仆拉着石磨，眼泪汪汪，一只手握着马鞭指向她" width="100%">
 
 </div>
