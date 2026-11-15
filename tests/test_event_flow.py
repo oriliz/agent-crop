@@ -163,6 +163,17 @@ class EventFlowTest(unittest.TestCase):
         moved = self.core.migrate_bindings()
         self.assertGreaterEqual(moved, 0)
 
+    def test_one_active_binding_per_session(self):
+        self.report(phase="start")
+        value = self.core.load_bindings()
+        value["bindings"].append({"sid": self.sid, "work_id": "other-work",
+                                  "claimed_at": 1, "expires_at": 9999999999999})
+        self.core.save_bindings(value)
+        self.assertGreaterEqual(self.core.normalize_bindings(), 1)
+        active = [b for b in self.core.load_bindings()["bindings"] if b["sid"] == self.sid]
+        self.assertEqual(len(active), 1)
+        self.assertEqual(self.core.resolve_binding(self.sid), "flow-work")
+
     def test_human_wait_span(self):
         event = self.core.record_human_wait(self.sid, "ask_user_question", 1000, 1000 + 65000)
         self.assertEqual(event["waiting_ms"], 65000)

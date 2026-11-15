@@ -563,6 +563,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
 def record_session_start(sid: str, workspace: str) -> None:
     try:
         migrate_bindings()
+        normalize_bindings()
         mark_stale_works()
     except Exception:
         pass
@@ -1819,10 +1820,38 @@ def bind_session(sid: str, work_id: str, ttl_min: float = CLAIM_TTL_MIN) -> bool
 def resolve_binding(sid: str) -> str:
     """The work this session is currently bound to, or an empty string."""
     now = now_ms()
-    for item in load_bindings().get("bindings", []):
-        if item.get("sid") == sid and float(item.get("expires_at") or 0) > now:
-            return str(item.get("work_id") or "")
-    return ""
+    candidates = [
+        item for item in load_bindings().get("bindings", [])
+        if item.get("sid") == sid and float(item.get("expires_at") or 0) > now
+    ]
+    if not candidates:
+        return ""
+    newest = max(candidates, key=lambda item: int(item.get("claimed_at") or 0))
+    return str(newest.get("work_id") or "")
+
+
+def normalize_bindings() -> int:
+    """One active binding per session: keep the newest, drop the rest."""
+    value = load_bindings()
+    now = now_ms()
+    best: dict[str, dict] = {}
+    dropped = 0
+    for item in value.get("bindings", []):
+        sid = item.get("sid")
+        if not sid or float(item.get("expires_at") or 0) <= now:
+            dropped += 1
+            continue
+        current = best.get(sid)
+        if current is None or int(item.get("claimed_at") or 0) > int(current.get("claimed_at") or 0):
+            if current is not None:
+                dropped += 1
+            best[sid] = item
+        else:
+            dropped += 1
+    if dropped:
+        value["bindings"] = list(best.values())
+        save_bindings(value)
+    return dropped
 
 
 def release_binding(sid: str) -> None:
@@ -1839,9 +1868,19 @@ def migrate_bindings() -> int:
     value = load_bindings()
     have = {(item.get("sid"), item.get("work_id")) for item in value.get("bindings", [])}
     now = now_ms()
+    newest: dict[str, dict] = {}
+    for task in load_open().get("tasks", {}).values():
+        sid = task.get("last_sid")
+        if sid:
+            keep = newest.get(sid)
+            if keep is None or int(task.get("last_seen_at") or 0) > int(keep.get("last_seen_at") or 0):
+                newest[sid] = task
+    allowed = {sid: task.get("task_id") for sid, task in newest.items()}
     for task in load_open().get("tasks", {}).values():
         sid, work_id = task.get("last_sid"), task.get("task_id")
         if not sid or not work_id or (sid, work_id) in have:
+            continue
+        if allowed.get(sid) != work_id:
             continue
         value.setdefault("bindings", []).append({
             "sid": sid, "work_id": work_id,
