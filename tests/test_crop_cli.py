@@ -66,6 +66,27 @@ class StatusViewTest(unittest.TestCase):
         finally:
             core.IDLE_MIN = previous
 
+    def test_shared_home_prefers_agentcrop_and_falls_back_once(self):
+        core = self.core
+        new_home = tempfile.mkdtemp(prefix="agentcrop-home-")
+        old_home = tempfile.mkdtemp(prefix="legacy-home-")
+        saved = (core.DEFAULT_SHARED_HOME, core.LEGACY_SHARED_HOME)
+        saved_env = os.environ.pop("KIT_SHARED_HOME", None)
+        try:
+            core.DEFAULT_SHARED_HOME, core.LEGACY_SHARED_HOME = new_home, old_home
+            self.assertEqual(core.shared_home(), new_home)
+            # Only an upgrade that has no ~/.agentcrop yet reads the old home.
+            core.DEFAULT_SHARED_HOME = os.path.join(new_home, "missing")
+            self.assertEqual(core.shared_home(), old_home)
+            # An explicit override always wins.
+            os.environ["KIT_SHARED_HOME"] = new_home
+            self.assertEqual(core.shared_home(), new_home)
+        finally:
+            core.DEFAULT_SHARED_HOME, core.LEGACY_SHARED_HOME = saved
+            os.environ.pop("KIT_SHARED_HOME", None)
+            if saved_env is not None:
+                os.environ["KIT_SHARED_HOME"] = saved_env
+
     def test_work_status_line_has_goal(self):
         core = self.core
         core.record_report(

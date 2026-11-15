@@ -7,7 +7,7 @@
 
 ## 隔离方式
 
-- `KIT_DATA_DIR=$(mktemp -d)`：crop 数据（工作/绑定/事件）全在临时目录，不碰 `~/.ai-coding-efficiency/data`。
+- `KIT_DATA_DIR=$(mktemp -d)`：crop 数据（工作/绑定/事件）全在临时目录，不碰 `~/.agentcrop/data`。
 - 工作区 `$(mktemp -d)`：会话落在独立 workspace，结束后删除。
 - `dsh --profile headless`：该 profile 的 `agent-crop-dsh` 直链仓库
   `/Users/lizhi/AgentProjects/agent-crop`，跑的就是当前 working tree。

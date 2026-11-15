@@ -126,7 +126,7 @@ ln -sf ~/agent-crop/bin/crop /usr/local/bin/crop
 
 ```bash
 dsh plugin --profile <你的 profile> remove agent-crop-dsh
-# Claude: claude plugin uninstall ai-coding-efficiency-kit
+# Claude: claude plugin uninstall agent-crop@agent-crop
 ```
 
 卸载不动数据。要一起清掉：`rm -rf ~/.agentcrop`

@@ -1,5 +1,5 @@
 {
-  "description": "AI coding efficiency probe hooks",
+  "description": "Agent Crop hooks",
   "hooks": {
     "SessionStart": [
       {

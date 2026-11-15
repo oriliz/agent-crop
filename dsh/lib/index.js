@@ -1,5 +1,5 @@
 /**
- * DSH host adapter for the AI coding efficiency probe.
+ * DSH host adapter for Agent Crop.
  *
  * The Python core owns task identity, timing, report validation and storage.
  * This plugin only translates DSH session events into core calls and injects

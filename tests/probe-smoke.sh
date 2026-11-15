@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smoke test for the v0.4 probe core, Claude hooks and the DSH JSON bridge.
-# Uses only a temp data directory; never touches ~/.ai-coding-efficiency.
+# Uses only a temp data directory; never touches ~/.agentcrop.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

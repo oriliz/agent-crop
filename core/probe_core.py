@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Shared core for the AI coding efficiency probe.
+"""Shared core for Agent Crop.
 
 One data model serves every host (Claude Code, DSH, Qoder, Codex).  All
 functions fail open: a broken probe must never block a prompt or a turn.
 
 Data location, in order:
   1. KIT_DATA_DIR
-  2. $KIT_SHARED_HOME/data (default ~/.ai-coding-efficiency/data)
+  2. $KIT_SHARED_HOME/data (default ~/.agentcrop/data)
   3. $KIT_IDE_HOME/task-metrics/data
 """
 
@@ -25,7 +25,10 @@ try:
 except Exception:  # pragma: no cover - non-POSIX
     fcntl = None
 
-DEFAULT_SHARED_HOME = os.path.expanduser("~/.ai-coding-efficiency")
+DEFAULT_SHARED_HOME = os.path.expanduser("~/.agentcrop")
+# Pre-rename installs used this path.  Only fall back to it when the new home
+# does not exist yet, so an upgrade keeps seeing its old data exactly once.
+LEGACY_SHARED_HOME = os.path.expanduser("~/.ai-coding-efficiency")
 
 PHASES = ("start", "progress", "blocked", "end")
 CATEGORIES = (
@@ -62,7 +65,12 @@ def ide_home() -> str:
 
 
 def shared_home() -> str:
-    return os.path.expanduser(os.environ.get("KIT_SHARED_HOME") or DEFAULT_SHARED_HOME)
+    explicit = os.environ.get("KIT_SHARED_HOME")
+    if explicit:
+        return os.path.expanduser(explicit)
+    if not os.path.isdir(DEFAULT_SHARED_HOME) and os.path.isdir(LEGACY_SHARED_HOME):
+        return LEGACY_SHARED_HOME
+    return DEFAULT_SHARED_HOME
 
 
 def host() -> str:
@@ -102,7 +110,7 @@ def data_dir() -> str:
                 pass
             return candidate
     # Last resort: a private temp directory, still usable for this process.
-    fallback = os.path.join(tempfile.gettempdir(), "ai-coding-efficiency-probe")
+    fallback = os.path.join(tempfile.gettempdir(), "agent-crop-probe")
     os.makedirs(fallback, mode=0o700, exist_ok=True)
     return fallback
 
