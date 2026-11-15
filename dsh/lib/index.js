@@ -33,7 +33,7 @@ const CATEGORIES = [
 
 const PROTOCOL_TEXT = [
   'Crop 协议：',
-  '- 一句话能答完的任务可以不登记；但一旦要进入第二轮、或需要动手改文件，先绑定工作再继续。绑定只用这个工具，不要一边干活一边补登。',
+  '- 首轮要么绑定工作，要么明确声明跳过（只限纯问答、不调用任何工具）。一旦你打算调用工具，先绑定再动手；绑定只用这个工具，不要一边干活一边补登。',
   '- 接着做：crop_report(phase="start", task_id=已有 id)；新开：crop_report(phase="start", task_id="<2-3 个词的短名>")。',
   '- 途中状态变化用 phase="progress"；卡住用 phase="blocked" 并写 cause 与 verdict。',
   '- 黄线提醒：先安抚用户一句，再反思方法对不对，然后上报。红线提醒：先判断是否还走在正确路上，能阶段性交付就先交付。',
@@ -122,7 +122,7 @@ export function apply(ctx, config = {}) {
   const stateFor = (sid) => {
     let state = states.get(sid);
     if (!state) {
-      state = { started: false, blockStart: null, pending: [], injected: new Set(), calls: new Map(), reported: false, missed: 0, everReported: false };
+      state = { started: false, blockStart: null, pending: [], injected: new Set(), calls: new Map(), reported: false, missed: 0, everReported: false, toolsUsed: false, bindNudged: false };
       states.set(sid, state);
     }
     return state;
@@ -382,6 +382,8 @@ export function apply(ctx, config = {}) {
         const text = textOf(event.data);
         state.blockStart = Date.now();
         state.reported = false;
+        state.toolsUsed = false;
+        state.bindNudged = false;
         state.pending = [];
         callCore({ op: 'record_prompt', context: { sid, workspace }, text });
         return;
@@ -400,6 +402,7 @@ export function apply(ctx, config = {}) {
       }
 
       if (event.type === 'tool/result') {
+        state.toolsUsed = true;
         if (state.askStarted) {
           callCore({
             op: 'record_human_wait',
@@ -430,6 +433,8 @@ export function apply(ctx, config = {}) {
         callCore({ op: 'record_stop', context: { sid, workspace } });
         state.blockStart = null;
         state.reported = false;
+        state.toolsUsed = false;
+        state.bindNudged = false;
         state.pending = [];
       }
     } catch (error) {
@@ -462,8 +467,13 @@ export function apply(ctx, config = {}) {
         state.pending = [];
       }
 
+      if (state.toolsUsed && !state.everReported && !state.bindNudged) {
+        state.bindNudged = true;
+        notes.push('[crop] 你已经在调用工具，但还没有绑定任何工作。先调 crop_report(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>") 再继续，这样这段时间才有归属。');
+      }
+
       if (payload.turn >= 2 && payload.step === 1 && !state.everReported) {
-        notes.push('[crop] 这已经是第二轮对话，仍未绑定工作。一句话能答完的任务可以不登记；但任务一旦要继续，先绑定：crop_report(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>")。');
+        notes.push('[crop] 这已经是第二轮对话，仍未绑定工作。“一句话答完”的豁免只适用于纯问答；你如果要调工具，现在先调 crop_report(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>")，再继续。');
       }
 
       if (state.missed > 0) {
