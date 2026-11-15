@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 同一 ref 只保留最新一次跑，旧跑取消
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-python:
+    name: python ${{ matrix.python }} · unittest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 源码用 PEP604 联合类型（X | None），所以最低 3.10
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: python3 -m unittest discover -s tests -t . -v
+        run: python3 -m unittest discover -s tests -t . -v
+
+  test-node:
+    name: node ${{ matrix.node }} · node --test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: node --test dsh/test/index.test.mjs
+        run: node --test dsh/test/index.test.mjs
+
+  smoke:
+    name: probe smoke
+    needs: [test-python, test-node]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: bash tests/probe-smoke.sh
+        run: bash tests/probe-smoke.sh
+
+  package:
+    name: npm pack 清单断言
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm pack --dry-run --json
+        run: npm pack --dry-run --json > pack.json
+      - name: 断言打包清单（必需文件齐全、无 Python 缓存）
+        run: |
+          node -e '
+          const files = JSON.parse(require("fs").readFileSync("pack.json", "utf8"))[0].files
+            .map((f) => f.path)
+            .sort();
+          console.log("packed files (" + files.length + "):");
+          for (const p of files) console.log("  " + p);
+          const must = ["bin/crop", "dsh/lib/index.js", "dsh/lib/client.js", "core/probe_core.py"];
+          const missing = must.filter((p) => !files.includes(p));
+          const junk = files.filter((p) => /__pycache__|\.pyc$/.test(p));
+          let ok = true;
+          if (missing.length) {
+            console.log("::error::打包清单缺少必需文件: " + missing.join(", "));
+            ok = false;
+          }
+          if (junk.length) {
+            console.log("::error::打包清单混入了 Python 缓存: " + junk.join(", "));
+            ok = false;
+          }
+          if (!ok) process.exit(1);
+          console.log("OK: bin/crop、dsh/lib/index.js、dsh/lib/client.js、core/probe_core.py 均在包内，且无 __pycache__ / .pyc");
+          '

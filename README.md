@@ -10,6 +10,7 @@
 
 <sub>测量 → 归因 → 优化 → 验证 · 本地 JSONL · 不上传</sub>
 
+[![CI](https://github.com/oriliz/agent-crop/actions/workflows/ci.yml/badge.svg)](https://github.com/oriliz/agent-crop/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Runtime](https://img.shields.io/badge/Runtime-DeepSeek%20Harness%20·%20Claude%20Code-blueviolet)](#安装与卸载)
 [![Data](https://img.shields.io/badge/Data-Stays%20Local-green)](#它不做什么)
@@ -112,9 +113,11 @@ Claude Code 的装法见 [docs/INSTALL.md](docs/INSTALL.md)。
 自检：
 
 ```bash
-crop status
+crop status                              # 最后一行会打印真实数据目录
 tail -1 ~/.agentcrop/data/events.jsonl   # 应出现 "host":"dsh"
 ```
+
+> 数据目录的历史名是 `~/.ai-coding-efficiency`，新版叫 `~/.agentcrop`。如果你的机器上还没有后者，`crop status` 最后一行打印的才是真实路径；想统一名字就 `ln -s ~/.ai-coding-efficiency ~/.agentcrop`，或用 `KIT_SHARED_HOME` 覆盖。
 
 `crop` 是仓库里的脚本，先放进 PATH：
 
