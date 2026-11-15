@@ -165,7 +165,7 @@ export function apply(ctx, config = {}) {
   // `ctx.inject` defers this block until the host actually provides a web
   // server, so the same plugin stays loadable in headless/TUI hosts (where the
   // crop tool still works, just without the dashboard routes).
-  ctx.inject(['webServer'], (ctxWeb) => {
+  if (typeof ctx.inject === 'function') ctx.inject(['webServer'], (ctxWeb) => {
     const webServer = ctxWeb.webServer;
     if (!webServer || typeof webServer.register !== 'function') return;
     const reply = (res, status, body) => {
