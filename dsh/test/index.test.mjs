@@ -6,7 +6,7 @@ import test from 'node:test';
 
 process.env.KIT_DASHBOARD = '0';
 
-import { apply } from '../lib/index.js';
+import { apply, PROTOCOL_TEXT } from '../lib/index.js';
 
 function fakeCtx() {
   const handlers = new Map();
@@ -32,6 +32,14 @@ function fakeSession(id = 's1') {
     ],
   };
 }
+
+test('protocol pins the tone: colleague, not customer support', async () => {
+  assert.ok(PROTOCOL_TEXT.includes('说话方式'), 'tone block must exist');
+  assert.ok(PROTOCOL_TEXT.includes('同事吐槽'), 'must say colleague, not customer support');
+  assert.ok(PROTOCOL_TEXT.includes('牛马味'), 'must carry a before/after example');
+  assert.ok(PROTOCOL_TEXT.includes('梗是包装，不是内容'), 'jokes must not replace facts');
+  assert.ok(PROTOCOL_TEXT.includes('expect_min'), 'estimate contract stays in the protocol');
+});
 
 test('registers probe_report with the documented schema', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
