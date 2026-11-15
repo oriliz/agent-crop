@@ -39,6 +39,11 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # 人工审批门：这个 environment 配了 required reviewers，
+    # 没有维护者在 Actions 页面点 Approve，job 不会开始 —— 发布不能自动发生。
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/package/agent-crop-dsh
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4

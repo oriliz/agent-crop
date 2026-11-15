@@ -33,6 +33,18 @@ python 最低 3.10 是因为源码用 PEP604 联合类型（`X | None`）；node
 
 权限：`contents: write`（建 Release）+ `id-token: write`（provenance 签名）。只在 tag 上触发，PR 与分支 push 都不会进这条流水线。
 
+## 人工审批门（发布必须人批准）
+
+`publish` job 绑定 GitHub Environment `npm-publish`，该 environment 配了 **Required reviewers**
+（仓库 owner）。效果：
+
+- tag 推上来后 `verify` 先跑，跑绿也**不会自动发布**
+- `publish` 停在 "Waiting for approval"，直到维护者在 Actions 页面点 Approve
+- 拒绝或超时 = 不发布；`npm publish` 与 GitHub Release 在同一个 job 里，因此一次批准才同时生效
+
+配置入口：仓库 Settings → Environments → `npm-publish` → Required reviewers。
+审批记录留在 Actions 的运行日志里，可追溯。
+
 ## 需要配置的 secret
 
 | secret | 谁提供 | 用在哪 | 说明 |
