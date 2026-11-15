@@ -425,6 +425,12 @@ def validate_report(args: dict) -> dict:
     verdict = _text(args.get("verdict"), "verdict").lower()
     if verdict and verdict not in VERDICTS:
         raise ValueError(f"verdict must be one of {', '.join(VERDICTS)}")
+    rework = _text(args.get("rework"), "rework").lower()
+    if rework and rework not in REVIEW_LEVELS:
+        raise ValueError(f"rework must be one of {', '.join(REVIEW_LEVELS)}")
+    sentiment = _text(args.get("sentiment"), "sentiment").lower()
+    if sentiment and sentiment not in SENTIMENTS:
+        raise ValueError(f"sentiment must be one of {', '.join(SENTIMENTS)}")
     what = _text(args.get("what"), "what")
     cost = _text(args.get("cost"), "cost")
     next_time = _text(args.get("next_time"), "next_time")
@@ -441,6 +447,8 @@ def validate_report(args: dict) -> dict:
         "type": work_type,
         "difficulty": difficulty,
         "verdict": verdict,
+        "rework": rework,
+        "sentiment": sentiment,
         "what": what,
         "cost": cost,
         "next_time": next_time,
@@ -477,6 +485,8 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         "category": report["category"],
         "goal": report.get("goal", ""),
         "verdict": report.get("verdict", ""),
+        "rework": report.get("rework", ""),
+        "sentiment": report.get("sentiment", ""),
         "type": report.get("type", ""),
         "difficulty": report.get("difficulty", ""),
         "turn": context.get("turn"),
@@ -509,6 +519,8 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                 "sid": sid,
                 "work_id": report["task_id"],
                 "verdict": report.get("verdict", ""),
+        "rework": report.get("rework", ""),
+        "sentiment": report.get("sentiment", ""),
                 "what": report.get("what", ""),
                 "cost": report.get("cost", ""),
                 "next_time": report.get("next_time", ""),
@@ -530,6 +542,17 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                           "goal": report.get("goal", ""), "type": report.get("type", ""),
                           "difficulty": report.get("difficulty", "")})
     link_task(report["task_id"], block_start, sid)
+    # 用户不满时，返工档次可以随这次上报一起带进来，省掉一次单独调用
+    if report.get("rework"):
+        try:
+            record_review(
+                {"rework": report.get("rework"), "sentiment": report.get("sentiment", ""),
+                 "reason": report.get("cause") or report.get("summary") or "",
+                 "work_id": report["task_id"]},
+                {"sid": sid},
+            )
+        except ValueError:
+            pass
     return record
 
 

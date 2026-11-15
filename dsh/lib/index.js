@@ -38,7 +38,7 @@ const PROTOCOL_TEXT = [
   '- 途中状态变化用 phase="progress"；卡住用 phase="blocked" 并写 cause 与 verdict。',
   '- 黄线提醒：先安抚用户一句，再反思方法对不对，然后上报。红线提醒：先判断是否还走在正确路上，能阶段性交付就先交付。',
   '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
-  '- 用户表达不满、否定或要求重做时，调 crop_review 记一档（redo=推翻重做 / major=大改 / minor=小修）；普通确认不用调。',
+  '- 用户表达不满、否定或要求重做时：在当次 crop_report 里带上 rework（redo/major/minor）和 sentiment，或单独调 crop_review；报完工作不等于报完返工，两步都要做。',
   '- 用户确认完成后再 crop_report(phase="end")，写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',
   '- 看到“待清退”的工作：先问用户要继续 / 挂起 / 清退，再用 crop_work 执行，不要自己决定。',
 ].join('\n');
@@ -190,6 +190,12 @@ export function apply(ctx, config = {}) {
           enum: ['justified', 'not-justified', 'unknown'],
           description: '你是否认为这次变慢/超时是合理的：任务本身难 = justified；自己走错路 = not-justified',
         },
+        rework: {
+          type: 'string',
+          enum: ['redo', 'major', 'minor', 'none'],
+          description: '可选：用户对上一轮表达不满时一并带上（redo=推翻重做 / major=大改 / minor=小修），省掉单独调用 crop_review',
+        },
+        sentiment: { type: 'string', enum: ['pos', 'neu', 'neg'], description: '可选：用户这句话的语气' },
       },
       required: ['phase', 'task_id', 'summary'],
     },
@@ -429,7 +435,10 @@ export function apply(ctx, config = {}) {
 
       if (event.type === 'turn/end') {
         const minutes = state.blockStart ? (Date.now() - state.blockStart) / 60000 : 0;
-        if (minutes >= Number(setting(config.missMin, 2)) && !state.reported) state.missed += 1;
+        const missLimit = process.env.KIT_MISS_MIN !== undefined
+          ? Number(process.env.KIT_MISS_MIN)
+          : Number(setting(config.missMin, 2));
+        if (state.toolsUsed && minutes >= missLimit && !state.reported) state.missed += 1;
         callCore({ op: 'record_stop', context: { sid, workspace } });
         state.blockStart = null;
         state.reported = false;
@@ -470,10 +479,6 @@ export function apply(ctx, config = {}) {
       if (state.toolsUsed && !state.everReported && !state.bindNudged) {
         state.bindNudged = true;
         notes.push('[crop] 你已经在调用工具，但还没有绑定任何工作。先调 crop_report(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>") 再继续，这样这段时间才有归属。');
-      }
-
-      if (payload.turn >= 2 && payload.step === 1 && !state.everReported) {
-        notes.push('[crop] 这已经是第二轮对话，仍未绑定工作。“一句话答完”的豁免只适用于纯问答；你如果要调工具，现在先调 crop_report(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>")，再继续。');
       }
 
       if (state.missed > 0) {

@@ -187,13 +187,15 @@ test('asks for a report after a substantial turn without one', async (t) => {
     type: 'user/message',
     data: { source: { kind: 'user' }, content: [{ type: 'text', text: '干活' }] },
   });
+  event(session, { type: 'tool/call', data: { callId: 'c1', name: 'bash' } });
+  event(session, { type: 'tool/result', data: { callId: 'c1' } });
   event(session, { type: 'turn/end', data: {} });
 
   const decision = await preStep({ agent: { session }, turn: 2, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
   assert.ok(decision.messages.some((message) => message.content[0].text.includes('没有登记')));
 });
 
-test('nudges an unbound session on the second turn', async (t) => {
+test('pure chat turns never count as missed reports', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   process.env.KIT_DATA_DIR = directory;
@@ -204,5 +206,5 @@ test('nudges an unbound session on the second turn', async (t) => {
   const preStep = ctx.handlers.get('agent/pre-step');
 
   const decision = await preStep({ agent: { session }, turn: 2, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
-  assert.ok(decision.messages.some((message) => message.content[0].text.includes('第二轮')));
+  assert.ok(!decision.messages.some((message) => message.content[0].text.includes('没有登记')));
 });
