@@ -174,6 +174,21 @@ class EventFlowTest(unittest.TestCase):
         self.assertEqual(len(active), 1)
         self.assertEqual(self.core.resolve_binding(self.sid), "flow-work")
 
+    def test_migration_is_idempotent_and_keeps_newest(self):
+        self.report(phase="start", task_id="older")
+        self.report(phase="start", task_id="newer")
+        value = self.core.load_open()
+        value["tasks"]["older"]["last_seen_at"] = 1000
+        value["tasks"]["newer"]["last_seen_at"] = 2000
+        self.core.save_open(value)
+        self.core.save_bindings({"bindings": []})
+        self.core.migrate_bindings()
+        first = self.core.load_bindings()["bindings"]
+        self.assertEqual(len(first), 1)
+        self.assertEqual(first[0]["work_id"], "newer")
+        self.core.migrate_bindings()
+        self.assertEqual(len(self.core.load_bindings()["bindings"]), 1)
+
     def test_human_wait_span(self):
         event = self.core.record_human_wait(self.sid, "ask_user_question", 1000, 1000 + 65000)
         self.assertEqual(event["waiting_ms"], 65000)
