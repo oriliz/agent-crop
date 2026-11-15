@@ -68,6 +68,19 @@ macOS 没有 util-linux 的 `setsid`，别手搓 `nohup setsid`——会静默�
 scripts/dev-restart.sh 3082 dev
 ```
 
+## 这套约定怎么传到别的会话
+
+文档不会自动进上下文，真正起作用的是 agent 每次会话开头会读到的载体：
+
+| 载体 | 什么时候生效 | 放什么 |
+|---|---|---|
+| `agent-crop/AGENTS.md`（本仓库根） | 会话 cwd 在仓库内：**首次请求**就注入；cwd 在父工作区时，**第一次 read/write/edit 到仓库文件**后注入（subdir on-touch） | 硬规则 + 指向本文件 |
+| `~/AgentProjects/AGENTS.md`（工作区根） | 该工作区里每个会话的首次请求 | 一行指针：「碰 agent-crop 前先读仓库 AGENTS.md / docs/WORKFLOW.md」 |
+| `CONTRIBUTING.md` / PR 模板 | 人读、agent 按需读 | 边界与提交流程 |
+
+所以：**改仓库根 AGENTS.md** 是这件事的主载体；工作区那行是让「别的会话在动手前就知道有这个约定」的引子。
+DSH 的注入包是 `@deepseek-ai/dsh-agent-instructions`：用户全局链（`$DSH_HOME/AGENTS.md`）+ 从项目根到 cwd 的每一层 AGENTS.md，默认每链 64 KiB 预算。
+
 ## 自查（每次交付前）
 
 - [ ] 叙事文字过过一遍了？还是直接开始画/改？
