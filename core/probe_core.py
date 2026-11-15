@@ -1875,7 +1875,9 @@ def migrate_bindings() -> int:
             keep = newest.get(sid)
             if keep is None or int(task.get("last_seen_at") or 0) > int(keep.get("last_seen_at") or 0):
                 newest[sid] = task
-    allowed = {sid: task.get("task_id") for sid, task in newest.items()}
+    active_sids = {item.get("sid") for item in value.get("bindings", [])
+                   if float(item.get("expires_at") or 0) > now}
+    allowed = {sid: task.get("task_id") for sid, task in newest.items() if sid not in active_sids}
     for task in load_open().get("tasks", {}).values():
         sid, work_id = task.get("last_sid"), task.get("task_id")
         if not sid or not work_id or (sid, work_id) in have:

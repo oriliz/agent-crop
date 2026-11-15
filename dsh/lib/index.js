@@ -476,7 +476,8 @@ export function apply(ctx, config = {}) {
         state.pending = [];
       }
 
-      if (state.toolsUsed && !state.everReported && !state.bindNudged) {
+      const boundWork = state.toolsUsed ? (callCore({ op: 'binding', context: { sid, workspace } }) || '') : '';
+      if (state.toolsUsed && !boundWork && !state.bindNudged) {
         state.bindNudged = true;
         notes.push('[crop] 你已经在调用工具，但还没有绑定任何工作。先调 crop_report(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>") 再继续，这样这段时间才有归属。');
       }
