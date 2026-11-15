@@ -70,16 +70,21 @@ scripts/dev-restart.sh 3082 dev
 
 ## 这套约定怎么传到别的会话
 
-文档不会自动进上下文，真正起作用的是 agent 每次会话开头会读到的载体：
+会话之间不共享上下文。agent 能看到的是两样：**会话启动 / 首次碰文件时被注入的内容**，和它主动读的文件。
+DSH 的注入包是 `@deepseek-ai/dsh-agent-instructions`：用户全局链（`$DSH_HOME/AGENTS.md`），项目链是从项目根
+到 cwd 每一层的 `AGENTS.md`（首次请求注入），子目录 `AGENTS.md` 在第一次 `read`/`write`/`edit` 之后注入（on-touch）。
 
-| 载体 | 什么时候生效 | 放什么 |
+所以按「这条信息对谁成立」分层放，**别都塞进 AGENTS.md**：
+
+| 信息 | 放在哪 | 为什么 |
 |---|---|---|
-| `agent-crop/AGENTS.md`（本仓库根） | 会话 cwd 在仓库内：**首次请求**就注入；cwd 在父工作区时，**第一次 read/write/edit 到仓库文件**后注入（subdir on-touch） | 硬规则 + 指向本文件 |
-| `~/AgentProjects/AGENTS.md`（工作区根） | 该工作区里每个会话的首次请求 | 一行指针：「碰 agent-crop 前先读仓库 AGENTS.md / docs/WORKFLOW.md」 |
-| `CONTRIBUTING.md` / PR 模板 | 人读、agent 按需读 | 边界与提交流程 |
+| 这个仓库怎么跑、哪些是硬门禁 | 仓库根 `AGENTS.md` | 只对 cwd 在本仓库的会话注入，不污染别的工作 |
+| 画图、PR 拆分、估时这类方法 | 技能（`$DSH_HOME/skills`），或本文档 + 一行指针 | 跨项目复用、按需加载，不占全局上下文 |
+| 所有项目都成立的协作底线 | 用户全局 `$DSH_HOME/AGENTS.md` | 唯一真正全局的注入点，越少越好 |
+| 一次性任务上下文 | 会话内 prompt，不落地 | 只对这一次有效 |
 
-所以：**改仓库根 AGENTS.md** 是这件事的主载体；工作区那行是让「别的会话在动手前就知道有这个约定」的引子。
-DSH 的注入包是 `@deepseek-ai/dsh-agent-instructions`：用户全局链（`$DSH_HOME/AGENTS.md`）+ 从项目根到 cwd 的每一层 AGENTS.md，默认每链 64 KiB 预算。
+反例（这次差点犯的）：把「改 README 先叙事后画图」写进 `~/AgentProjects/AGENTS.md`——那是**工作区级**、
+所有会话都会读的文件，为一件只在文档/图形任务里成立的事付全量上下文成本。仓库根 `AGENTS.md` 或技能才是它的位置。
 
 ## 自查（每次交付前）
 
