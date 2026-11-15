@@ -431,6 +431,7 @@ def validate_report(args: dict) -> dict:
     sentiment = _text(args.get("sentiment"), "sentiment").lower()
     if sentiment and sentiment not in SENTIMENTS:
         raise ValueError(f"sentiment must be one of {', '.join(SENTIMENTS)}")
+    improve = _text(args.get("improve"), "improve")
     what = _text(args.get("what"), "what")
     cost = _text(args.get("cost"), "cost")
     next_time = _text(args.get("next_time"), "next_time")
@@ -447,6 +448,7 @@ def validate_report(args: dict) -> dict:
         "type": work_type,
         "difficulty": difficulty,
         "verdict": verdict,
+        "improve": improve,
         "rework": rework,
         "sentiment": sentiment,
         "what": what,
@@ -485,6 +487,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         "category": report["category"],
         "goal": report.get("goal", ""),
         "verdict": report.get("verdict", ""),
+        "improve": report.get("improve", ""),
         "rework": report.get("rework", ""),
         "sentiment": report.get("sentiment", ""),
         "type": report.get("type", ""),
@@ -519,6 +522,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                 "sid": sid,
                 "work_id": report["task_id"],
                 "verdict": report.get("verdict", ""),
+        "improve": report.get("improve", ""),
         "rework": report.get("rework", ""),
         "sentiment": report.get("sentiment", ""),
                 "what": report.get("what", ""),

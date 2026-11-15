@@ -39,6 +39,7 @@ const PROTOCOL_TEXT = [
   '- 黄线提醒：先安抚用户一句，再反思方法对不对，然后上报。红线提醒：先判断是否还走在正确路上，能阶段性交付就先交付。',
   '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
   '- 用户表达不满、否定或要求重做时：在当次 crop_report 里带上 rework（redo/major/minor）和 sentiment，或单独调 crop_review；报完工作不等于报完返工，两步都要做。',
+  '- 报慢或卡点的时候，除了 cause 再补一句 improve=下次可以怎么改进（一句话，供复盘参考，不一定被采纳）。',
   '- 用户确认完成后再 crop_report(phase="end")，写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',
   '- 看到“待清退”的工作：先问用户要继续 / 挂起 / 清退，再用 crop_work 执行，不要自己决定。',
 ].join('\n');
@@ -189,6 +190,10 @@ export function apply(ctx, config = {}) {
           type: 'string',
           enum: ['justified', 'not-justified', 'unknown'],
           description: '你是否认为这次变慢/超时是合理的：任务本身难 = justified；自己走错路 = not-justified',
+        },
+        improve: {
+          type: 'string',
+          description: '可选：下次可以怎么改进（一句话，只是建议，不一定被采纳）',
         },
         rework: {
           type: 'string',
