@@ -372,10 +372,13 @@ def close_task(task_id: str) -> None:
     append_jsonl(os.path.join(paths()["closed_dir"], f"{today()}.jsonl"), task)
 
 
-def link_task(task_id: str, block_start: int | None) -> None:
+def link_task(task_id: str, block_start: int | None, sid: str | None = None) -> None:
     if not task_id or not block_start:
         return
-    append_event({"ev": "task_link", "task_id": task_id, "block_start": block_start})
+    event = {"ev": "task_link", "task_id": task_id, "block_start": block_start}
+    if sid:
+        event["sid"] = sid
+    append_event(event)
 
 
 # ---------------------------------------------------------------------------
@@ -500,6 +503,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         if report.get("what") or report.get("cost") or report.get("next_time"):
             append_event({
                 "ev": "work_summary",
+                "sid": sid,
                 "work_id": report["task_id"],
                 "verdict": report.get("verdict", ""),
                 "what": report.get("what", ""),
@@ -514,7 +518,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         close_task(report["task_id"])
     else:
         _upsert_task(record, workspace)
-    link_task(report["task_id"], block_start)
+    link_task(report["task_id"], block_start, sid)
     return record
 
 
@@ -721,7 +725,7 @@ def format_start_hint(tasks: list[dict]) -> str:
     return text
 
 
-def record_side_issue(note: str, suggest: str = "later") -> bool:
+def record_side_issue(note: str, suggest: str = "later", sid: str | None = None) -> bool:
     """Record an off-topic thread without moving the current work.
 
     A side issue is a note, not a task: it must be cheap enough to record in the
@@ -911,7 +915,7 @@ def switch_claim(work_id: str, sid: str) -> bool:
     return True
 
 
-def set_work_state(work_id: str, state: str) -> bool:
+def set_work_state(work_id: str, state: str, sid: str | None = None) -> bool:
     work_id = normalize_task_id(work_id)
     value = load_open()
     tasks = value.setdefault("tasks", {})
@@ -921,12 +925,14 @@ def set_work_state(work_id: str, state: str) -> bool:
     task["state"] = state
     task["state_changed_at"] = now_ms()
     save_open(value)
-    append_event({"ev": "work_" + ("suspend" if state == "suspended" else "resume"),
-                  "work_id": work_id})
+    event = {"ev": "work_" + ("suspend" if state == "suspended" else "resume"), "work_id": work_id}
+    if sid:
+        event["sid"] = sid
+    append_event(event)
     return True
 
 
-def archive_work(work_id: str, reason: str = "manual") -> bool:
+def archive_work(work_id: str, reason: str = "manual", sid: str | None = None) -> bool:
     work_id = normalize_task_id(work_id)
     value = load_open()
     tasks = value.setdefault("tasks", {})
@@ -938,7 +944,10 @@ def archive_work(work_id: str, reason: str = "manual") -> bool:
     task["archive_reason"] = reason
     save_open(value)
     append_jsonl(os.path.join(paths()["archive_dir"], f"{today()}.jsonl"), task)
-    append_event({"ev": "work_archive", "work_id": work_id, "reason": reason})
+    event = {"ev": "work_archive", "work_id": work_id, "reason": reason}
+    if sid:
+        event["sid"] = sid
+    append_event(event)
     return True
 
 
@@ -1363,6 +1372,9 @@ def work_minutes(work_id: str) -> float:
             continue
         start = int(event.get("block_start") or 0)
         if not start:
+            continue
+        # several reports in one turn must not count the same block twice
+        if any(abs(other - start) <= 5000 for other in linked):
             continue
         linked.append(start)
         # JS block start and the core's prompt timestamp differ by milliseconds
