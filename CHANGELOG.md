@@ -8,37 +8,15 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
 > **v0.4.0 及更早：未整理。** 那段时间是边写边改，提交里混着设计草稿与试验，
 > 没有逐条回溯。要看那段历史，直接读 `git log`。
 
-## [0.6.0] — 草稿（未发布）
+## [0.6.0] — 2026-11-15
 
 > 发版口径：**不打碎版本**。0.5.x 之后不再逐个打点，这条线一直累积到项目真正可用，
-> 那时才发 `1.0.0`。在此之前的所有改动都算 0.6.0 草稿。
-
-### Changed（变更）
-
-- 打开源仓库基础设施：CI（python 3.10/3.12/3.13、node 22/24、冒烟、npm 打包清单断言）、
-  tag 触发的发版流水线、issue/PR 模板、社区文档（CONTRIBUTING / SECURITY / CODE_OF_CONDUCT）
-- 打包元数据补齐 `bin`：在此之前 `npm pack` 漏掉 `bin/crop`，按 npm 装法拿不到 `crop` 命令
-- 发版流水线加人工审批门：`npm publish` 与 GitHub Release 都必须经维护者批准后才执行
-
-### Fixed（修复）
-
-- 面板 `/api/*` 的 `Access-Control-Allow-Origin: *` 改为只对回环 Origin 回显：此前
-  用户浏览器里任何网页都能跨源读到工作时间线（工作短名、自述、耗时），一个 GET 就够。
-  非回环绑定时另打印警告
-- Python 测试改用 `unittest discover`，新增面板 CORS 回归用例（5 条，覆盖回环/外来 Origin、
-  无 Origin 头、三个端点的行为一致性）
-
-### Removed（移除）
-
-- `tests/behavior/TRACE-2026-11-15.md`：一次被污染的真实会话追踪，含真实提示与本地路径，
-  不适合放在公开仓库
-
----
-
-## [Unreleased]
+> 那时才发 `1.0.0`。本条是第一个发布到 npm 的版本，之前的改动都算 0.6.0。
 
 ### Added（新增）
 
+- 发布到 npm：`dsh plugin --profile <profile> add agent-crop-dsh` 直接装预构建产物，
+  不再需要先 `git clone`，也不需要 pnpm 的 `allowBuilds` 放行
 - 提醒改按「合同」抽鞭子：`crop_report` 新增 `expect_min` / `expect_why`，AI 开工先报
   预估工时，提醒以它为时钟（0.8× 预告、1.0× 抽、1.5× 翻账本、2.5× 焦躁），在它自己
   报的范围内完全不打扰；没报预期仍按 10 / 30 分钟兜底，并催它报数字
@@ -49,10 +27,37 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
   第 2 次起文案点名；不阻断、不设上限
 - `docs/VOICE.md`：档位表、报预期/改报价流程、文案池占位符与轮换机制
 
+### Changed（变更）
+
+- 打开源仓库基础设施：CI（python 3.10/3.12/3.13、node 22/24、冒烟、npm 打包清单断言）、
+  tag 触发的发版流水线、issue/PR 模板、社区文档（CONTRIBUTING / SECURITY / CODE_OF_CONDUCT）
+- 打包元数据补齐 `bin`：在此之前 `npm pack` 漏掉 `bin/crop`，按 npm 装法拿不到 `crop` 命令
+- 发版流水线加人工审批门：`npm publish` 与 GitHub Release 都必须经维护者批准后才执行
+- 兼容声明改用 DSH 现行规则：新增 `engines.dsh: ">=0.2.1 <0.3.0"`，移除已不被读取的
+  `dsh.compatibility`；安装与 profile 启动会按这个范围拒绝不兼容的 DSH
+- 安装文档改为 npm 优先（README / docs/INSTALL.md），源码安装降级为开发路径
+
 ### Fixed（修复）
 
+- npm 安装后 `crop` 命令直接崩：`bin/crop` 用 `abspath(__file__)` 推包根，经
+  `node_modules/.bin/crop` 符号链接执行时解析成 `node_modules/`，`import probe_core` 失败。
+  改用 `realpath` 后按真实包路径找 `core/`
+- 面板 `/api/*` 的 `Access-Control-Allow-Origin: *` 改为只对回环 Origin 回显：此前
+  用户浏览器里任何网页都能跨源读到工作时间线（工作短名、自述、耗时），一个 GET 就够。
+  非回环绑定时另打印警告
+- Python 测试改用 `unittest discover`，新增面板 CORS 回归用例（5 条，覆盖回环/外来 Origin、
+  无 Origin 头、三个端点的行为一致性）
 - 冒烟测试的断言还停在改名前的 `[探针]` / `probe_report`，脚本实际一直是红的；
   改回 `[crop]` / `crop_report` 并跑通
+
+### Removed（移除）
+
+- `tests/behavior/TRACE-2026-11-15.md`：一次被污染的真实会话追踪，含真实提示与本地路径，
+  不适合放在公开仓库
+
+---
+
+## [Unreleased]
 
 新改动先写在这里，发版时再折叠进对应版本。
 
