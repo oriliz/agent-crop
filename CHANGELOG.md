@@ -8,6 +8,25 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
 > **v0.4.0 及更早：未整理。** 那段时间是边写边改，提交里混着设计草稿与试验，
 > 没有逐条回溯。要看那段历史，直接读 `git log`。
 
+## [0.6.0] — 草稿（未发布）
+
+> 发版口径：**不打碎版本**。0.5.x 之后不再逐个打点，这条线一直累积到项目真正可用，
+> 那时才发 `1.0.0`。在此之前的所有改动都算 0.6.0 草稿。
+
+### Changed（变更）
+
+- 打开源仓库基础设施：CI（python 3.10/3.12/3.13、node 22/24、冒烟、npm 打包清单断言）、
+  tag 触发的发版流水线、issue/PR 模板、社区文档（CONTRIBUTING / SECURITY / CODE_OF_CONDUCT）
+- 打包元数据补齐 `bin`：在此之前 `npm pack` 漏掉 `bin/crop`，按 npm 装法拿不到 `crop` 命令
+- 发版流水线加人工审批门：`npm publish` 与 GitHub Release 都必须经维护者批准后才执行
+
+### Removed（移除）
+
+- `tests/behavior/TRACE-2026-11-15.md`：一次被污染的真实会话追踪，含真实提示与本地路径，
+  不适合放在公开仓库
+
+---
+
 ## [Unreleased]
 
 ### Added（新增）
