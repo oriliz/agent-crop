@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -187,6 +188,33 @@ def _summary(days: float = 7.0) -> dict:
     }
 
 
+STARTED_AT = int(time.time() * 1000)
+
+
+def _mtime_ms(path: str) -> int:
+    try:
+        return int(os.path.getmtime(path) * 1000)
+    except OSError:
+        return 0
+
+
+def _health() -> dict:
+    """Identity of this dashboard process, for the host's probe-and-reuse logic.
+
+    The mtimes are the code this process is running, not what is on disk now; the
+    host compares them with the files it would spawn and replaces only a stale
+    process, so two DSH instances stop fighting over port 8765.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    return {
+        "ok": True,
+        "pid": os.getpid(),
+        "started_at": STARTED_AT,
+        "serve_mtime": _mtime_ms(os.path.abspath(__file__)),
+        "core_mtime": _mtime_ms(os.path.join(here, "probe_core.py")),
+    }
+
+
 LOOPBACK_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$")
 
 
@@ -234,6 +262,16 @@ class Handler(BaseHTTPRequestHandler):
                 sid = self.path.split("sid=", 1)[1].split("&", 1)[0]
             payload = core.session_summary(sid)
             body = json.dumps(payload, ensure_ascii=False).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            for name, value in _cors_headers(self):
+                self.send_header(name, value)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.startswith("/api/health"):
+            body = json.dumps(_health(), ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             for name, value in _cors_headers(self):

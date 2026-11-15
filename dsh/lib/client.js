@@ -1,7 +1,9 @@
 /**
  * DSH web client half for Agent Crop.
  *
- * Two surfaces, one data source (the local crop_serve on 127.0.0.1:8765):
+ * Two surfaces, one data source served by the DSH host itself on its own port
+ * (`/api/agent-crop/*`, relayed from the Python core — no separate dashboard
+ * process, so every host instance has its own endpoint):
  *
  *  - a conversation.view tab next to 轨迹: is this work going to finish smoothly,
  *    what does the AI itself say about the slowdown, and which tool is the
@@ -32,8 +34,10 @@ window.__ModuleLoader__.load({
     const VIEW_ID = 'crop';
     const PANEL_ID = 'crop-global';
     const PANEL_ORDER = 25;
-    const BASE = 'http://127.0.0.1:8765';
-    const ENDPOINT = `${BASE}/api/session`;
+    // The host answers these itself (same origin, one per host instance);
+    // there is no separate dashboard process to talk to.
+    const API = '/api/agent-crop';
+    const ENDPOINT = `${API}/session`;
     const STYLE_ID = 'agent-crop-crop-view-style';
 
     function lampColor(ratio) {
@@ -99,7 +103,7 @@ body[data-ds-dark-theme] .crop-card {
   display: grid;
   gap: 14px;
   align-content: start;
-  max-width: 1000px;
+  max-width: 1120px;
   font-size: 13px;
 }
 
@@ -197,10 +201,6 @@ body[data-ds-dark-theme] .crop-card {
   filter: brightness(1.25);
 }
 
-.crop-slot[data-on] .crop-bar {
-  background: #4f8ef7;
-}
-
 .crop-bar {
   width: 100%;
   min-height: 2px;
@@ -220,16 +220,119 @@ body[data-ds-dark-theme] .crop-card {
   white-space: nowrap;
 }
 
-.crop-day-detail {
+.crop-day {
   margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l1, rgba(44, 58, 115, .16));
   display: grid;
-  gap: 2px;
+  gap: 10px;
+}
+
+.crop-day-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
-  line-height: 1.7;
+}
+
+.crop-stat {
+  border: 1px solid var(--dsw-alias-border-l1, rgba(44, 58, 115, .16));
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.crop-x {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: inherit;
+  opacity: .6;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.crop-x:hover {
+  opacity: 1;
+  background: var(--dsw-alias-interactive-bg-hover, rgba(74, 95, 168, .08));
+}
+
+.crop-day-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.crop-day-label {
+  flex: none;
+  width: 30px;
+  line-height: 22px;
+}
+
+.crop-day-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.crop-work-rows {
+  display: grid;
+  gap: 3px;
+}
+
+.crop-work-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  line-height: 18px;
+}
+
+.crop-work-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crop-work-min {
+  flex: none;
+  opacity: .8;
+  font-variant-numeric: tabular-nums;
+}
+
+.crop-more {
+  border: 0;
+  background: none;
+  color: inherit;
+  opacity: .7;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 0;
+  margin-top: 2px;
 }
 
 .crop-work-title {
   min-width: 160px;
+}
+
+/* The global page is a data surface, not prose: its cards sit a little denser
+   than the message plates (same tint family, higher alpha) and carry a hairline
+   edge so numbers keep contrast where the wallpaper is bright. The skin's two
+   sliders still drive them. */
+.crop-global .crop-card {
+  background: rgb(242 245 250 / min(1, calc(var(--dsh-skin-bubble-alpha, .5) * 1.7)));
+  border: 1px solid rgba(255, 255, 255, .35);
+  box-shadow: 0 2px 12px rgba(20, 30, 60, .10);
+}
+
+body[data-ds-dark-theme] .crop-global .crop-card {
+  background: rgb(16 22 42 / min(1, calc(var(--dsh-skin-bubble-alpha, .5) * 2 * .8)));
+  border-color: rgba(160, 180, 230, .18);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .28);
 }
 
 .crop-delta {
@@ -250,6 +353,7 @@ body[data-ds-dark-theme] .crop-card {
   flex-direction: column;
   justify-content: flex-end;
   width: 100%;
+  max-width: 56px;
   border-radius: 3px;
   overflow: hidden;
 }
@@ -336,7 +440,7 @@ body[data-ds-dark-theme] .crop-card {
       axis: { display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '6px' },
       table: { width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' },
       td: { padding: '6px 0', borderBottom: '1px solid var(--dsw-alias-border-l1, rgba(44, 58, 115, .16))' },
-      tdRight: { padding: '6px 0', borderBottom: '1px solid var(--dsw-alias-border-l1, rgba(44, 58, 115, .16))', textAlign: 'right', opacity: 0.8 },
+      tdRight: { padding: '6px 0', borderBottom: '1px solid var(--dsw-alias-border-l1, rgba(44, 58, 115, .16))', textAlign: 'right', whiteSpace: 'nowrap', opacity: 0.8 },
       fail: { color: '#e5484d' },
       quiet: { fontSize: '12px' },
     };
@@ -382,32 +486,12 @@ body[data-ds-dark-theme] .crop-card {
       return state;
     }
 
-    function useSummary(days) {
-      const [state, setState] = React.useState({ data: null, error: null, at: 0 });
-      React.useEffect(() => {
-        let alive = true;
-        const tick = async () => {
-          try {
-            const response = await fetch(`${BASE}/api/summary?days=${days}`, { cache: 'no-store' });
-            const data = await response.json();
-            if (alive) setState({ data, error: null, at: Date.now() });
-          } catch (error) {
-            if (alive) setState({ data: null, error: String(error), at: Date.now() });
-          }
-        };
-        tick();
-        const timer = setInterval(tick, 5000);
-        return () => { alive = false; clearInterval(timer); };
-      }, [days]);
-      return state;
-    }
-
     function View({ sessionId }) {
       const { data, error } = useSession(sessionId);
       if (error || !data) {
         return h('div', { className: 'crop-page' },
           h('div', { className: 'crop-card' },
-            h('div', { className: 'crop-muted', style: S.quiet }, '数据服务没起来：运行 crop serve，或重启 dsh。')));
+            h('div', { className: 'crop-muted', style: S.quiet }, '数据读不到：检查 dsh 日志里的 crop 报错。')));
       }
 
       const work = data.active_work || null;
@@ -527,7 +611,7 @@ body[data-ds-dark-theme] .crop-card {
         let alive = true;
         const tick = async () => {
           try {
-            const response = await fetch(`${BASE}/api/global?days=${days}`, { cache: 'no-store' });
+            const response = await fetch(`${API}/global?days=${days}`, { cache: 'no-store' });
             const data = await response.json();
             if (alive) setState({ data, error: null, at: Date.now() });
           } catch (error) {
@@ -545,6 +629,7 @@ body[data-ds-dark-theme] .crop-card {
       const [days, setDays] = React.useState(7);
       const [selected, setSelected] = React.useState(null);
       const [detail, setDetail] = React.useState(null);
+      const [showAll, setShowAll] = React.useState(false);
       const global = useGlobal(days);
 
       React.useEffect(() => {
@@ -552,7 +637,7 @@ body[data-ds-dark-theme] .crop-card {
         let alive = true;
         (async () => {
           try {
-            const response = await fetch(`${BASE}/api/day?date=${encodeURIComponent(selected)}`, { cache: 'no-store' });
+            const response = await fetch(`${API}/day?date=${encodeURIComponent(selected)}`, { cache: 'no-store' });
             const data = await response.json();
             if (alive) setDetail(data);
           } catch (error) {
@@ -577,7 +662,7 @@ body[data-ds-dark-theme] .crop-card {
       const loadingCard = !data
         ? h('div', { key: 'state', className: 'crop-card' },
             h('div', { className: 'crop-muted', style: S.quiet },
-              global.error ? '数据服务没起来：运行 crop serve，或重启 dsh。' : '正在读取…'))
+              global.error ? '数据读不到：检查 dsh 日志里的 crop 报错。' : '正在读取…'))
         : null;
 
       const head = h('div', { key: 'head', className: 'crop-card' },
@@ -649,7 +734,7 @@ body[data-ds-dark-theme] .crop-card {
                 className: 'crop-slot',
                 title: `${item.date} · 活跃 ${Math.round(item.active)} 分 · 等待 ${Math.round(item.wait)} 分`,
                 'data-on': selected === item.date ? '' : undefined,
-                onClick: () => setSelected(selected === item.date ? null : item.date),
+                onClick: () => { setShowAll(false); setSelected(selected === item.date ? null : item.date); },
               },
                 h('span', { className: 'crop-muted crop-day-val' }, item.total ? String(Math.round(item.total)) : ''),
                 h('span', { className: 'crop-bar-stack', style: { height: `${totalHeight}px` } },
@@ -665,17 +750,46 @@ body[data-ds-dark-theme] .crop-card {
               h('span', { className: 'crop-legend-note' },
                 busy.length ? `日均 活跃 ${fmtMinutes(avgActive)} · 等待 ${fmtMinutes(avgWait)}` : '这段时间还没有记录')),
             detail
-              ? h('div', { className: 'crop-day-detail' },
-                  detail.error
-                    ? h('span', { className: 'crop-muted' }, `当天明细读取失败：${detail.error}`)
-                    : [
-                        h('div', { key: 'sum' }, `${detail.date}：${detail.blocks} 个回合，${Math.round(detail.minutes || 0)} 分钟，失败 ${detail.failures || 0} 次`),
-                        h('div', { key: 'tools', className: 'crop-muted' },
-                          `工具分布：${(detail.tools || []).map(([name, count]) => `${name}×${count}`).join('、') || '无'}`),
-                        h('div', { key: 'works', className: 'crop-muted' },
-                          `涉及工作：${(detail.works || []).map((item) => `${item.goal || item.work_id}（${Math.round(item.minutes)} 分）`).join('、') || '无'}`),
-                      ])
-              : h('div', { className: 'crop-muted crop-day-detail' }, '点上面任意一根柱子'))
+              ? h('div', { className: 'crop-day' },
+                  h('div', { className: 'crop-day-head' }, [
+                    h('strong', { key: 'd' }, detail.error ? detail.date : (detail.date || '')),
+                    detail.error
+                      ? h('span', { key: 'e', className: 'crop-muted' }, detail.error)
+                      : [
+                          h('span', { key: 'b', className: 'crop-stat' }, `${detail.blocks || 0} 回合`),
+                          h('span', { key: 'm', className: 'crop-stat' }, fmtMinutes(detail.minutes || 0)),
+                          h('span', {
+                            key: 'f',
+                            className: `crop-stat${detail.failures ? ' crop-bad' : ''}`,
+                          }, detail.failures ? `失败 ${detail.failures}` : '无失败'),
+                        ],
+                    h('button', {
+                      key: 'x',
+                      type: 'button',
+                      className: 'crop-x',
+                      'aria-label': '关闭当天明细',
+                      onClick: () => setSelected(null),
+                    }, '×'),
+                  ]),
+                  h('div', { className: 'crop-day-section' },
+                    h('span', { className: 'crop-muted crop-day-label' }, '工具'),
+                    h('div', { className: 'crop-day-body' },
+                      h('div', { className: 'crop-tags' },
+                        (detail.tools || []).slice(0, showAll ? undefined : 6).map(([name, count]) => h('span', { key: name, className: 'crop-tag' }, `${name} ×${count}`))),
+                      !showAll && (detail.tools || []).length > 6
+                        ? h('button', { type: 'button', className: 'crop-more', onClick: () => setShowAll(true) }, `+${(detail.tools || []).length - 6} 个工具`)
+                        : null)),
+                  h('div', { className: 'crop-day-section' },
+                    h('span', { className: 'crop-muted crop-day-label' }, '工作'),
+                    h('div', { className: 'crop-day-body' },
+                      h('div', { className: 'crop-work-rows' },
+                        (detail.works || []).slice(0, showAll ? undefined : 5).map((item) => h('div', { key: item.work_id, className: 'crop-work-row' },
+                          h('span', { className: 'crop-work-name', title: item.goal || item.work_id }, item.goal || item.work_id),
+                          h('span', { className: 'crop-work-min' }, fmtMinutes(item.minutes))))),
+                      !showAll && (detail.works || []).length > 5
+                        ? h('button', { type: 'button', className: 'crop-more', onClick: () => setShowAll(true) }, `+${(detail.works || []).length - 5} 个工作`)
+                        : null)))
+              : h('div', { className: 'crop-muted', style: S.quiet }, '点上面任意一根柱子看当天明细'))
         : null;
 
       const improves = (data && data.improvements) || [];

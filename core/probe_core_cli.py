@@ -89,6 +89,15 @@ def dispatch(payload: dict):
         return core.archive_work(payload.get("work_id") or "", payload.get("reason") or "manual")
     if op == "work_archive_stale":
         return core.archive_stale(float(payload.get("days") or 14))
+    if op == "global":
+        args = payload.get("args") or {}
+        return core.improvement_summary(max(1.0, float(args.get("days") or 7)))
+    if op == "day":
+        args = payload.get("args") or {}
+        return core.day_detail(str(args.get("date") or core.today()))
+    if op == "session":
+        args = payload.get("args") or {}
+        return core.session_summary(str(args.get("sid") or ""))
     if op == "first_prompt":
         return not any(event.get("ev") == "prompt" for event in core.load_events(sid=sid))
     raise ValueError(f"unknown op: {op}")

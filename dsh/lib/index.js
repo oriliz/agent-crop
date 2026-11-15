@@ -16,7 +16,6 @@ export const inject = ['tools'];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CORE_CLI = join(HERE, '..', '..', 'core', 'probe_core_cli.py');
-const DASHBOARD = join(HERE, '..', '..', 'core', 'crop_serve.py');
 
 const PHASES = ['start', 'progress', 'blocked', 'end'];
 const CATEGORIES = [
@@ -98,23 +97,7 @@ export function apply(ctx, config = {}) {
   const python = setting(config?.python, 'python3');
   const states = new Map();
 
-  let dashboard = null;
-  try {
-    if (process.env.KIT_DASHBOARD === '0') throw new Error('dashboard disabled');
-    dashboard = spawn(python, [DASHBOARD, '--host', '127.0.0.1', '--port', '8765'], {
-      stdio: 'ignore', detached: true,
-    });
-    dashboard.unref();
-    dashboard.on('error', () => { dashboard = null; });
-    dashboard.on('exit', () => { dashboard = null; });
-  } catch {
-    dashboard = null;
-  }
-  ctx.effect(() => () => {
-    try { dashboard?.kill(); } catch { /* already gone */ }
-  }, 'crop: dashboard server');
-
-  // Persistent protocol section: assembled into the system prompt on every step,
+    // Persistent protocol section: assembled into the system prompt on every step,
   // removed automatically when the plugin is disposed (clean uninstall).
   try {
     if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
@@ -156,6 +139,71 @@ export function apply(ctx, config = {}) {
       return null;
     }
   };
+
+  /* Same-origin data routes. The DSH host answers these on the instance's own
+     port, so every host instance has its own dashboard endpoint — no Python
+     http server, no shared 8765, no CORS. The Python core stays the single
+     owner of the data semantics; the route only relays its JSON. */
+  const DATA_CACHE_MS = 3000;
+  const dataCache = new Map();
+  const readCoreData = (payload) => {
+    const key = JSON.stringify(payload);
+    const now = Date.now();
+    const hit = dataCache.get(key);
+    if (hit && now - hit.at < DATA_CACHE_MS) return hit.value;
+    const result = spawnSync(python, [CORE_CLI], {
+      input: JSON.stringify(payload),
+      encoding: 'utf8',
+      timeout: 15000,
+      env: { ...process.env, KIT_HOST: 'dsh' },
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0 || !result.stdout) throw new Error(`probe core exit ${result.status}`);
+    const parsed = JSON.parse(result.stdout);
+    if (!parsed || !parsed.ok) throw new Error(parsed?.error ?? 'probe core failed');
+    dataCache.set(key, { at: now, value: parsed.result });
+    return parsed.result;
+  };
+
+  // `ctx.inject` defers this block until the host actually provides a web
+  // server, so the same plugin stays loadable in headless/TUI hosts (where the
+  // crop tool still works, just without the dashboard routes).
+  ctx.inject(['webServer'], (ctxWeb) => {
+    const webServer = ctxWeb.webServer;
+    if (!webServer || typeof webServer.register !== 'function') return;
+    const reply = (res, status, body) => {
+      res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(body));
+    };
+    const relay = (payloadOf) => (req, res) => {
+      try {
+        const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+        reply(res, 200, readCoreData(payloadOf(url)));
+      } catch (error) {
+        reply(res, 500, { error: String(error?.message ?? error) });
+      }
+    };
+    ctx.effect(() => {
+      const disposers = [
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/global',
+          handler: relay((url) => ({ op: 'global', args: { days: Number(url.searchParams.get('days') ?? 7) || 7 } })),
+        }),
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/day',
+          handler: relay((url) => ({ op: 'day', args: { date: url.searchParams.get('date') ?? '' } })),
+        }),
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/session',
+          handler: relay((url) => ({ op: 'session', args: { sid: url.searchParams.get('sid') ?? '' } })),
+        }),
+      ];
+      return () => { for (const dispose of disposers) { try { dispose?.(); } catch { /* gone */ } } };
+    }, 'crop: data routes');
+  });
 
   const turnBoundary = (session) => {
     let turn = 0;
