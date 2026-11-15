@@ -750,72 +750,16 @@ def ago(ms: int) -> str:
 
 
 def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
+    # A live binding decides the first-turn line: the bound work may have
+    # dropped out of the three candidates (another session touched it, or newer
+    # works pushed it past the limit), so ask the binding, not the list.
+    if sid and resolve_binding(sid):
+        bound_line = work_status_line(None, sid)
+        if bound_line:
+            return bound_line
     if not tasks:
         return "[crop] 本机当前没有进行中的工作。新开一条：crop_report(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\")"
-    bound_id = resolve_binding(sid) if sid else ""
-    claimed = next((task for task in tasks if bound_id and task.get("task_id") == bound_id), None)
-    if not claimed:
-        claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
-    if claimed:
-        return work_status_line(None, sid)
-    count = total if total is not None else len(tasks)
-    lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
-    for task in tasks:
-        lines.append(
-            f"- {task.get('task_id')} — {task.get('goal') or task.get('title') or ''}"
-            f"（{ago(task.get('last_seen_at', 0))}）"
-        )
-    extra = count - len(tasks)
-    if extra > 0:
-        lines.append(f"另有 {extra} 条，用 crop_works 查看或筛选。")
-    example = tasks[0].get("task_id")
-    lines.append(
-        "哪个属于本会话？先判断是接着做还是新开（先绑定，再干活）：接着做用 "
-        f'crop_report(phase="start", task_id="{example}")；新开用 2-3 个词的短名。'
-    )
-    lines.append("尽量让一个会话只对应一件工作；要做的其实是几件事就拆开，一件一件来。")
-    return "\n".join(lines)
-
-
-def format_start_hint(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
-    return format_open_tasks(tasks, total, sid)
-
-
-def format_reminder(minutes: float, config: dict) -> str:
-    red = float(config["red_min"])
-    lines = [
-        f"[crop] 红线告警：这一轮已经 {minutes:.0f} 分钟（红线 {red:.0f}），用户等了很久还没拿到结果。",
-        "先别急着继续，确认三件事：",
-        "1. 还走在正确的路上吗？有没有更快的路径？",
-        "2. 能不能先给用户一个阶段性交付？",
-        "3. 安抚用户，然后把判断写进 crop_report：cause=为什么慢，verdict=justified 或 not-justified。",
-    ]
-    if config.get("user_facing", True):
-        lines.append("对用户只要说一句人话，不要念规则。")
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Prompt text
-
-
-def ago(ms: int) -> str:
-    try:
-        minutes = max(0, int((now_ms() - int(ms)) / 60000))
-    except Exception:
-        return "未知"
-    if minutes < 60:
-        return f"{minutes} 分钟前"
-    return f"{minutes // 60} 小时前"
-
-
-def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
-    if not tasks:
-        return "[crop] 本机当前没有进行中的工作。新开一条：crop_report(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\")"
-    bound_id = resolve_binding(sid) if sid else ""
-    claimed = next((task for task in tasks if bound_id and task.get("task_id") == bound_id), None)
-    if not claimed:
-        claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
+    claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
     if claimed:
         return work_status_line(None, sid)
     count = total if total is not None else len(tasks)
@@ -970,10 +914,17 @@ def _claimed_work(sid: str) -> dict | None:
 def work_status_line(workspace: str | None = None, sid: str | None = None) -> str:
     """Turn-start line: plain prose when bound, candidate list when ambiguous."""
     tasks = open_tasks(workspace, 3, sid)
-    if not tasks:
-        return ""
     bound_id = resolve_binding(sid) if sid else ""
-    claimed = next((t for t in tasks if bound_id and t.get("task_id") == bound_id), None)
+    claimed = None
+    if bound_id:
+        # Read the bound task directly: it does not have to be a top-3 candidate.
+        bound_task = load_open().get("tasks", {}).get(bound_id)
+        if (bound_task
+                and bound_task.get("status", "open") == "open"
+                and bound_task.get("state", "open") == "open"):
+            claimed = bound_task
+    if not tasks and not claimed:
+        return ""
     if not claimed:
         claimed = next((t for t in tasks if sid and t.get("last_sid") == sid), None)
     inherited = None

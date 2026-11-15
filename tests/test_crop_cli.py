@@ -145,6 +145,32 @@ class StatusViewTest(unittest.TestCase):
         self.assertIn("当前工作", hint)
         self.assertNotIn("哪个属于本会话", hint)
 
+    def test_start_hint_honors_a_binding_outside_the_candidates(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "t0", "summary": "主线", "goal": "甲目标"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        for index, sid in enumerate(["s2", "s3", "s4"], start=1):
+            core.record_report({"phase": "start", "task_id": f"t{index}",
+                                "summary": f"别的{index}", "goal": f"目标{index}"},
+                               {"sid": sid, "workspace": "/tmp/ws"})
+        # The bound work was touched by another session and three newer works
+        # push it out of the three candidates; the binding is still live.
+        value = core.load_open()
+        now = core.now_ms()
+        value["tasks"]["t0"]["last_sid"] = "s-other"
+        value["tasks"]["t0"]["last_seen_at"] = now - 20 * 60000
+        for index in range(1, 4):
+            value["tasks"][f"t{index}"]["last_seen_at"] = now - index * 60000
+        core.save_open(value)
+
+        candidates = core.open_tasks("/tmp/ws", 3, "s1")
+        self.assertEqual([task["task_id"] for task in candidates], ["t1", "t2", "t3"])
+        hint = core.format_start_hint(candidates, core.open_works_count(), "s1")
+        self.assertIn("当前工作", hint)
+        self.assertIn("甲目标", hint)
+        self.assertIn("t0", hint)
+        self.assertNotIn("哪个属于本会话", hint)
+
     def test_start_hint_requires_binding(self):
         core = self.core
         core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "甲"},

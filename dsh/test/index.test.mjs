@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -275,5 +275,50 @@ test('first turn honors an existing binding instead of listing candidates', asyn
   );
   const text = decision.messages.map((m) => m.content[0].text).join('\n');
   assert.ok(text.includes('当前工作'), text);
+  assert.ok(!text.includes('哪个属于本会话'), text);
+});
+
+test('first turn shows the bound work even after it fell out of the candidates', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const tool = ctx.registered.find((item) => item.name === 'crop_report');
+  await tool.execute(
+    { phase: 'start', task_id: 'mine', summary: '主线', goal: '甲目标' },
+    { agent: { session: fakeSession('s-mine') } },
+  );
+  for (let index = 1; index <= 3; index += 1) {
+    await tool.execute(
+      { phase: 'start', task_id: `t${index}`, summary: `别的${index}`, goal: `目标${index}` },
+      { agent: { session: fakeSession(`s-other-${index}`) } },
+    );
+  }
+
+  // Another session touched the bound work, and three newer works exist, so
+  // the bound work is no longer among the three candidates. The binding is
+  // still live; the first turn must go by the binding, not the candidate list.
+  const openPath = join(directory, 'tasks', 'open.json');
+  const open = JSON.parse(await readFile(openPath, 'utf8'));
+  const now = Date.now();
+  open.tasks.mine.last_sid = 's-other-9';
+  open.tasks.mine.last_seen_at = now - 20 * 60000;
+  for (let index = 1; index <= 3; index += 1) {
+    open.tasks[`t${index}`].last_seen_at = now - index * 60000;
+  }
+  await writeFile(openPath, JSON.stringify(open));
+
+  // A fresh plugin process (new state, same store and session id).
+  const second = fakeCtx();
+  apply(second, { python: 'python3' });
+  const decision = await second.handlers.get('agent/pre-step')(
+    { agent: { session: fakeSession('s-mine') }, turn: 1, step: 1 },
+    async () => ({ kind: 'enter', messages: [] }),
+  );
+  const text = decision.messages.map((message) => message.content[0].text).join('\n');
+  assert.ok(text.includes('当前工作'), text);
+  assert.ok(text.includes('甲目标'), text);
   assert.ok(!text.includes('哪个属于本会话'), text);
 });
