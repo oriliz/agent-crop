@@ -64,11 +64,12 @@ Crop 会往 AI 的上下文里写字，这是它最主要的能力，也是它�
 
 - 本地 dashboard 默认监听 `127.0.0.1:8765`（`core/crop_serve.py`）；面板客户端
   `dsh/lib/client.js` 也只连 `http://127.0.0.1:8765/api/session`
-- `/api/*` 的响应头带 `Access-Control-Allow-Origin: *`。**已知限制**：这意味着你浏览器里
-  打开的任何网页，都可能读到这些 JSON（工作短名、自述、耗时）。
-  别在日常浏览的浏览器里长期开着面板；看完就关
+- `/api/*` 只对**回环 Origin**（`http://127.0.0.1[:port]`、`http://localhost[:port]`）
+  回显 `Access-Control-Allow-Origin`，其他来源一律不发 CORS 头——所以你浏览器里别的网页
+  读不到这些 JSON（工作短名、自述、耗时）。无 Origin 头的请求（curl、CLI）本就不需要 CORS 头。
+  这条契约由 `tests/test_crop_serve_cors.py` 守着
 - 面板**没有鉴权**。`crop serve --host 0.0.0.0` 会把它暴露到局域网，任何能连上的人都能读——
-  不要这么用
+  所以绑定非回环地址时会打印警告，不要这么用
 - 面板只读：它不执行命令、不写数据目录以外的文件
 
 ### 4. 跨宿主适配脚本

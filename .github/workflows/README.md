@@ -11,7 +11,7 @@
 
 | job | 内容 | 矩阵 |
 | --- | --- | --- |
-| `test-python` | `python3 -m unittest tests.test_crop_cli -v` | python 3.10 / 3.12 / 3.13 |
+| `test-python` | `python3 -m unittest discover -s tests -t . -v` | python 3.10 / 3.12 / 3.13 |
 | `test-node` | `node --test dsh/test/index.test.mjs` | node 22 / 24 |
 | `smoke` | `bash tests/probe-smoke.sh`（needs 前两个 job） | — |
 | `package` | `npm pack --dry-run --json` + 清单断言 | — |
@@ -59,8 +59,8 @@ python 最低 3.10 是因为源码用 PEP604 联合类型（`X | None`）；node
 在仓库根目录（Python >= 3.10、Node >= 22.19）：
 
 ```bash
-# 1) Python 单测（20 tests）
-python3 -m unittest tests.test_crop_cli -v
+# 1) Python 单测（25 tests，含面板 CORS 回归）
+python3 -m unittest discover -s tests -t . -v
 
 # 2) Node 测试（7 pass，零 npm 依赖）
 node --test dsh/test/index.test.mjs
