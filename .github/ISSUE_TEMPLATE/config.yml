@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 用法讨论 / 提问
-    url: https://github.com/oriliz/agent-crop/discussions
+  - name: 用法讨论 / 提问（Discussions · Q&A）
+    url: https://github.com/oriliz/agent-crop/discussions/new?category=q-a
     about: 「这东西到底怎么用」「我的场景适配吗」这类开放讨论放这里，不要开 issue。
+  - name: 想法 / 场景征集（Discussions · Ideas）
+    url: https://github.com/oriliz/agent-crop/discussions/new?category=ideas
+    about: 还没想清楚要不要做的方向，先在 Ideas 里聊；想清楚要做了再开 enhancement issue。
   - name: 安全问题
     url: https://github.com/oriliz/agent-crop/security/advisories/new
     about: 数据泄露、凭证误采、本地文件权限等问题请走私密 Security Advisories —— 安全问题不要开 public issue。

@@ -154,6 +154,18 @@ git push -u origin fix/status-line-claim
 
 ---
 
+## 在哪问什么
+
+| 你想干的事 | 去哪 |
+| --- | --- |
+| 装不上、跑不起来 | [开 install_help issue](https://github.com/oriliz/agent-crop/issues/new?template=install_help.yml)（表单会引导你贴 `crop status`） |
+| 行为不对、报 bug | [开 bug issue](https://github.com/oriliz/agent-crop/issues/new?template=bug_report.yml) |
+| 这东西怎么用 / 我的场景适配吗 | [Discussions · Q&A](https://github.com/oriliz/agent-crop/discussions/new?category=q-a) |
+| 有个还没想清楚的方向 | [Discussions · Ideas](https://github.com/oriliz/agent-crop/discussions/new?category=ideas) |
+| 安全漏洞 | [私密 Security Advisory](https://github.com/oriliz/agent-crop/security/advisories/new)，**不要开 public issue** |
+
+维护者的响应节奏：装不上类优先复现；enhancement 不承诺实现，但会给「收进 backlog / 不做，原因是 X」的答复。
+
 ## 开 issue 之前
 
 - **装不上**：给 `dsh --version`、`node --version`、`python3 --version`，别贴整段日志
