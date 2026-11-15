@@ -6,7 +6,6 @@
  * the returned notes at the next model step.  Zero runtime dependencies.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { statSync } from 'node:fs';
 import z from '@deepseek-ai/schemastery';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -17,7 +16,6 @@ export const inject = ['tools'];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CORE_CLI = join(HERE, '..', '..', 'core', 'probe_core_cli.py');
-const DASHBOARD = join(HERE, '..', '..', 'core', 'crop_serve.py');
 
 const PHASES = ['start', 'progress', 'blocked', 'end'];
 const CATEGORIES = [
@@ -96,79 +94,7 @@ export function apply(ctx, config = {}) {
   const python = setting(config?.python, 'python3');
   const states = new Map();
 
-  // The dashboard on 8765 is a detached singleton shared by every DSH instance.
-  // Spawning blindly made the second instance lose the bind race, and the first
-  // owner's exit took the service down for everyone. So: probe first, reuse the
-  // running one, replace only a stale build, and let a watchdog resurrect it.
-  const dashboardPort = 8765;
-  const healthUrl = `http://127.0.0.1:${dashboardPort}/api/health`;
-  let dashboard = null;
-  let dashboardTimer = null;
-
-  const probeDashboard = async () => {
-    try {
-      const response = await fetch(healthUrl, { signal: AbortSignal.timeout(900), cache: 'no-store' });
-      return response.ok ? await response.json() : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const dashboardStale = (health) => {
-    try {
-      // Python reports int(mtime * 1000); Node reports a float. Compare with a
-      // tolerance so a rounding difference can never read as "stale build" and
-      // start a kill/respawn loop.
-      const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1500;
-      const serve = statSync(DASHBOARD).mtimeMs;
-      const core = statSync(join(HERE, '..', '..', 'core', 'probe_core.py')).mtimeMs;
-      return !close(health.serve_mtime, serve) || !close(health.core_mtime, core);
-    } catch {
-      return false;
-    }
-  };
-
-  const spawnDashboard = () => {
-    try {
-      const child = spawn(python, [DASHBOARD, '--host', '127.0.0.1', '--port', String(dashboardPort)], {
-        stdio: 'ignore', detached: true,
-      });
-      child.unref();
-      dashboard = child;
-      ctx.logger?.info?.('[crop] dashboard spawned pid %s', child.pid);
-      child.on('error', (error) => { ctx.logger?.warn?.('[crop] dashboard spawn error: %s', error?.message); if (dashboard === child) dashboard = null; });
-      child.on('exit', (code) => { ctx.logger?.info?.('[crop] dashboard exited code %s', code); if (dashboard === child) dashboard = null; });
-    } catch {
-      dashboard = null;
-    }
-  };
-
-  const ensureDashboard = async () => {
-    if (process.env.KIT_DASHBOARD === '0') {
-      ctx.logger?.info?.('[crop] dashboard disabled by KIT_DASHBOARD=0');
-      return;
-    }
-    const health = await probeDashboard();
-    ctx.logger?.info?.('[crop] dashboard probe: %o', health ? { pid: health.pid } : null);
-    if (health && health.ok) {
-      if (!dashboardStale(health)) return;
-      ctx.logger?.info?.('[crop] dashboard stale (mtime mismatch), replacing pid %s', health.pid);
-      try { process.kill(health.pid, 'SIGTERM'); } catch { /* already gone */ }
-      await new Promise((resolve) => setTimeout(resolve, 400));
-    }
-    spawnDashboard();
-  };
-
-  ensureDashboard().catch(() => {});
-  dashboardTimer = setInterval(() => { ensureDashboard().catch(() => {}); }, 30000);
-  dashboardTimer.unref?.();
-
-  ctx.effect(() => () => {
-    if (dashboardTimer) clearInterval(dashboardTimer);
-    try { dashboard?.kill(); } catch { /* already gone */ }
-  }, 'crop: dashboard server');
-
-  // Persistent protocol section: assembled into the system prompt on every step,
+    // Persistent protocol section: assembled into the system prompt on every step,
   // removed automatically when the plugin is disposed (clean uninstall).
   try {
     if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
@@ -210,6 +136,71 @@ export function apply(ctx, config = {}) {
       return null;
     }
   };
+
+  /* Same-origin data routes. The DSH host answers these on the instance's own
+     port, so every host instance has its own dashboard endpoint — no Python
+     http server, no shared 8765, no CORS. The Python core stays the single
+     owner of the data semantics; the route only relays its JSON. */
+  const DATA_CACHE_MS = 3000;
+  const dataCache = new Map();
+  const readCoreData = (payload) => {
+    const key = JSON.stringify(payload);
+    const now = Date.now();
+    const hit = dataCache.get(key);
+    if (hit && now - hit.at < DATA_CACHE_MS) return hit.value;
+    const result = spawnSync(python, [CORE_CLI], {
+      input: JSON.stringify(payload),
+      encoding: 'utf8',
+      timeout: 15000,
+      env: { ...process.env, KIT_HOST: 'dsh' },
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0 || !result.stdout) throw new Error(`probe core exit ${result.status}`);
+    const parsed = JSON.parse(result.stdout);
+    if (!parsed || !parsed.ok) throw new Error(parsed?.error ?? 'probe core failed');
+    dataCache.set(key, { at: now, value: parsed.result });
+    return parsed.result;
+  };
+
+  // `ctx.inject` defers this block until the host actually provides a web
+  // server, so the same plugin stays loadable in headless/TUI hosts (where the
+  // crop tool still works, just without the dashboard routes).
+  ctx.inject(['webServer'], (ctxWeb) => {
+    const webServer = ctxWeb.webServer;
+    if (!webServer || typeof webServer.register !== 'function') return;
+    const reply = (res, status, body) => {
+      res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(body));
+    };
+    const relay = (payloadOf) => (req, res) => {
+      try {
+        const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+        reply(res, 200, readCoreData(payloadOf(url)));
+      } catch (error) {
+        reply(res, 500, { error: String(error?.message ?? error) });
+      }
+    };
+    ctx.effect(() => {
+      const disposers = [
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/global',
+          handler: relay((url) => ({ op: 'global', args: { days: Number(url.searchParams.get('days') ?? 7) || 7 } })),
+        }),
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/day',
+          handler: relay((url) => ({ op: 'day', args: { date: url.searchParams.get('date') ?? '' } })),
+        }),
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/session',
+          handler: relay((url) => ({ op: 'session', args: { sid: url.searchParams.get('sid') ?? '' } })),
+        }),
+      ];
+      return () => { for (const dispose of disposers) { try { dispose?.(); } catch { /* gone */ } } };
+    }, 'crop: data routes');
+  });
 
   const turnBoundary = (session) => {
     let turn = 0;

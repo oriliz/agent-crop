@@ -1,7 +1,9 @@
 /**
  * DSH web client half for Agent Crop.
  *
- * Two surfaces, one data source (the local crop_serve on 127.0.0.1:8765):
+ * Two surfaces, one data source served by the DSH host itself on its own port
+ * (`/api/agent-crop/*`, relayed from the Python core — no separate dashboard
+ * process, so every host instance has its own endpoint):
  *
  *  - a conversation.view tab next to 轨迹: is this work going to finish smoothly,
  *    what does the AI itself say about the slowdown, and which tool is the
@@ -32,8 +34,10 @@ window.__ModuleLoader__.load({
     const VIEW_ID = 'crop';
     const PANEL_ID = 'crop-global';
     const PANEL_ORDER = 25;
-    const BASE = 'http://127.0.0.1:8765';
-    const ENDPOINT = `${BASE}/api/session`;
+    // The host answers these itself (same origin, one per host instance);
+    // there is no separate dashboard process to talk to.
+    const API = '/api/agent-crop';
+    const ENDPOINT = `${API}/session`;
     const STYLE_ID = 'agent-crop-crop-view-style';
 
     function lampColor(ratio) {
@@ -482,32 +486,12 @@ body[data-ds-dark-theme] .crop-global .crop-card {
       return state;
     }
 
-    function useSummary(days) {
-      const [state, setState] = React.useState({ data: null, error: null, at: 0 });
-      React.useEffect(() => {
-        let alive = true;
-        const tick = async () => {
-          try {
-            const response = await fetch(`${BASE}/api/summary?days=${days}`, { cache: 'no-store' });
-            const data = await response.json();
-            if (alive) setState({ data, error: null, at: Date.now() });
-          } catch (error) {
-            if (alive) setState({ data: null, error: String(error), at: Date.now() });
-          }
-        };
-        tick();
-        const timer = setInterval(tick, 5000);
-        return () => { alive = false; clearInterval(timer); };
-      }, [days]);
-      return state;
-    }
-
     function View({ sessionId }) {
       const { data, error } = useSession(sessionId);
       if (error || !data) {
         return h('div', { className: 'crop-page' },
           h('div', { className: 'crop-card' },
-            h('div', { className: 'crop-muted', style: S.quiet }, '数据服务没起来：运行 crop serve，或重启 dsh。')));
+            h('div', { className: 'crop-muted', style: S.quiet }, '数据读不到：检查 dsh 日志里的 crop 报错。')));
       }
 
       const work = data.active_work || null;
@@ -627,7 +611,7 @@ body[data-ds-dark-theme] .crop-global .crop-card {
         let alive = true;
         const tick = async () => {
           try {
-            const response = await fetch(`${BASE}/api/global?days=${days}`, { cache: 'no-store' });
+            const response = await fetch(`${API}/global?days=${days}`, { cache: 'no-store' });
             const data = await response.json();
             if (alive) setState({ data, error: null, at: Date.now() });
           } catch (error) {
@@ -653,7 +637,7 @@ body[data-ds-dark-theme] .crop-global .crop-card {
         let alive = true;
         (async () => {
           try {
-            const response = await fetch(`${BASE}/api/day?date=${encodeURIComponent(selected)}`, { cache: 'no-store' });
+            const response = await fetch(`${API}/day?date=${encodeURIComponent(selected)}`, { cache: 'no-store' });
             const data = await response.json();
             if (alive) setDetail(data);
           } catch (error) {
@@ -678,7 +662,7 @@ body[data-ds-dark-theme] .crop-global .crop-card {
       const loadingCard = !data
         ? h('div', { key: 'state', className: 'crop-card' },
             h('div', { className: 'crop-muted', style: S.quiet },
-              global.error ? '数据服务没起来：运行 crop serve，或重启 dsh。' : '正在读取…'))
+              global.error ? '数据读不到：检查 dsh 日志里的 crop 报错。' : '正在读取…'))
         : null;
 
       const head = h('div', { key: 'head', className: 'crop-card' },
