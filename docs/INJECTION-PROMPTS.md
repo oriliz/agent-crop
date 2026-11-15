@@ -43,17 +43,17 @@
 ```text
 [探针] 开工前先绑定工作（一句话说给用户，不用解释规则）：
 - 续接下面某条：crop switch <work_id>
-- 新开一条：probe_report(phase="start", task_id="<kebab-slug>", summary="<一句话>")
+- 新开一条：crop_report(phase="start", task_id="<kebab-slug>", summary="<一句话>")
 没绑定之前不要开始干活。
 [探针] 未完成任务（可续接）：
 - a — 做A（最后活跃 …；下一步：x）
-续接请沿用上面的 task_id；新任务请调用 probe_report(...)。
+续接请沿用上面的 task_id；新任务请调用 crop_report(...)。
 跟最近活跃的那条：crop switch a；都对不上就新建一条。
 ```
 
 **问题**：
 - 同一件事说了两遍（“续接请沿用…” 与开头重复）
-- 给了两种方式（crop switch / probe_report），AI 不知道优先哪个
+- 给了两种方式（crop switch / crop_report），AI 不知道优先哪个
 - 没说“先判断这是新活还是续接”，容易机械选一条
 
 **建议文案**：
@@ -61,7 +61,7 @@
 ```text
 [crop] 本会话尚未绑定工作。先判断：
 - 是接着已有工作做 → work_claim(work_id)
-- 是新的一件事 → work_open(goal, type, difficulty)
+- 是新的一件事 → crop_report(phase="start", goal=…)
 候选（最多 3 条）：a「做A」最后活跃…；b「做B」…
 拿不准就先问用户一句。
 ```
@@ -75,7 +75,7 @@
 **当前文案**：
 
 ```text
-[crop] 当前工作：做A（a）；上次更新 5 分钟前。状态有变就调 probe_report 更新一行。
+[crop] 当前工作：做A（a）；上次更新 5 分钟前。状态有变就调 crop_report 更新一行。
 ```
 
 **问题**：结尾那句“状态有变就调”比较被动；AI 容易只在被提醒时才写
@@ -109,7 +109,7 @@
 ```text
 [crop] 这个工作已经 12 分钟（基线 30，0.40×）。
 工作：做A
-请判断这次偏慢是不是合理，并调用 probe_report 写一行：
+请判断这次偏慢是不是合理，并调用 crop_report 写一行：
 - cause="为什么这么久"
 - verdict="justified"（任务本身难）或 "not-justified"（自己走错路）
 ```
@@ -131,7 +131,7 @@
 ```text
 [探针] 当前任务块已 32 分钟（红线 30）。
 1. 对用户说一句简短的人话…
-2. 调用 probe_report：phase="blocked" 或 "progress"，task_id="..."，summary=…，cause=…，next=…，category=…
+2. 调用 crop_report：phase="blocked" 或 "progress"，task_id="..."，summary=…，cause=…，next=…，category=…
 ```
 
 **问题**：字段清单太长（一行命令式），AI 容易照抄成字段堆砌
@@ -147,13 +147,13 @@
 **当前文案**（两档）：
 
 ```text
-[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 probe_report 写一行。
-[crop] 已经连续 N 轮没有登记工作状态。请现在调 probe_report 写一行：在做什么 / 卡在哪 / 下一步。
+[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_report 写一行。
+[crop] 已经连续 N 轮没有登记工作状态。请现在调 crop_report 写一行：在做什么 / 卡在哪 / 下一步。
 ```
 
 **问题**：不错，但第二档的“N 轮”模型不知道是几轮也没关系；可保留
 
-**建议**：保持，仅把 `probe_report` 换成 v2 的工具名。
+**建议**：保持，仅把 `crop_report` 换成 v2 的工具名。
 
 ### P7 · 收尾检查（超时后无反思）
 

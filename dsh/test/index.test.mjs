@@ -41,9 +41,10 @@ test('registers probe_report with the documented schema', async (t) => {
   const ctx = fakeCtx();
   apply(ctx, { python: 'python3' });
 
-  assert.equal(ctx.registered.length, 1);
-  const tool = ctx.registered[0];
-  assert.equal(tool.name, 'probe_report');
+  const tool = ctx.registered.find((item) => item.name === 'crop_report');
+  assert.ok(tool, 'crop_report should be registered');
+  assert.ok(ctx.registered.some((item) => item.name === 'probe_report'), 'alias stays for old prompts');
+  assert.ok(ctx.registered.some((item) => item.name === 'crop_works'));
   assert.deepEqual(tool.parameters.required, ['phase', 'task_id', 'summary']);
   assert.ok(tool.parameters.properties.phase.enum.includes('blocked'));
   assert.equal(typeof tool.execute, 'function');
@@ -56,7 +57,7 @@ test('tool execute records a report through the Python core', async (t) => {
 
   const ctx = fakeCtx();
   apply(ctx, { python: 'python3' });
-  const tool = ctx.registered[0];
+  const tool = ctx.registered.find((item) => item.name === 'crop_report');
   const session = fakeSession('s-report');
   const result = await tool.execute(
     { phase: 'blocked', task_id: 'Design Doc!', summary: '查资料中', cause: '资料太散', next: '先定目录', category: 'tool-misuse' },
@@ -102,7 +103,7 @@ test('agent/pre-step injects the start hint and a reminder', async (t) => {
     async () => ({ kind: 'enter', messages: [] }),
   );
   assert.equal(decision.kind, 'enter');
-  assert.ok(decision.messages.some((message) => message.content[0].text.includes('[探针]')));
+  assert.ok(decision.messages.some((message) => message.content[0].text.includes('[crop]')));
   assert.equal(decision.messages[0].source.kind, 'agent-crop');
 });
 
@@ -115,7 +116,7 @@ test('registers the crop protocol as a system prompt section', () => {
   assert.equal(sections.length, 1);
   assert.equal(sections[0].name, 'crop:protocol');
   assert.equal(typeof sections[0].order, 'number');
-  assert.ok(sections[0].text.includes('probe_report'));
+  assert.ok(sections[0].text.includes('crop_report'));
 });
 
 test('injects the work status line at turn start', async (t) => {
@@ -133,7 +134,7 @@ test('injects the work status line at turn start', async (t) => {
     data: { source: { kind: 'user' }, content: [{ type: 'text', text: '开始' }] },
   });
 
-  const tool = ctx.registered[0];
+  const tool = ctx.registered.find((item) => item.name === 'crop_report');
   await tool.execute(
     { phase: 'start', task_id: 'open-crop', summary: '把探针开源', goal: '把探针开源', type: 'design', difficulty: 'm' },
     { agent: { session } },

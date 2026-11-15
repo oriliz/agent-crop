@@ -705,70 +705,99 @@ def ago(ms: int) -> str:
     return f"{minutes // 60} 小时前"
 
 
-def format_open_tasks(tasks: list[dict]) -> str:
+def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
     if not tasks:
-        return ""
-    lines = ["[探针] 未完成任务（可续接）："]
+        return "[crop] 本机当前没有进行中的工作。新开一条：crop_report(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\")"
+    claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
+    if claimed:
+        return work_status_line(None, sid)
+    count = total if total is not None else len(tasks)
+    lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
     for task in tasks:
         lines.append(
-            f"- {task.get('task_id')} — {task.get('title') or task.get('summary') or ''}"
-            f"（最后活跃 {ago(task.get('last_seen_at', 0))}；下一步：{task.get('next') or '未记录'}）"
+            f"- {task.get('task_id')} — {task.get('goal') or task.get('title') or ''}"
+            f"（{ago(task.get('last_seen_at', 0))}）"
         )
+    extra = count - len(tasks)
+    if extra > 0:
+        lines.append(f"另有 {extra} 条，用 crop_works 查看或筛选。")
+    example = tasks[0].get("task_id")
     lines.append(
-        "续接请沿用上面的 task_id；新任务请调用 probe_report("
-        'phase="start", task_id="<kebab-slug>", summary="<一句话>")。'
+        "哪个属于本会话？先判断是接着做还是新开（先绑定，再干活）：接着做用 "
+        f'crop_report(phase="start", task_id="{example}")；新开用 2-3 个词的短名。'
     )
+    lines.append("尽量让一个会话只对应一件工作；要做的其实是几件事就拆开，一件一件来。")
     return "\n".join(lines)
 
 
-def format_start_hint(tasks: list[dict]) -> str:
-    head = (
-        "[探针] 开工前先绑定工作（一句话说给用户，不用解释规则）：\n"
-        '- 续接下面某条：直接调 probe_report(phase="progress", task_id="<候选 id>", summary="续接")\n'
-        '- 新开一条：直接调 probe_report(phase="start", task_id="<kebab-slug>", summary="<一句话>")\n'
-        "绑定只用 probe_report：不要先找命令，不要先读代码或跑 shell。"
-    )
-    body = format_open_tasks(tasks)
-    text = head + ("\n" + body if body else "")
-    if tasks:
-        text += (
-            f'\n跟最近活跃的那条：probe_report(phase="progress", '
-            f'task_id="{tasks[0].get("task_id")}", summary="续接")；'
-            "都对不上就新建一条。"
+def format_start_hint(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
+    return format_open_tasks(tasks, total, sid)
+
+
+def format_reminder(minutes: float, config: dict) -> str:
+    red = float(config["red_min"])
+    lines = [
+        f"[crop] 红线告警：这一轮已经 {minutes:.0f} 分钟（红线 {red:.0f}），用户等了很久还没拿到结果。",
+        "先别急着继续，确认三件事：",
+        "1. 还走在正确的路上吗？有没有更快的路径？",
+        "2. 能不能先给用户一个阶段性交付？",
+        "3. 安抚用户，然后把判断写进 crop_report：cause=为什么慢，verdict=justified 或 not-justified。",
+    ]
+    if config.get("user_facing", True):
+        lines.append("对用户只要说一句人话，不要念规则。")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Prompt text
+
+
+def ago(ms: int) -> str:
+    try:
+        minutes = max(0, int((now_ms() - int(ms)) / 60000))
+    except Exception:
+        return "未知"
+    if minutes < 60:
+        return f"{minutes} 分钟前"
+    return f"{minutes // 60} 小时前"
+
+
+def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
+    if not tasks:
+        return "[crop] 本机当前没有进行中的工作。新开一条：crop_report(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\")"
+    claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
+    if claimed:
+        return work_status_line(None, sid)
+    count = total if total is not None else len(tasks)
+    lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
+    for task in tasks:
+        lines.append(
+            f"- {task.get('task_id')} — {task.get('goal') or task.get('title') or ''}"
+            f"（{ago(task.get('last_seen_at', 0))}）"
         )
-    return text
+    extra = count - len(tasks)
+    if extra > 0:
+        lines.append(f"另有 {extra} 条，用 crop_works 查看或筛选。")
+    example = tasks[0].get("task_id")
+    lines.append(
+        "哪个属于本会话？先判断是接着做还是新开（先绑定，再干活）：接着做用 "
+        f'crop_report(phase="start", task_id="{example}")；新开用 2-3 个词的短名。'
+    )
+    lines.append("尽量让一个会话只对应一件工作；要做的其实是几件事就拆开，一件一件来。")
+    return "\n".join(lines)
 
 
-def record_side_issue(note: str, suggest: str = "later", sid: str | None = None) -> bool:
-    """Record an off-topic thread without moving the current work.
-
-    A side issue is a note, not a task: it must be cheap enough to record in the
-    middle of real work, and it must never steal the session's claim.
-    """
-    note = (note or "").strip()
-    if not note:
-        return False
-    runtime = read_runtime()
-    sid = str(runtime.get("sid") or "")
-    workspace = str(runtime.get("workspace") or os.getcwd())
-    active = ""
-    for task in open_tasks(workspace, 5, sid):
-        if sid and task.get("last_sid") == sid:
-            active = task.get("task_id", "")
-            break
-    append_event({
-        "ev": "side_issue",
-        "sid": sid,
-        "work_id": active,
-        "note": note[:200],
-        "suggest": suggest,
-    })
-    return True
+def format_start_hint(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
+    return format_open_tasks(tasks, total, sid)
 
 
 def format_reminder(minutes: float, config: dict) -> str:
     lines = [
-        f"[探针] 当前任务块已 {minutes:.0f} 分钟（红线 {float(config['red_min']):.0f}）。",
+        f"[crop] 红线告警：这一轮已经 {minutes:.0f} 分钟（红线 {float(config['red_min']):.0f}），用户等了很久还没拿到结果。",
+        "先别急着继续，确认三件事：",
+        "1. 还走在正确的路上吗？有没有更快的路径？",
+        "2. 能不能先给用户一个阶段性交付？",
+        "3. 安抚用户，并把判断写进 crop_report（cause + verdict）。",
         "请做两件事：",
     ]
     if config.get("user_facing", True):
@@ -889,41 +918,47 @@ def _claimed_work(sid: str) -> dict | None:
 
 
 def work_status_line(workspace: str | None = None, sid: str | None = None) -> str:
-    """One line for the turn-start injection.
-
-    The program never picks "the current work" by itself: several sessions can
-    share a workspace and only the model knows which work this conversation is
-    on. Program shows candidates; the model claims one via probe_report. Once
-    claimed, the line reflects that claim instead of guessing.
-    """
+    """Turn-start line: plain prose when bound, candidate list when ambiguous."""
     tasks = open_tasks(workspace, 3, sid)
     if not tasks:
         return ""
-    current_ms = now_ms()
     claimed = next((t for t in tasks if sid and t.get("last_sid") == sid), None)
     inherited = None
     if not claimed:
-        # 会话重启/fork 会换 sid，认领会断。只要有效期内只有一条活跃工作，
-        # 就不存在“选哪个”的问题，直接接着用；有多条才列候选交给 AI 判断。
-        active = [t for t in tasks if float(t.get("active_until") or 0) > current_ms]
+        now = now_ms()
+        active = [t for t in tasks if float(t.get("active_until") or 0) > now]
         if len(active) == 1:
             inherited = active[0]
     current = claimed or inherited
     if current:
         aim = current.get("goal") or current.get("title") or current.get("task_id")
-        stale = ago(current.get("last_seen_at", 0))
+        health = work_health(current.get("task_id")) or {}
+        minutes = health.get("minutes", 0.0)
+        yellow = float(load_config().get("yellow_min", 10.0))
+        overtime = "已超过黄线" if minutes >= yellow else "未超时"
         note = "" if claimed else "（上个会话认领，仍在有效期内）"
         return (
-            f"[crop] 当前工作：{aim}（{current.get('task_id')}）{note}；上次更新 {stale}。"
-            "状态有变就调 probe_report 更新一行。"
+            f"[crop] 当前工作：{aim}（{current.get('task_id')}）{note}。"
+            f"已进行 {minutes:.0f} 分钟，{overtime}（黄线 {yellow:.0f} 分钟）；上次更新 {ago(current.get('last_seen_at', 0))}。"
+            "留意用户是否把话题岔到另一件事（分叉），或上一轮的产出是否被推翻（返工）；有变化就更新一行。"
         )
-    candidates = "、".join(
-        f"{task.get('task_id')}（{ago(task.get('last_seen_at', 0))}）" for task in tasks
+    count = open_works_count(workspace)
+    lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
+    for task in tasks:
+        lines.append(
+            f"- {task.get('task_id')} — {task.get('goal') or task.get('title') or ''}"
+            f"（{ago(task.get('last_seen_at', 0))}）"
+        )
+    extra = count - len(tasks)
+    if extra > 0:
+        lines.append(f"另有 {extra} 条，用 crop_works 查看或筛选。")
+    example = tasks[0].get("task_id")
+    lines.append(
+        "哪个属于本会话？先绑定再干活：接着做用 "
+        f'crop_report(phase="start", task_id="{example}")；'
+        "新开用 2-3 个词的短名。尽量一个会话只对应一件工作。"
     )
-    return (
-        f"[crop] 未完成的工作：{candidates}。"
-        "哪个属于本会话？调 probe_report 认领；都不是就新开。"
-    )
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -1642,14 +1677,21 @@ def work_health(work_id: str | None = None) -> dict | None:
     }
 
 
+def open_works_count(workspace: str | None = None) -> int:
+    return len([
+        task for task in load_open().get("tasks", {}).values()
+        if task.get("status", "open") == "open" and task.get("state", "open") == "open"
+    ])
+
+
 def format_work_reminder(health: dict, config: dict) -> str:
     minutes = health.get("minutes", 0)
     baseline = health.get("baseline", 0)
     goal = health.get("goal") or health.get("work_id")
     return "\n".join([
-        f"[crop] 这个工作已经 {minutes:.0f} 分钟（基线 {baseline:.0f}，{health.get('ratio', 0):.2f}×）。",
-        f"工作：{goal}",
-        "请判断这次偏慢是不是合理，并调用 probe_report 写一行：",
-        '- cause="为什么这么久"',
-        '- verdict="justified"（任务本身难）或 "not-justified"（自己走错路）',
+        f"[crop] 黄线告警：{goal} 已经做了 {minutes:.0f} 分钟（黄线 {load_config().get('yellow_min', 10):.0f} 分钟）。",
+        "先做三件事：",
+        "1. 安抚用户一句：这个比预想久，我还在处理。",
+        "2. 反思：现在的方法还对吗？有没有走错路、绕远路？",
+        "3. 调 crop_report 写一行：cause=为什么慢；verdict=justified（活本来就难）或 not-justified（自己走错路）。",
     ])

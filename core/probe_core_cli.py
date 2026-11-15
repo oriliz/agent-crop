@@ -51,8 +51,11 @@ def dispatch(payload: dict):
     if op == "open_tasks":
         return core.open_tasks(workspace, int(payload.get("limit") or 3))
     if op == "start_hint":
-        tasks = core.open_tasks(workspace, int(payload.get("limit") or 3))
-        return core.format_start_hint(tasks)
+        tasks = core.open_tasks(workspace, int(payload.get("limit") or 3), sid)
+        return core.format_start_hint(tasks, core.open_works_count(), sid)
+    if op == "works":
+        tasks = core.open_tasks(workspace, int(payload.get("limit") or 20), sid)
+        return tasks
     if op == "open_tasks_text":
         tasks = core.open_tasks(workspace, int(payload.get("limit") or 3))
         return core.format_open_tasks(tasks)

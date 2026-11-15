@@ -143,7 +143,7 @@ class StatusViewTest(unittest.TestCase):
                            {"sid": "s1", "workspace": "/tmp/ws"})
         hint = core.format_start_hint(core.open_tasks("/tmp/ws", 3))
         self.assertIn("绑定", hint)
-        self.assertIn("probe_report", hint)
+        self.assertIn("crop_report", hint)
         self.assertIn('task_id="t1"', hint)
         self.assertNotIn("crop switch", hint)
 
@@ -161,7 +161,8 @@ class StatusViewTest(unittest.TestCase):
         core = self.core
         core.record_report({"phase": "start", "task_id": "a", "summary": "甲", "goal": "甲"},
                            {"sid": "s1", "workspace": "/tmp/ws"})
-        self.assertTrue(core.record_side_issue("DSH 不渲染 mermaid", "later"))
+        core.record_report({"phase": "progress", "task_id": "a", "summary": "顺手记一笔",
+                            "category": "side-issue"}, {"sid": "s1", "workspace": "/tmp/ws"})
         events = [e for e in core.load_events() if e.get("ev") == "side_issue"]
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["suggest"], "later")

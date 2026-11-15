@@ -70,7 +70,7 @@ prompt(sid, work_id, snippet)      ← 带 work_id
 
 ```text
 work_open(work_id, goal, type, difficulty)
-work_update(work_id, state, summary)
+crop_report(work_id, state, summary)
 work_close(work_id, difficulty_actual)
 work_archive(work_id, reason)
 ```
@@ -114,7 +114,7 @@ AI 认为完成 → 向用户确认 → 用户确认后
 
 | 绑定状态 | 注入 |
 |---|---|
-| 未绑定 | 「本会话（sid=…）尚未绑定工作。先判断：这次是续接已有工作，还是新开一条？续接用 `work_claim(work_id)`；新开用 `work_open(goal, type, difficulty)`。」+ 候选列表（最多 3 条，含目标与最后活跃） |
+| 未绑定 | 「本会话（sid=…）尚未绑定工作。先判断：这次是续接已有工作，还是新开一条？续接用 `work_claim(work_id)`；新开用 `crop_report(phase="start", goal=…)`。」+ 候选列表（最多 3 条，含目标与最后活跃） |
 | 已绑定 | 「当前工作：<goal>（work_id）；上次更新 …」——**不再念绑定规则** |
 
 > 评论原话：首轮注入很关键；但已绑定时还念绑定指令会给 AI 错误指令。
@@ -152,7 +152,7 @@ AI 认为完成 → 向用户确认 → 用户确认后
 
 | 项 | v1 | v2 |
 |---|---|---|
-| 工作生命周期 | `probe_report` 的 phase | 独立 `work_open/close` 事件 |
+| 工作生命周期 | `crop_report` 的 phase | 独立 `work_open/close` 事件 |
 | 块归属 | 靠 `task_link` 反推 | `Block.work_id` 直接落盘 |
 | 中间事件 | `task_link` | 删除，report 带 `block_id` |
 | 绑定 | `last_sid` 单值 | `bindings` 多对多表 |
@@ -170,6 +170,6 @@ AI 认为完成 → 向用户确认 → 用户确认后
 
 ## 8. 待决
 
-- 认领工具是复用 `probe_report` 还是新开 `work_claim`（现在两者都有，需要收敛成一个）
+- 认领工具是复用 `crop_report` 还是新开 `work_claim`（现在两者都有，需要收敛成一个）
 - 绑定有效期 30 分钟是否合适
 - 串换检测的阈值（1 小时内 ≥3 次）

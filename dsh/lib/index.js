@@ -32,11 +32,13 @@ const CATEGORIES = [
 ];
 
 const PROTOCOL_TEXT = [
-  'Crop 探针协议：',
-  '- 开工先绑定工作：直接调 probe_report(phase="progress", task_id=<候选 id>, summary="续接") 续接，或 probe_report(phase="start", task_id="<短名>", summary="<一句话>") 新开。绑定只用这个工具，不要先找命令、不要先侦察。task_id 用 2-3 个词的短名，细节写进 goal。',
-  '- 收到 [crop] 提醒时，先对用户说一句人话，再调用 probe_report(phase="blocked" 或 "progress", ...)，写清卡在哪 / 为什么 / 证据，并给 verdict：justified（任务本身难）/ not-justified（自己走错路）。',
-  '- 与当前工作无关的问题：先用一句话回答，然后 probe_report(phase="progress", task_id=<当前工作>, category="side-issue", summary="<一句话>") 记为枝节。禁止新建任务、禁止现场排查，除非用户明确要求现在做。',
-  '- 用户表示满意或明确结束时调用 probe_report(phase="end", ...)，顺手写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',
+  'Crop 协议：',
+  '- 开工先绑定工作：先看未完成工作列表。绑定只用这个工具，不要一边干活一边补登。',
+  '- 接着做：crop_report(phase="start", task_id=已有 id)；新开：crop_report(phase="start", task_id="<2-3 个词的短名>")。',
+  '- 途中状态变化用 phase="progress"；卡住用 phase="blocked" 并写 cause 与 verdict。',
+  '- 黄线提醒：先安抚用户一句，再反思方法对不对，然后上报。红线提醒：先判断是否还走在正确路上，能阶段性交付就先交付。',
+  '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
+  '- 用户确认完成后再 crop_report(phase="end")，写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',
 ].join('\n');
 
 function textOf(message) {
@@ -162,7 +164,7 @@ export function apply(ctx, config = {}) {
   };
 
   const tool = {
-    name: 'probe_report',
+    name: 'crop_report',
     description:
       'Record what the current long task is doing, why it is slow or blocked, and what comes next. '
       + 'Call it when the probe asks, or when the user confirms the task is finished. Keep fields short.',
@@ -243,7 +245,50 @@ export function apply(ctx, config = {}) {
     },
   };
 
-  ctx.effect(() => ctx.tools.register(tool), 'agent-crop.probe_report');
+  // Deprecated alias: older prompts and sessions still call probe_report.
+  const legacyTool = { ...tool, name: 'probe_report',
+    description: 'Deprecated, use crop_report. ' + tool.description };
+
+  const worksTool = {
+    name: 'crop_works',
+    description: 'List works in progress on this machine (newest first). Use it when you are not sure which work this session should continue.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        query: { type: 'string', description: 'Optional substring to match against work id or goal' },
+        limit: { type: 'integer', description: 'Max rows, default 10' },
+      },
+      required: [],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { ok: { type: 'boolean' }, text: { type: 'string' } },
+        required: ['ok', 'text'],
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute(args, exec) {
+      const session = exec.agent?.session;
+      const sid = session ? String(session.id) : '';
+      const workspace = session?.header?.cwd || process.cwd();
+      const tasks = callCore({ op: 'works', context: { sid, workspace }, limit: args?.limit ?? 10 }) || [];
+      const query = String(args?.query || '').toLowerCase();
+      const rows = tasks.filter((task) => !query
+        || String(task.task_id).toLowerCase().includes(query)
+        || String(task.goal || task.title || '').toLowerCase().includes(query));
+      const text = rows.length
+        ? rows.map((task) => `${task.task_id} — ${task.goal || task.title || ''}`).join('\n')
+        : '没有匹配的进行中工作';
+      return { ok: true, text };
+    },
+  };
+
+  ctx.effect(() => ctx.tools.register(tool), 'agent-crop.crop_report');
+  ctx.effect(() => ctx.tools.register(legacyTool), 'agent-crop.probe_report (alias)');
+  ctx.effect(() => ctx.tools.register(worksTool), 'agent-crop.crop_works');
 
   ctx.on('session/event', (session, event) => {
     try {
