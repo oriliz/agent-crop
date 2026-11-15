@@ -18,6 +18,12 @@ bash tests/probe-smoke.sh
 python3 bin/crop status      # 把 bin/crop 放进 PATH 之后就是 crop status
 ```
 
+一条命令跑完前三项（推之前必跑）：
+
+```bash
+bash scripts/check.sh
+```
+
 预期结果：
 
 | 命令 | 应该看到 |
@@ -31,7 +37,8 @@ python3 bin/crop status      # 把 bin/crop 放进 PATH 之后就是 crop status
 
 - **Python >= 3.10** —— 源码用了 PEP604 联合类型（`X | None`，见 `core/probe_core.py`），3.9 直接语法错
 - **Node >= 22.19** —— 见 `package.json` 的 `engines`
-- **不需要装依赖** —— 仓库当前零依赖：Python 只用标准库，Node 只用内置模块，`node --test` 直接能跑。不要为了跑测试去 `npm install` 或 `pip install`
+- **Python 侧零依赖** —— 只用标准库，不装任何 pip 包
+- **Node 侧要装一次** —— `dsh/lib/index.js` 引了 `@deepseek-ai/schemastery`（宿主提供的包），所以 `node --test` 之前先 `npm ci --no-audit --no-fund`；`scripts/check.sh` 在没有 `node_modules` 时也会自动装
 
 把 `crop` 放进 PATH（可选，方便直接敲 `crop status`）：
 
@@ -40,6 +47,8 @@ ln -sf ~/agent-crop/bin/crop /usr/local/bin/crop
 ```
 
 ---
+
+干活节奏与协作约定另见 [docs/WORKFLOW.md](docs/WORKFLOW.md)（先叙事后图、推前自检、worktree 隔离、按未知数估时）。
 
 ## 分支与 PR
 
