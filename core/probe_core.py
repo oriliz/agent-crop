@@ -113,6 +113,7 @@ def paths(data: str | None = None) -> dict[str, str]:
         "root": root,
         "events": os.path.join(root, "events.jsonl"),
         "open": os.path.join(root, "tasks", "open.json"),
+        "bindings": os.path.join(root, "tasks", "bindings.json"),
         "closed_dir": os.path.join(root, "tasks", "closed"),
         "reports_dir": os.path.join(root, "reports"),
         "archive_dir": os.path.join(root, "tasks", "archive"),
@@ -517,9 +518,17 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                 "ev": "work_summary", "what": report.get("what", ""),
                 "cost": report.get("cost", ""), "next_time": report.get("next_time", ""),
             })
+        append_event({"ev": "work_close", "sid": sid, "work_id": report["task_id"],
+                      "verdict": report.get("verdict", "")})
+        release_binding(sid)
         close_task(report["task_id"])
     else:
         _upsert_task(record, workspace)
+        bind_session(sid, report["task_id"])
+        if report["phase"] == "start":
+            append_event({"ev": "work_open", "sid": sid, "work_id": report["task_id"],
+                          "goal": report.get("goal", ""), "type": report.get("type", ""),
+                          "difficulty": report.get("difficulty", "")})
     link_task(report["task_id"], block_start, sid)
     return record
 
@@ -529,6 +538,10 @@ def record_report(args: dict, context: dict | None = None) -> dict:
 
 
 def record_session_start(sid: str, workspace: str) -> None:
+    try:
+        migrate_bindings()
+    except Exception:
+        pass
     append_event({"ev": "session_start", "sid": sid, "workspace": workspace})
     write_runtime(sid, workspace, None)
 
@@ -561,7 +574,7 @@ def record_prompt(sid: str, prompt: str, workspace: str) -> None:
         # 等待属于「刚结束的那个 block」的工作：否则看板上的等待列永远空着。
         work_id = str(last_stop.get("work_id") or "")
         if not work_id:
-            work_id = str((_claimed_work(sid) or {}).get("task_id") or "")
+            work_id = resolve_binding(sid) or str((_claimed_work(sid) or {}).get("task_id") or "")
         ownership = {"work_id": work_id} if work_id else {}
         if gap_ms > IDLE_MIN * 60000 or not within:
             append_event({
@@ -621,7 +634,7 @@ def record_stop(sid: str) -> None:
     minutes = max(0.0, (end - start) / 60000.0)
     tools = [event for event in load_events(sid=sid) if event.get("ev") == "tool" and event.get("t", 0) >= start]
     # 机械计时：块结束时按当前认领自动归属，probe_report 只负责补语义。
-    work_id = str((_claimed_work(sid) or {}).get("task_id") or "")
+    work_id = resolve_binding(sid) or str((_claimed_work(sid) or {}).get("task_id") or "")
     append_event({
         "ev": "stop", "sid": sid, "block_start": start,
         "minutes": round(minutes, 1), "work_id": work_id,
@@ -924,7 +937,10 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
     tasks = open_tasks(workspace, 3, sid)
     if not tasks:
         return ""
-    claimed = next((t for t in tasks if sid and t.get("last_sid") == sid), None)
+    bound_id = resolve_binding(sid) if sid else ""
+    claimed = next((t for t in tasks if bound_id and t.get("task_id") == bound_id), None)
+    if not claimed:
+        claimed = next((t for t in tasks if sid and t.get("last_sid") == sid), None)
     inherited = None
     if not claimed:
         now = now_ms()
@@ -985,6 +1001,7 @@ def switch_claim(work_id: str, sid: str) -> bool:
             other.pop("last_sid", None)
     target["last_sid"] = sid
     save_open(value)
+    bind_session(sid, target["task_id"])
     append_event({"ev": "work_claim", "work_id": target["task_id"], "sid": sid})
     return True
 
@@ -1724,3 +1741,100 @@ def record_review(args: dict, context: dict | None = None) -> dict:
             task["last_seen_at"] = now_ms()
             save_open(value)
     return {"work_id": work_id, "rework": level, "sentiment": sentiment, "reason": reason}
+
+
+# ---------------------------------------------------------------------------
+# Session <-> work bindings (many-to-many)
+
+CLAIM_TTL_MIN = 30.0
+
+
+def load_bindings() -> dict:
+    path = paths()["bindings"]
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+            return data if isinstance(data, dict) else {"bindings": []}
+    except Exception:
+        return {"bindings": []}
+
+
+def save_bindings(value: dict) -> None:
+    write_json(paths()["bindings"], value)
+
+
+def bind_session(sid: str, work_id: str, ttl_min: float = CLAIM_TTL_MIN) -> bool:
+    """Point this session at a work; one active binding per session."""
+    if not sid or not work_id:
+        return False
+    value = load_bindings()
+    now = now_ms()
+    kept = []
+    for item in value.get("bindings", []):
+        if item.get("sid") == sid:
+            continue  # this session moves to the new work
+        if float(item.get("expires_at") or 0) <= now:
+            continue  # expired
+        kept.append(item)
+    kept.append({"sid": sid, "work_id": work_id, "claimed_at": now,
+                 "expires_at": now + int(ttl_min * 60000)})
+    value["bindings"] = kept
+    save_bindings(value)
+    # keep the legacy field in sync while old consumers still read it
+    tasks = load_open().get("tasks", {})
+    if work_id in tasks:
+        tasks[work_id]["last_sid"] = sid
+        tasks[work_id]["active_until"] = now + int(ttl_min * 60000)
+        value_open = load_open()
+        value_open["tasks"][work_id] = tasks[work_id]
+        save_open(value_open)
+    return True
+
+
+def resolve_binding(sid: str) -> str:
+    """The work this session is currently bound to, or an empty string."""
+    now = now_ms()
+    for item in load_bindings().get("bindings", []):
+        if item.get("sid") == sid and float(item.get("expires_at") or 0) > now:
+            return str(item.get("work_id") or "")
+    return ""
+
+
+def release_binding(sid: str) -> None:
+    value = load_bindings()
+    now = now_ms()
+    value["bindings"] = [item for item in value.get("bindings", [])
+                         if not (item.get("sid") == sid and float(item.get("expires_at") or 0) > now)]
+    save_bindings(value)
+
+
+def migrate_bindings() -> int:
+    """One-time: turn legacy last_sid into an active binding."""
+    moved = 0
+    value = load_bindings()
+    have = {(item.get("sid"), item.get("work_id")) for item in value.get("bindings", [])}
+    now = now_ms()
+    for task in load_open().get("tasks", {}).values():
+        sid, work_id = task.get("last_sid"), task.get("task_id")
+        if not sid or not work_id or (sid, work_id) in have:
+            continue
+        value.setdefault("bindings", []).append({
+            "sid": sid, "work_id": work_id,
+            "claimed_at": int(task.get("last_seen_at") or now),
+            "expires_at": now + int(CLAIM_TTL_MIN * 60000),
+        })
+        moved += 1
+    if moved:
+        save_bindings(value)
+    return moved
+
+
+def record_human_wait(sid: str, reason: str, started_at: int, ended_at: int | None = None) -> dict:
+    ended = int(ended_at or now_ms())
+    waiting_ms = max(0, ended - int(started_at))
+    event = {
+        "ev": "human_wait", "sid": sid, "reason": reason or "ask-human",
+        "started_at": int(started_at), "ended_at": ended, "waiting_ms": waiting_ms,
+    }
+    append_event(event)
+    return event

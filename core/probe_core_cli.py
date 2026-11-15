@@ -31,6 +31,15 @@ def dispatch(payload: dict):
     if core is None:
         raise RuntimeError("probe core unavailable")
 
+    if op == "record_human_wait":
+        return core.record_human_wait(
+            sid,
+            str(payload.get("reason") or "ask-human"),
+            int(payload.get("started_at") or 0),
+            int(payload.get("ended_at") or 0) or None,
+        )
+    if op == "binding":
+        return core.resolve_binding(sid)
     if op == "record_review":
         return core.record_review(payload.get("args") or {}, context)
     if op == "record_report":

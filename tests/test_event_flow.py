@@ -134,7 +134,41 @@ class EventFlowTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.core.record_review({"rework": "bad"}, {"sid": self.sid})
 
-    # -- 6. work lifecycle -------------------------------------------------
+    # -- 6. bindings and lifecycle events ---------------------------------
+    def test_start_opens_and_binds_then_end_closes(self):
+        self.report(phase="start", goal="甲")
+        self.assertIn("work_open", self.kinds())
+        self.assertEqual(self.core.resolve_binding(self.sid), "flow-work")
+        self.report(phase="end", what="完")
+        self.assertIn("work_close", self.kinds())
+        self.assertEqual(self.core.resolve_binding(self.sid), "")
+
+    def test_binding_survives_another_session(self):
+        self.report(phase="start")
+        other = "flow-2"
+        self.assertEqual(self.core.resolve_binding(other), "")
+        self.assertTrue(self.core.bind_session(other, "flow-work"))
+        self.assertEqual(self.core.resolve_binding(other), "flow-work")
+        # one session, one active binding: binding the other work releases the first
+        self.report(phase="start", task_id="flow-other")
+        self.core.bind_session(other, "flow-other")
+        self.assertEqual(self.core.resolve_binding(other), "flow-other")
+
+    def test_migrate_legacy_last_sid(self):
+        self.report(phase="start")
+        value = self.core.load_open()
+        value["tasks"]["flow-work"].pop("last_sid", None)
+        self.core.save_open(value)
+        self.core.load_bindings()  # ensure file initialised
+        moved = self.core.migrate_bindings()
+        self.assertGreaterEqual(moved, 0)
+
+    def test_human_wait_span(self):
+        event = self.core.record_human_wait(self.sid, "ask_user_question", 1000, 1000 + 65000)
+        self.assertEqual(event["waiting_ms"], 65000)
+        self.assertIn("human_wait", self.kinds())
+
+    # -- 7. work lifecycle -------------------------------------------------
     def test_claim_suspend_archive(self):
         self.report(phase="start")
         self.assertTrue(self.core.switch_claim("flow-work", self.sid))

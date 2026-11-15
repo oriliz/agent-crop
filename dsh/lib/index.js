@@ -78,6 +78,8 @@ export const Config = z.object({
     .description('提醒冷却：同一条提醒多少分钟内不重复'),
   missMin: z.number().min(0).max(60).default(2).volatile()
     .description('缺报检测：一轮超过多少分钟且没有上报，下一轮提醒补记'),
+  askHumanTools: z.string().default('ask_user_question,ask_human,askHuman')
+    .description('哪些工具名算“在等用户回答”，逗号分隔；不同宿主名字不同，在这里加'),
 });
 
 function setting(value, fallback) {
@@ -350,10 +352,26 @@ export function apply(ctx, config = {}) {
         const callId = event.data?.callId;
         const name = event.data?.name;
         if (callId && name) state.calls.set(String(callId), String(name));
+        const askTools = String(setting(config.askHumanTools, '')).split(',').map((s) => s.trim()).filter(Boolean);
+        if (name && askTools.includes(String(name))) {
+          state.askStarted = Date.now();
+          state.askTool = String(name);
+        }
         return;
       }
 
       if (event.type === 'tool/result') {
+        if (state.askStarted) {
+          callCore({
+            op: 'record_human_wait',
+            context: { sid, workspace },
+            reason: state.askTool,
+            started_at: state.askStarted,
+            ended_at: Date.now(),
+          });
+          state.askStarted = null;
+          state.askTool = null;
+        }
         const isError = Boolean(event.data?.error || event.data?.message?.isError);
         const callId = event.data?.message?.toolCallId;
         const toolName = (callId && state.calls.get(String(callId))) || 'tool';
