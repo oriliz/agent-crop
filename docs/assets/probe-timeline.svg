@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="530" viewBox="0 0 1400 530" role="img" aria-labelledby="t1 t2">
-<title id="t1">一次对话里的探针：轮结束、下一句、提问等待与鞭策</title>
-<desc id="t2">起点是会话开始。上方是采集，下方是注入。时间条蓝色是活跃，黄色是你这边的时间，都不算活跃。</desc>
-<rect width="1400" height="530" rx="18" fill="#ffffff"/>
-<rect x="0.8" y="0.8" width="1398.4" height="528.4" rx="18" fill="none" stroke="#e2e8f0" stroke-width="1.6"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="540" viewBox="0 0 1400 540" role="img" aria-labelledby="t1 t2">
+<title id="t1">一次对话里的探针：两轮之间、时点与注入</title>
+<desc id="t2">起点是会话开始。上方是采集，下方是注入；中间竖向虚线把上一轮和下一轮分开。底部时间条蓝色是活跃，黄色是你这边的时间。</desc>
+<rect width="1400" height="540" rx="18" fill="#ffffff"/>
+<rect x="0.8" y="0.8" width="1398.4" height="538.4" rx="18" fill="none" stroke="#e2e8f0" stroke-width="1.6"/>
 <rect x="42" y="34" width="16" height="16" rx="4" fill="#3b6bb0"/>
 <text x="66" y="50" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19" fill="#64748b">活跃：AI 在干</text>
 <rect x="206" y="34" width="16" height="16" rx="4" fill="#c8912f"/>
@@ -16,10 +16,9 @@
 <text x="1364" y="240" text-anchor="end" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">时间 →</text>
 <circle cx="140" cy="250" r="10" fill="#0f172a"/>
 <text x="140" y="226" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#0f172a">会话开始</text>
-<path d="M 520 239 L 531 250 L 520 261 L 509 250 Z" fill="#0f172a"/>
-<text x="520" y="278" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="16" fill="#64748b">一轮结束</text>
-<circle cx="620" cy="250" r="6" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
-<text x="620" y="278" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="16" fill="#64748b">你发下一句</text>
+<line x1="560" y1="80" x2="560" y2="470" stroke="#64748b" stroke-width="2.4" stroke-dasharray="10 8" opacity="0.55"/>
+<text x="546" y="306" text-anchor="end" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="16" fill="#64748b">上一轮</text>
+<text x="574" y="306" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="16" fill="#64748b">下一轮</text>
 <rect x="140" y="330" width="380" height="14" rx="7" fill="#3b6bb0" opacity="0.85"/>
 <rect x="520" y="330" width="100" height="14" fill="#c8912f" opacity="0.9"/>
 <rect x="620" y="330" width="180" height="14" fill="#3b6bb0" opacity="0.85"/>
@@ -32,9 +31,11 @@
 <rect x="280.0" y="166" width="160.0" height="56" rx="14" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.6"/>
 <text x="360.0" y="202" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#3b6bb0" opacity="1">记工具与失败</text>
 <line x1="520" y1="222" x2="520" y2="240" stroke="#3b6bb0" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.45"/>
+<circle cx="520" cy="250" r="5" fill="#ffffff" stroke="#3b6bb0" stroke-width="2"/>
 <rect x="450.0" y="166" width="140.0" height="56" rx="14" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.6"/>
 <text x="520.0" y="202" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#3b6bb0" opacity="1">记停止时点</text>
 <line x1="620" y1="148" x2="620" y2="240" stroke="#3b6bb0" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.45"/>
+<circle cx="620" cy="250" r="5" fill="#ffffff" stroke="#3b6bb0" stroke-width="2"/>
 <rect x="550.0" y="92" width="140.0" height="56" rx="14" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.6"/>
 <text x="620.0" y="128" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#3b6bb0" opacity="1">记回复时点</text>
 <line x1="735" y1="222" x2="735" y2="240" stroke="#3b6bb0" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.45"/>
@@ -61,10 +62,10 @@
 <circle cx="250" cy="250" r="5" fill="#ffffff" stroke="#c8912f" stroke-width="2"/>
 <rect x="154.4" y="392" width="191.2" height="56" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
 <text x="250.0" y="428" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#c8912f" opacity="1">创建/绑定工作项</text>
-<line x1="620" y1="260" x2="620" y2="392" stroke="#c8912f" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.45"/>
-<circle cx="620" cy="250" r="5" fill="#ffffff" stroke="#c8912f" stroke-width="2"/>
-<rect x="550.0" y="392" width="140.0" height="56" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
-<text x="620.0" y="428" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#c8912f" opacity="1">提示后注入</text>
+<line x1="690" y1="260" x2="690" y2="392" stroke="#c8912f" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.45"/>
+<circle cx="690" cy="250" r="5" fill="#ffffff" stroke="#c8912f" stroke-width="2"/>
+<rect x="610.0" y="392" width="160.0" height="56" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
+<text x="690.0" y="428" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#c8912f" opacity="1">感知你的反馈</text>
 <line x1="1090" y1="260" x2="1090" y2="392" stroke="#b42318" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.45"/>
 <circle cx="1090" cy="250" r="5" fill="#ffffff" stroke="#b42318" stroke-width="2"/>
 <rect x="1035.0" y="392" width="110.0" height="56" rx="14" fill="#ffffff" stroke="#b42318" stroke-width="1.6" stroke-dasharray="6 5"/>
@@ -75,5 +76,5 @@
 <path d="M 1061.0 410.0 C 1063.0 408.0, 1065.0 410.0, 1063.0 412.0" stroke-width="2"/>
 <path d="M 1063.0 408.0 l 2 -2 M 1065.0 411.0 l 3 0" stroke-width="1.6" opacity="0.8"/>
 </g>
-<text x="140" y="505" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="16" fill="#64748b">离开超过 15 分钟（或不在工作时段）单独记，既不算活跃也不算等待</text>
+<text x="140" y="512" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="16" fill="#64748b">离开超过 15 分钟（或不在工作时段）单独记，既不算活跃也不算等待</text>
 </svg>
