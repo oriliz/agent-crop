@@ -231,6 +231,95 @@ body[data-ds-dark-theme] .crop-card {
 .crop-work-title {
   min-width: 160px;
 }
+
+.crop-delta {
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.crop-good {
+  color: var(--dsw-alias-state-success-primary, #2e8e52);
+}
+
+.crop-bad {
+  color: var(--dsw-alias-state-error-primary, #c00000);
+}
+
+.crop-bar-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.crop-bar--active {
+  background: #3b6bb0;
+}
+
+.crop-bar--wait {
+  background: #d9a94f;
+}
+
+.crop-bar--empty {
+  background: var(--dsw-alias-border-l2, rgba(140, 156, 188, .6));
+  opacity: .45;
+}
+
+.crop-slot[data-on] .crop-bar-stack {
+  box-shadow: 0 0 0 1px rgba(120, 170, 255, .75);
+}
+
+.crop-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  margin-top: 10px;
+}
+
+.crop-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 5px;
+}
+
+.crop-dot--active {
+  background: #3b6bb0;
+}
+
+.crop-dot--wait {
+  background: #d9a94f;
+}
+
+.crop-legend-note {
+  margin-left: auto;
+}
+
+.crop-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.crop-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.crop-tag {
+  border: 1px solid var(--dsw-alias-border-l1, rgba(44, 58, 115, .16));
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11px;
+}
 `;
 
     const S = {
@@ -273,22 +362,6 @@ body[data-ds-dark-theme] .crop-card {
     /* The dashboard page walks its own day range from period.start; the panel
        repeats that so the bars match the standalone page exactly (including the
        31-slot cap the server-side page applies). */
-    function daySeries(period) {
-      const active = (period && period.active_by_day) || {};
-      const out = [];
-      if (!period || !period.start) return out;
-      const cursor = new Date(period.start);
-      cursor.setHours(0, 0, 0, 0);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      while (cursor <= today && out.length < 31) {
-        const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
-        out.push({ date: key, label: key.slice(5), minutes: Number(active[key] || 0) });
-        cursor.setDate(cursor.getDate() + 1);
-      }
-      return out;
-    }
-
     function useSession(sessionId) {
       const [state, setState] = React.useState({ data: null, error: null });
       React.useEffect(() => {
@@ -409,13 +482,70 @@ body[data-ds-dark-theme] .crop-card {
       return h('div', { className: 'crop-page' }, [header, verdictCard, toolRows, timeline, works]);
     }
 
-    /* --- global panel ------------------------------------------------------- */
+    function fixed(value, digits) {
+      return value == null ? '—' : value.toFixed(digits);
+    }
+
+    function pctText(value) {
+      return value == null ? '—' : `${Math.round(value * 100)}%`;
+    }
+
+    /* The comparison line under each friction metric: the previous window's
+       value plus a direction, coloured by whether the move is an improvement.
+       A window with no events reports null upstream, so the card says "上期无数据"
+       instead of pretending the metric held steady at zero. */
+    function deltaLine(current, previous, fmtValue, fmtDelta, lowerIsBetter) {
+      if (current == null) return { text: '样本不足', tone: '' };
+      if (previous == null) return { text: '上期无数据', tone: '' };
+      const diff = current - previous;
+      if (Math.abs(diff) < 1e-9) return { text: `上期 ${fmtValue(previous)} · 持平`, tone: '' };
+      const better = lowerIsBetter ? diff < 0 : diff > 0;
+      return {
+        text: `上期 ${fmtValue(previous)} · ${diff > 0 ? '↑' : '↓'} ${fmtDelta(Math.abs(diff))}`,
+        tone: better ? 'good' : 'bad',
+      };
+    }
+
+    function dayRange(startMs) {
+      if (!startMs) return [];
+      const out = [];
+      const cursor = new Date(startMs);
+      cursor.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      while (cursor <= today && out.length < 31) {
+        const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+        out.push({ date: key, label: key.slice(5) });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return out;
+    }
+
+    function useGlobal(days) {
+      const [state, setState] = React.useState({ data: null, error: null, at: 0 });
+      React.useEffect(() => {
+        let alive = true;
+        const tick = async () => {
+          try {
+            const response = await fetch(`${BASE}/api/global?days=${days}`, { cache: 'no-store' });
+            const data = await response.json();
+            if (alive) setState({ data, error: null, at: Date.now() });
+          } catch (error) {
+            if (alive) setState({ data: null, error: String(error), at: Date.now() });
+          }
+        };
+        tick();
+        const timer = setInterval(tick, 5000);
+        return () => { alive = false; clearInterval(timer); };
+      }, [days]);
+      return state;
+    }
 
     function GlobalPanel() {
       const [days, setDays] = React.useState(7);
       const [selected, setSelected] = React.useState(null);
       const [detail, setDetail] = React.useState(null);
-      const summary = useSummary(days);
+      const global = useGlobal(days);
 
       React.useEffect(() => {
         if (!selected) { setDetail(null); return undefined; }
@@ -432,13 +562,22 @@ body[data-ds-dark-theme] .crop-card {
         return () => { alive = false; };
       }, [selected]);
 
-      const data = summary.data;
-      const period = (data && data.period) || null;
+      const data = global.data;
+      const current = (data && data.current) || null;
+      const previous = (data && data.previous) || null;
+      const prevReady = !!(previous && previous.events > 0);
+      const prev = prevReady ? previous : {};
+
+      const metricCard = (label, value, delta, note) => h('div', { key: label, className: 'crop-card' },
+        h('div', { className: 'crop-muted crop-metric-k' }, label),
+        h('div', { className: 'crop-metric-v' }, value),
+        h('div', { className: `crop-delta${delta.tone ? ` crop-${delta.tone}` : ''}` }, delta.text),
+        h('div', { className: 'crop-muted crop-metric-n' }, note));
 
       const loadingCard = !data
         ? h('div', { key: 'state', className: 'crop-card' },
             h('div', { className: 'crop-muted', style: S.quiet },
-              summary.error ? '数据服务没起来：运行 crop serve，或重启 dsh。' : '正在读取…'))
+              global.error ? '数据服务没起来：运行 crop serve，或重启 dsh。' : '正在读取…'))
         : null;
 
       const head = h('div', { key: 'head', className: 'crop-card' },
@@ -453,37 +592,78 @@ body[data-ds-dark-theme] .crop-card {
               onClick: () => { setDays(value); setSelected(null); },
             }, label))),
           h('span', { className: 'crop-muted crop-global-asof' },
-            summary.at ? `更新于 ${new Date(summary.at).toLocaleTimeString()}` : '')));
+            global.at ? `更新于 ${new Date(global.at).toLocaleTimeString()}` : '')));
 
-      const metrics = period
+      const metrics = current
         ? h('div', { key: 'metrics', className: 'crop-metrics' }, [
-            ['完成工作', period.completed || 0, '区间内收尾的工作'],
-            ['总活跃时长', fmtMinutes(period.active_minutes), '不含等你回话'],
-            ['平均每个工作', fmtMinutes(period.avg_active_minutes), '活跃时长 ÷ 完成数'],
-            ['平均等待', fmtMinutes(period.avg_wait_minutes), '等待 ÷ 完成数'],
-          ].map(([label, value, note]) => h('div', { key: label, className: 'crop-card' },
-            h('div', { className: 'crop-muted crop-metric-k' }, label),
-            h('div', { className: 'crop-metric-v' }, value == null ? '—' : value),
-            h('div', { className: 'crop-muted crop-metric-n' }, note))))
+            metricCard(
+              '等待回话占比',
+              pctText(current.wait_ratio),
+              deltaLine(current.wait_ratio, prev.wait_ratio, pctText, (value) => `${Math.round(value * 100)} 个百分点`, true),
+              '等待 ÷ (活跃 + 等待)'),
+            metricCard(
+              '每完成一个工作',
+              fmtMinutes(current.active_per_completed),
+              deltaLine(current.active_per_completed, prev.active_per_completed, fmtMinutes, fmtMinutes, true),
+              '活跃分钟 ÷ 完成数'),
+            metricCard(
+              '每回合工具数',
+              fixed(current.tools_per_block, 1),
+              deltaLine(current.tools_per_block, prev.tools_per_block, (value) => value.toFixed(1), (value) => value.toFixed(1), true),
+              '工具调用 ÷ 回合'),
+            metricCard(
+              '工具失败率',
+              pctText(current.failure_rate),
+              deltaLine(current.failure_rate, prev.failure_rate, pctText, (value) => `${(value * 100).toFixed(1)} 个百分点`, true),
+              '失败调用 ÷ 工具调用'),
+            metricCard(
+              '重复工具信号 / 回合',
+              fixed(current.churn_per_block, 2),
+              deltaLine(current.churn_per_block, prev.churn_per_block, (value) => value.toFixed(2), (value) => value.toFixed(2), true),
+              '同工具反复调用 ÷ 回合'),
+          ])
         : null;
 
-      const series = daySeries(period);
-      const peak = Math.max(1, ...series.map((item) => item.minutes));
+      const byDay = new Map(((data && data.daily) || []).map((row) => [row.date, row]));
+      const series = dayRange(data && data.start).map(({ date, label }) => {
+        const row = byDay.get(date);
+        const total = row ? Number(row.minutes) || 0 : 0;
+        const wait = row ? Number(row.wait_minutes) || 0 : 0;
+        return { date, label, total, wait, active: Math.max(0, total - wait) };
+      });
+      const peak = Math.max(1, ...series.map((item) => item.total));
+      const busy = series.filter((item) => item.total > 0);
+      const avgActive = busy.length ? busy.reduce((sum, item) => sum + item.active, 0) / busy.length : null;
+      const avgWait = busy.length ? busy.reduce((sum, item) => sum + item.wait, 0) / busy.length : null;
 
-      const chart = period
+      const chart = current
         ? h('div', { key: 'chart', className: 'crop-card' },
-            h('div', { className: 'crop-muted', style: S.caption }, '每日活跃时长（分钟，点柱子看当天明细）'),
-            h('div', { className: 'crop-chart' }, series.map((item) => h('button', {
-              key: item.date,
-              type: 'button',
-              className: 'crop-slot',
-              title: `${item.date} · ${Math.round(item.minutes)} 分钟`,
-              'data-on': selected === item.date ? '' : undefined,
-              onClick: () => setSelected(selected === item.date ? null : item.date),
-            },
-              h('span', { className: 'crop-muted crop-day-val' }, item.minutes ? String(Math.round(item.minutes)) : ''),
-              h('span', { className: 'crop-bar', style: { height: `${Math.max(2, Math.round((item.minutes / peak) * 150))}px` } }),
-              h('span', { className: 'crop-muted crop-day-cap' }, item.label)))),
+            h('div', { className: 'crop-muted', style: S.caption }, '每天的时间去向（活跃 + 等待回话，点柱子看当天明细）'),
+            h('div', { className: 'crop-chart' }, series.map((item) => {
+              const totalHeight = item.total ? Math.max(2, Math.round((item.total / peak) * 150)) : 2;
+              const waitHeight = item.total ? Math.round(totalHeight * (item.wait / item.total)) : 0;
+              const activeHeight = totalHeight - waitHeight;
+              return h('button', {
+                key: item.date,
+                type: 'button',
+                className: 'crop-slot',
+                title: `${item.date} · 活跃 ${Math.round(item.active)} 分 · 等待 ${Math.round(item.wait)} 分`,
+                'data-on': selected === item.date ? '' : undefined,
+                onClick: () => setSelected(selected === item.date ? null : item.date),
+              },
+                h('span', { className: 'crop-muted crop-day-val' }, item.total ? String(Math.round(item.total)) : ''),
+                h('span', { className: 'crop-bar-stack', style: { height: `${totalHeight}px` } },
+                  waitHeight ? h('span', { className: 'crop-bar crop-bar--wait', style: { height: `${waitHeight}px` } }) : null,
+                  item.total
+                    ? h('span', { className: 'crop-bar crop-bar--active', style: { height: `${activeHeight}px` } })
+                    : h('span', { className: 'crop-bar crop-bar--empty', style: { height: '2px' } })),
+                h('span', { className: 'crop-muted crop-day-cap' }, item.label));
+            })),
+            h('div', { className: 'crop-muted crop-legend' },
+              h('span', null, h('i', { className: 'crop-dot crop-dot--active' }), '活跃'),
+              h('span', null, h('i', { className: 'crop-dot crop-dot--wait' }), '等待回话'),
+              h('span', { className: 'crop-legend-note' },
+                busy.length ? `日均 活跃 ${fmtMinutes(avgActive)} · 等待 ${fmtMinutes(avgWait)}` : '这段时间还没有记录')),
             detail
               ? h('div', { className: 'crop-day-detail' },
                   detail.error
@@ -498,8 +678,24 @@ body[data-ds-dark-theme] .crop-card {
               : h('div', { className: 'crop-muted crop-day-detail' }, '点上面任意一根柱子'))
         : null;
 
-      const rows = (period && period.work_list) || [];
-      const works = period
+      const improves = (data && data.improvements) || [];
+      const improvements = improves.length
+        ? h('div', { key: 'improve', className: 'crop-card' },
+            h('div', { className: 'crop-muted', style: S.caption }, 'AI 自述的改进（下次可以少走一步）'),
+            h('ul', { className: 'crop-list' },
+              improves.slice(0, 4).map((item, index) => h('li', { key: index }, `「${item.improve}」`))))
+        : null;
+
+      const categories = (data && data.categories) || [];
+      const pitfalls = categories.length
+        ? h('div', { key: 'pitfalls', className: 'crop-card' },
+            h('div', { className: 'crop-muted', style: S.caption }, '还在重复的坑（AI 自述的归因类别）'),
+            h('div', { className: 'crop-tags' },
+              categories.slice(0, 6).map((item) => h('span', { key: item.category, className: 'crop-tag' }, `${item.category} ×${item.count}`))))
+        : null;
+
+      const rows = (data && data.work_list) || [];
+      const works = data
         ? h('div', { key: 'works', className: 'crop-card' },
             h('div', { className: 'crop-muted', style: S.caption }, '工作列表'),
             rows.length
@@ -512,20 +708,21 @@ body[data-ds-dark-theme] .crop-card {
                     h('th', { key: 'active', style: { ...S.tdRight, fontSize: '12px' } }, '活跃'),
                     h('th', { key: 'wait', style: { ...S.tdRight, fontSize: '12px' } }, '等待'),
                   ])),
-                  h('tbody', { key: 'tb' }, rows.map((row) => h('tr', { key: row.work_id },
-                    h('td', { style: S.td },
-                      h('i', { style: S.lamp(LAMP[row.level] || '#6b7280') }), row.level || '—'),
-                    h('td', { style: S.td },
-                      h('div', { className: 'crop-work-title' }, row.goal || row.work_id)),
-                    h('td', { style: S.td }, row.type || '—'),
-                    h('td', { style: S.td }, row.difficulty || '—'),
-                    h('td', { style: S.tdRight }, fmtMinutes(row.minutes)),
-                    h('td', { style: S.tdRight }, row.wait_minutes ? fmtMinutes(row.wait_minutes) : '—')))),
+                  h('tbody', { key: 'tb' },
+                    rows.map((row) => h('tr', { key: row.work_id },
+                      h('td', { style: S.td },
+                        h('i', { style: S.lamp(LAMP[row.level] || '#6b7280') }), row.level || '—'),
+                      h('td', { style: S.td },
+                        h('div', { className: 'crop-work-title' }, row.goal || row.work_id)),
+                      h('td', { style: S.td }, row.type || '—'),
+                      h('td', { style: S.td }, row.difficulty || '—'),
+                      h('td', { style: S.tdRight }, fmtMinutes(row.minutes)),
+                      h('td', { style: S.tdRight }, row.wait_minutes ? fmtMinutes(row.wait_minutes) : '—')))),
                 ])
               : h('div', { className: 'crop-muted', style: S.quiet }, '这段时间还没有工作记录。先用 probe_report 认领一条。'))
         : null;
 
-      return h('div', { className: 'crop-global' }, [head, loadingCard, metrics, chart, works]);
+      return h('div', { className: 'crop-global' }, [head, loadingCard, metrics, chart, improvements, pitfalls, works]);
     }
 
     /** Sidebar glyph for the global panel row; the shell owns the row itself. */

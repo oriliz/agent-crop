@@ -242,6 +242,22 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path.startswith("/api/global"):
+            days = 7.0
+            if "days=" in self.path:
+                try:
+                    days = float(self.path.split("days=", 1)[1].split("&", 1)[0])
+                except ValueError:
+                    days = 7.0
+            body = json.dumps(core.improvement_summary(days), ensure_ascii=False).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            for name, value in _cors_headers(self):
+                self.send_header(name, value)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/api/summary"):
             days = 7.0
             if "days=" in self.path:

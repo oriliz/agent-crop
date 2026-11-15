@@ -1276,6 +1276,115 @@ def format_report(summary: dict) -> str:
     return "\n".join(lines)
 
 
+def _natural_start(days: float) -> int:
+    """Natural-day window start: 今天 = 0 点，7 天 = 含今天在内的 7 个自然日。"""
+    return start_of_today_ms() - int((max(1.0, float(days)) - 1) * 86400000)
+
+
+def _window_metrics(start_ms: int, end_ms: int) -> dict:
+    """Friction numbers for one window — the raw material of the global page.
+
+    Only facts the event log already carries: no judgement, no inference. A
+    metric whose denominator is 0 comes back as None so the panel can say
+    "no sample" instead of drawing a fake trend.
+    """
+    events = _events_between(start_ms, end_ms)
+    blocks = [event for event in events if event.get("ev") == "stop"]
+    waits = [event for event in events if event.get("ev") == "user_wait"]
+    tools = [event for event in events if event.get("ev") == "tool"]
+    churn = [event for event in events if event.get("ev") in ("tool_churn", "rework_signal")]
+    failures = [event for event in tools if event.get("is_error")]
+    total = sum(float(block.get("minutes") or 0) for block in blocks)
+    wait = sum(int(wait_event.get("waiting_ms") or 0) for wait_event in waits) / 60000.0
+    active = max(0.0, total - wait)
+    completed = len(_closed_works_between(start_ms, end_ms))
+    return {
+        "start": start_ms,
+        "end": end_ms,
+        "events": len(events),
+        "blocks": len(blocks),
+        "tools": len(tools),
+        "failures": len(failures),
+        "failure_rate": round(len(failures) / len(tools), 4) if tools else None,
+        "churn": len(churn),
+        "churn_per_block": round(len(churn) / len(blocks), 3) if blocks else None,
+        "tools_per_block": round(len(tools) / len(blocks), 3) if blocks else None,
+        "total_minutes": round(total, 1),
+        "active_minutes": round(active, 1),
+        "wait_minutes": round(wait, 1),
+        "wait_ratio": round(wait / total, 4) if total > 0 else None,
+        "completed": completed,
+        "active_per_completed": round(active / completed, 1) if completed else None,
+    }
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return round(ordered[middle], 1)
+    return round((ordered[middle - 1] + ordered[middle]) / 2, 1)
+
+
+def improvement_summary(days: float = 7.0) -> dict:
+    """Global page payload: friction this window against the one before it.
+
+    The comparison window has the same length, so a 7-day panel compares with
+    the previous 7 natural days. Both windows come from the same event log; a
+    fresh install leaves the previous window empty (events = 0, metrics None)
+    instead of inventing a baseline.
+    """
+    days = max(1.0, float(days))
+    end = now_ms()
+    start = _natural_start(days)
+    previous_start = start - int(days * 86400000)
+
+    current = _window_metrics(start, end)
+    previous = _window_metrics(previous_start, start - 1)
+
+    summary = period_summary(days, start=start)
+    works = summary.get("work_list") or []
+    per_work = [float(row.get("minutes") or 0) for row in works if row.get("minutes")]
+    current["works"] = len(works)
+    current["median_active_per_work"] = _median(per_work)
+
+    events = _events_between(start, end)
+    reports = [event for event in events if event.get("ev") == "probe_report"]
+    improvements = []
+    for report in reports:
+        text = str(report.get("improve") or "").strip()
+        if text:
+            improvements.append({
+                "work_id": report.get("work_id") or report.get("task_id") or "",
+                "goal": report.get("goal") or "",
+                "improve": text,
+                "t": report.get("t"),
+            })
+    categories: dict[str, int] = {}
+    for report in reports:
+        category = str(report.get("category") or "").strip()
+        if category:
+            categories[category] = categories.get(category, 0) + 1
+
+    return {
+        "days": days,
+        "start": start,
+        "end": end,
+        "current": current,
+        "previous": previous,
+        "daily": daily_breakdown(days, start=start),
+        "work_list": works,
+        "improvements": improvements,
+        "categories": sorted(
+            ({"category": key, "count": value} for key, value in categories.items()),
+            key=lambda item: item["count"],
+            reverse=True,
+        ),
+    }
+
+
 def daily_breakdown(
     days: float = 14.0, now: int | None = None, start: int | None = None
 ) -> list[dict]:
