@@ -68,7 +68,8 @@ def main(data_dir):
     check("工作时长没有重复计数", not inflated, str(inflated))
 
     # 5. every task_link after the fix carries a session (older rows are legacy debt)
-    cutoff = 1794676800000  # 2026-11-15 02:40 local: sid was added to task_link
+    from datetime import datetime
+    cutoff = int(datetime(2026, 11, 15, 12, 0).timestamp() * 1000)  # sid 覆盖任务前
     orphans = [e for e in events
                if e.get("ev") == "task_link" and not e.get("sid") and int(e.get("t") or 0) >= cutoff]
     legacy = len([e for e in events if e.get("ev") == "task_link" and not e.get("sid")])

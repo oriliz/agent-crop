@@ -676,7 +676,7 @@ def record_stop(sid: str) -> None:
         "work_id": work_id,
     })
     if work_id:
-        link_task(work_id, start)
+        link_task(work_id, start, sid)
     write_runtime(sid, read_runtime().get("workspace", ""), None)
 
 
