@@ -76,6 +76,9 @@ def dispatch(payload: dict):
         return core.format_open_tasks(tasks)
     if op == "maybe_reminder":
         return core.maybe_reminder(sid)
+
+    if op == "miss_nudge":
+        return core.miss_nudge(int(payload.get("streak") or 1))
     if op == "work_status":
         return core.work_status_line(workspace, sid)
     if op == "work_suspend":

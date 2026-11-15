@@ -17,7 +17,7 @@ printf '%s' '{"session_id":"smoke-1","cwd":"/tmp/smoke","hook_event_name":"Sessi
 echo "== first prompt =="
 OUT="$(printf '%s' '{"session_id":"smoke-1","prompt":"做一个设计文档","cwd":"/tmp/smoke","hook_event_name":"UserPromptSubmit"}' \
   | python3 "$ROOT/core/probe_hook.py" user-prompt-submit)"
-printf '%s\n' "$OUT" | grep -q '\[探针\]' || { echo "missing start hint"; exit 1; }
+printf '%s\n' "$OUT" | grep -q '\[crop\]' || { echo "missing start hint"; exit 1; }
 
 echo "== backdate the block to 35 minutes =="
 python3 - "$DATA" <<'PY'
@@ -41,7 +41,7 @@ PY
 echo "== post-tool reminder =="
 REMINDER="$(printf '%s' '{"session_id":"smoke-1","tool_name":"Bash","tool_response":{"stdout":"ok"},"hook_event_name":"PostToolUse"}' \
   | python3 "$ROOT/core/probe_hook.py" post-tool)"
-printf '%s\n' "$REMINDER" | grep -q 'probe_report' || { echo "missing reminder"; exit 1; }
+printf '%s\n' "$REMINDER" | grep -q 'crop_report' || { echo "missing reminder"; exit 1; }
 
 echo "== report via the DSH bridge =="
 printf '%s' '{"op":"record_report","args":{"phase":"blocked","task_id":"Smoke Test!","summary":"查资料","cause":"资料太散","next":"先定目录","category":"tool-misuse"},"context":{"sid":"smoke-1","workspace":"/tmp/smoke"}}' \

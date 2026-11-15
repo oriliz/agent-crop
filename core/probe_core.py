@@ -25,6 +25,11 @@ try:
 except Exception:  # pragma: no cover - non-POSIX
     fcntl = None
 
+try:
+    import crop_voice as voice
+except Exception:  # pragma: no cover - copy pools are optional at runtime
+    voice = None
+
 DEFAULT_SHARED_HOME = os.path.expanduser("~/.agentcrop")
 # Pre-rename installs used this path.  Only fall back to it when the new home
 # does not exist yet, so an upgrade keeps seeing its old data exactly once.
@@ -128,6 +133,7 @@ def paths(data: str | None = None) -> dict[str, str]:
         "blocks_dir": os.path.join(root, "blocks"),
         "runtime": os.path.join(root, "runtime"),
         "config": os.path.join(root, "config.json"),
+        "voice": os.path.join(root, "voice.json"),
     }
 
 
@@ -227,6 +233,10 @@ DEFAULT_CONFIG = {
     "remind_min": 15.0,
     "user_facing": True,
     "max_open_tasks": 3,
+    # 预估工时（expect_min）为时钟时的档位倍数；没报预期才退回 yellow_min / red_min。
+    "warm_ratio": 0.8,
+    "red_ratio": 1.5,
+    "overdue_ratio": 2.5,
 }
 
 
@@ -362,6 +372,25 @@ def _upsert_task(report: dict, workspace: str) -> None:
         task["type"] = report["type"]
     if report.get("difficulty"):
         task["difficulty"] = report["difficulty"]
+    if report.get("expect_min"):
+        current = float(report["expect_min"])
+        previous = task.get("expect_min")
+        try:
+            previous = float(previous) if previous else None
+        except Exception:
+            previous = None
+        if previous and abs(previous - current) > 0.01:
+            reason = report.get("cause") or report.get("summary") or ""
+            task.setdefault("expect_history", []).append({
+                "from": previous, "to": current, "reason": reason, "at": report["t"],
+            })
+            append_event({
+                "ev": "estimate_revised", "sid": report.get("sid", ""),
+                "work_id": task_id, "from": previous, "to": current, "reason": reason,
+            })
+        task["expect_min"] = current
+        task["expect_why"] = report.get("expect_why") or task.get("expect_why", "")
+        task["expect_set_at"] = report["t"]
     if not task.get("title") or task["title"] == task_id:
         task["title"] = report.get("summary") or task_id
     task["status"] = "open"
@@ -440,6 +469,19 @@ def validate_report(args: dict) -> dict:
     if sentiment and sentiment not in SENTIMENTS:
         raise ValueError(f"sentiment must be one of {', '.join(SENTIMENTS)}")
     improve = _text(args.get("improve"), "improve")
+    expect_min = args.get("expect_min")
+    if expect_min is None or str(expect_min).strip() == "":
+        expect_min = None
+    else:
+        try:
+            expect_min = float(expect_min)
+        except Exception:
+            raise ValueError("expect_min must be a number of minutes")
+        if expect_min <= 0:
+            raise ValueError("expect_min must be greater than 0")
+        if expect_min > 1440:
+            raise ValueError("expect_min must be at most 1440 minutes (24h)")
+    expect_why = _text(args.get("expect_why"), "expect_why")
     what = _text(args.get("what"), "what")
     cost = _text(args.get("cost"), "cost")
     next_time = _text(args.get("next_time"), "next_time")
@@ -457,6 +499,8 @@ def validate_report(args: dict) -> dict:
         "difficulty": difficulty,
         "verdict": verdict,
         "improve": improve,
+        "expect_min": expect_min,
+        "expect_why": expect_why,
         "rework": rework,
         "sentiment": sentiment,
         "what": what,
@@ -496,6 +540,8 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         "goal": report.get("goal", ""),
         "verdict": report.get("verdict", ""),
         "improve": report.get("improve", ""),
+        "expect_min": report.get("expect_min"),
+        "expect_why": report.get("expect_why", ""),
         "rework": report.get("rework", ""),
         "sentiment": report.get("sentiment", ""),
         "type": report.get("type", ""),
@@ -531,6 +577,8 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                 "work_id": report["task_id"],
                 "verdict": report.get("verdict", ""),
         "improve": report.get("improve", ""),
+        "expect_min": report.get("expect_min"),
+        "expect_why": report.get("expect_why", ""),
         "rework": report.get("rework", ""),
         "sentiment": report.get("sentiment", ""),
                 "what": report.get("what", ""),
@@ -692,6 +740,16 @@ def record_stop(sid: str) -> None:
     write_runtime(sid, read_runtime().get("workspace", ""), None)
 
 
+def miss_nudge(streak: int) -> str:
+    """Missing-report nudge; streaks of 2+ switch to the harsher pool."""
+    if voice is not None:
+        try:
+            return voice.miss(int(streak or 0), paths().get("voice"))
+        except Exception:
+            pass
+    return "[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_report 写一行。"
+
+
 def record_session_end(sid: str) -> None:
     append_event({"ev": "session_end", "sid": sid})
 
@@ -703,48 +761,140 @@ def _latest_work_for_session(sid: str) -> str | None:
     return None
 
 
+def _nudge(tier: str, meta: dict) -> str:
+    """Draw one nudge; plain wording is the fallback if the copy pools are gone."""
+    if voice is not None:
+        try:
+            return voice.reminder(tier, meta, paths().get("voice"))
+        except Exception:
+            pass
+    return format_reminder(float(meta.get("m") or 0), load_config())
+
+
+def _cooldown_active(sid: str, minutes: float, tier: str, work_id: str = "") -> bool:
+    """Same tier inside remind_min stays quiet; the next tier is a new contract.
+
+    Legacy reminder events carry no tier, so they match any tier — an upgrade
+    does not double-nudge just because the field is new.
+    """
+    window = float(minutes) * 60000
+    for event in reversed(load_events(sid=sid)):
+        if event.get("ev") != "reminder":
+            continue
+        if event.get("tier") not in (None, tier):
+            continue
+        if work_id and event.get("work_id") != work_id:
+            continue
+        return now_ms() - int(event.get("t") or 0) < window
+    return False
+
+
+def reminder_tier(health: dict, config: dict) -> str | None:
+    """Which notch of the contract this work is at (None = stay quiet).
+
+    With an estimate the ladder is relative to the AI's own number: nothing
+    before 0.8E, warm up to E, yellow to 1.5E, red to 2.5E, overdue beyond.
+    Without one we keep the legacy minutes so existing works still get nudged.
+    """
+    minutes = float(health.get("minutes") or 0)
+    expect = health.get("expect_min")
+    if expect:
+        try:
+            ratio = minutes / float(expect)
+        except Exception:
+            ratio = 0.0
+        if ratio < float(config.get("warm_ratio", 0.8)):
+            return None
+        if ratio < 1.0:
+            return "warm"
+        if ratio < float(config.get("red_ratio", 1.5)):
+            return "yellow"
+        if ratio < float(config.get("overdue_ratio", 2.5)):
+            return "red"
+        return "overdue"
+    if minutes >= float(config.get("yellow_min", 10.0)):
+        return "yellow"
+    return None
+
+
+def _nudge_meta(health: dict, config: dict) -> dict:
+    expect = health.get("expect_min")
+    meta = {
+        "m": float(health.get("minutes") or 0),
+        "e": float(expect) if expect else None,
+        "goal": health.get("goal") or "",
+        "default": float(config.get("yellow_min", 10.0)),
+        "line": "黄线",
+        "changes": int(health.get("expect_changes") or 0),
+    }
+    if not expect:
+        meta["no_expect"] = True
+    return meta
+
+
 def maybe_work_reminder(sid: str) -> str:
-    """Work-level red line: the current work is past 60% of its baseline."""
     config = load_config()
     task_id = _latest_work_for_session(sid)
     if not task_id:
         return ""
     health = work_health(task_id)
-    if not health or health["minutes"] < float(config.get("yellow_min", 10.0)):
+    if not health:
         return ""
-    for event in reversed(load_events(sid=sid)):
-        if event.get("ev") == "reminder" and event.get("work_id") == task_id:
-            if now_ms() - int(event.get("t") or 0) < float(config["remind_min"]) * 60000:
-                return ""
-            break
+    tier = reminder_tier(health, config)
+    if not tier:
+        return ""
+    if _cooldown_active(sid, float(config["remind_min"]), tier, work_id=task_id):
+        return ""
     append_event({
-        "ev": "reminder", "sid": sid, "work_id": task_id,
-        "minutes": health["minutes"], "kind": "work",
+        "ev": "reminder", "sid": sid, "work_id": task_id, "tier": tier,
+        "minutes": round(float(health.get("minutes") or 0), 1),
+        "expect_min": health.get("expect_min"),
+        "kind": "work",
     })
-    return format_work_reminder(health, config)
+    return _nudge(tier, _nudge_meta(health, config))
 
 
 def maybe_reminder(sid: str) -> str:
+    """One call per step: the estimate ladder wins, legacy minutes are the net."""
     config = load_config()
+    task_id = _latest_work_for_session(sid)
+    health = work_health(task_id) if task_id else None
+    has_estimate = bool(health and health.get("expect_min"))
     start = current_block_start(sid)
-    if not start:
-        return maybe_work_reminder(sid)
-    minutes = max(0.0, (now_ms() - start) / 60000.0)
-    if minutes < float(config["red_min"]):
-        return maybe_work_reminder(sid)
-    last = None
-    for event in reversed(load_events(sid=sid)):
-        if event.get("ev") == "reminder" and event.get("block_start") == start:
-            last = int(event.get("t") or 0)
-            break
-    if last and now_ms() - last < float(config["remind_min"]) * 60000:
-        return ""
-    append_event({"ev": "reminder", "sid": sid, "block_start": start, "minutes": round(minutes, 1)})
-    return format_reminder(minutes, config)
+    if start and not has_estimate:
+        minutes = max(0.0, (now_ms() - start) / 60000.0)
+        red = float(config["red_min"])
+        if minutes >= red and not _cooldown_active(sid, float(config["remind_min"]), "red"):
+            append_event({
+                "ev": "reminder", "sid": sid, "block_start": start, "tier": "red",
+                "minutes": round(minutes, 1), "kind": "block",
+            })
+            return _nudge("red", {
+                "m": minutes, "e": None, "goal": "",
+                "default": red, "line": "红线", "no_expect": True,
+            })
+    return maybe_work_reminder(sid)
 
 
 # ---------------------------------------------------------------------------
 # Prompt text
+
+
+def fmt_minutes(minutes: float) -> str:
+    """Duration in the copy's voice ('3 小时 30 分'); plain fallback without pools."""
+    if voice is not None:
+        try:
+            return voice.fmt_minutes(minutes)
+        except Exception:
+            pass
+    try:
+        value = int(round(float(minutes or 0)))
+    except Exception:
+        return "0 分钟"
+    if value < 60:
+        return f"{value} 分钟"
+    hours, rest = divmod(value, 60)
+    return f"{hours} 小时" if not rest else f"{hours} 小时 {rest} 分"
 
 
 def ago(ms: int) -> str:
@@ -757,6 +907,12 @@ def ago(ms: int) -> str:
     return f"{minutes // 60} 小时前"
 
 
+ESTIMATE_HINT = (
+    "绑定后先报预期（不阻断，但必须报）：crop_report 带 expect_min=多少分钟 + expect_why=一句为什么。"
+    "提醒按你报的数字算——在你报的时长内不会有人抽鞭子；觉得报少了，就带着理由改。"
+)
+
+
 def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
     # A live binding decides the first-turn line: the bound work may have
     # dropped out of the three candidates (another session touched it, or newer
@@ -766,7 +922,10 @@ def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | No
         if bound_line:
             return bound_line
     if not tasks:
-        return "[crop] 本机当前没有进行中的工作。新开一条：crop_report(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\")"
+        return ("[crop] 本机当前没有进行中的工作。新开一条："
+                "crop_report(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\", "
+                "expect_min=预估分钟, expect_why=\"一句为什么\")。"
+                "提醒按你报的时长算：在你自己报的范围内不会被打扰。")
     claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
     if claimed:
         return work_status_line(None, sid)
@@ -785,6 +944,7 @@ def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | No
         "哪个属于本会话？先判断是接着做还是新开（先绑定，再干活）：接着做用 "
         f'crop_report(phase="start", task_id="{example}")；新开用 2-3 个词的短名。'
     )
+    lines.append(ESTIMATE_HINT)
     lines.append("尽量让一个会话只对应一件工作；要做的其实是几件事就拆开，一件一件来。")
     return "\n".join(lines)
 
@@ -945,14 +1105,23 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
     if current:
         aim = current.get("goal") or current.get("title") or current.get("task_id")
         health = work_health(current.get("task_id")) or {}
-        minutes = health.get("minutes", 0.0)
-        yellow = float(load_config().get("yellow_min", 10.0))
-        overtime = "已超过黄线" if minutes >= yellow else "未超时"
+        minutes = float(health.get("minutes", 0.0))
+        expect = health.get("expect_min")
         note = "" if claimed else "（上个会话认领，仍在有效期内）"
+        if expect:
+            gap = minutes - float(expect)
+            clock = (f"已进行 {fmt_minutes(minutes)} / 你报的 {fmt_minutes(expect)}"
+                     + (f"（超 {fmt_minutes(gap)}）" if gap >= 0.5 else f"（还剩 {fmt_minutes(-gap)}）"))
+            tail = "留意用户是否把话题岔到另一件事（分叉），或上一轮的产出是否被推翻（返工）；有变化就更新一行。"
+        else:
+            yellow = float(load_config().get("yellow_min", 10.0))
+            overtime = "已超过黄线" if minutes >= yellow else "未超时"
+            clock = f"已进行 {fmt_minutes(minutes)}，{overtime}（黄线 {fmt_minutes(yellow)}）"
+            tail = ("还没报预期时长：开工或下次上报时给个数字（crop_report 带 expect_min），"
+                    "鞭子就按你的数字算。留意分叉与返工；有变化就更新一行。")
         return (
             f"[crop] 当前工作：{aim}（{current.get('task_id')}）{note}。"
-            f"已进行 {minutes:.0f} 分钟，{overtime}（黄线 {yellow:.0f} 分钟）；上次更新 {ago(current.get('last_seen_at', 0))}。"
-            "留意用户是否把话题岔到另一件事（分叉），或上一轮的产出是否被推翻（返工）；有变化就更新一行。"
+            f"{clock}；上次更新 {ago(current.get('last_seen_at', 0))}。{tail}"
         )
     count = open_works_count(workspace)
     lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
@@ -970,6 +1139,7 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
         f'crop_report(phase="start", task_id="{example}")；'
         "新开用 2-3 个词的短名。尽量一个会话只对应一件工作。"
     )
+    lines.append(ESTIMATE_HINT)
     return "\n".join(lines)
 
 
@@ -1787,6 +1957,11 @@ def work_health(work_id: str | None = None) -> dict | None:
     baseline, source = baseline_minutes(task.get("type"), task.get("difficulty"))
     ratio = round(minutes / baseline, 2) if baseline else 0.0
     level = "green" if ratio < 0.6 else ("yellow" if ratio < 1.5 else "red")
+    expect = task.get("expect_min")
+    try:
+        expect = float(expect) if expect else None
+    except Exception:
+        expect = None
     return {
         "work_id": task.get("task_id"),
         "goal": task.get("goal") or task.get("title") or "",
@@ -1797,6 +1972,10 @@ def work_health(work_id: str | None = None) -> dict | None:
         "baseline_source": source,
         "ratio": ratio,
         "level": level,
+        # 主时钟：AI 自己报的预期工时；没有就退回 yellow_min / red_min
+        "expect_min": expect,
+        "expect_why": task.get("expect_why") or "",
+        "expect_changes": len(task.get("expect_history") or []),
     }
 
 
@@ -1808,16 +1987,8 @@ def open_works_count(workspace: str | None = None) -> int:
 
 
 def format_work_reminder(health: dict, config: dict) -> str:
-    minutes = health.get("minutes", 0)
-    baseline = health.get("baseline", 0)
-    goal = health.get("goal") or health.get("work_id")
-    return "\n".join([
-        f"[crop] 黄线告警：{goal} 已经做了 {minutes:.0f} 分钟（黄线 {load_config().get('yellow_min', 10):.0f} 分钟）。",
-        "先做三件事：",
-        "1. 安抚用户一句：这个比预想久，我还在处理。",
-        "2. 反思：现在的方法还对吗？有没有走错路、绕远路？",
-        "3. 调 crop_report 写一行：cause=为什么慢；verdict=justified（活本来就难）或 not-justified（自己走错路）。",
-    ])
+    tier = reminder_tier(health, config) or "yellow"
+    return _nudge(tier, _nudge_meta(health, config))
 
 
 def record_review(args: dict, context: dict | None = None) -> dict:

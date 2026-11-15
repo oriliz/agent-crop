@@ -39,7 +39,20 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
 
 ### Added（新增）
 
-- （暂无）
+- 提醒改按「合同」抽鞭子：`crop_report` 新增 `expect_min` / `expect_why`，AI 开工先报
+  预估工时，提醒以它为时钟（0.8× 预告、1.0× 抽、1.5× 翻账本、2.5× 焦躁），在它自己
+  报的范围内完全不打扰；没报预期仍按 10 / 30 分钟兜底，并催它报数字
+- 文案池 `core/crop_voice.py`：六个档位（warm / yellow / red / overdue / miss /
+  miss_streak）各 4–6 条「牛马庄园」口味句，洗牌袋轮换、短期不重复；动作句固定，
+  随机只发生在口味上。缺报提醒从 DSH 插件迁进池子（新 core op `miss_nudge`）
+- 改报价允许且记账：带新 `expect_min` + 理由即改口，落 `estimate_revised`，
+  第 2 次起文案点名；不阻断、不设上限
+- `docs/VOICE.md`：档位表、报预期/改报价流程、文案池占位符与轮换机制
+
+### Fixed（修复）
+
+- 冒烟测试的断言还停在改名前的 `[探针]` / `probe_report`，脚本实际一直是红的；
+  改回 `[crop]` / `crop_report` 并跑通
 
 新改动先写在这里，发版时再折叠进对应版本。
 

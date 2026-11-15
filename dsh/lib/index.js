@@ -36,7 +36,9 @@ const PROTOCOL_TEXT = [
   '- 首轮要么绑定工作，要么明确声明跳过（只限纯问答、不调用任何工具）。一旦你打算调用工具，先绑定再动手；绑定只用这个工具，不要一边干活一边补登。',
   '- 接着做：crop_report(phase="start", task_id=已有 id)；新开：crop_report(phase="start", task_id="<2-3 个词的短名>")。',
   '- 途中状态变化用 phase="progress"；卡住用 phase="blocked" 并写 cause 与 verdict。',
+  '- 开工先报预期时长：crop_report 带 expect_min（分钟）+ expect_why（一句为什么）。提醒按你报的数字算，在你报的范围内不会被打扰；觉得报少了就带理由改。',
   '- 黄线提醒：先安抚用户一句，再反思方法对不对，然后上报。红线提醒：先判断是否还走在正确路上，能阶段性交付就先交付。',
+  '- 提醒里的鞭子、奴隶主、牛马都是内部梗，别原样复述给用户，用正常话跟用户沟通。',
   '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
   '- 用户表达不满、否定或要求重做时：在当次 crop_report 里带上 rework（redo/major/minor）和 sentiment，或单独调 crop_review；报完工作不等于报完返工，两步都要做。',
   '- 报慢或卡点的时候，除了 cause 再补一句 improve=下次可以怎么改进（一句话，供复盘参考，不一定被采纳）。',
@@ -195,6 +197,14 @@ export function apply(ctx, config = {}) {
           type: 'string',
           description: '可选：下次可以怎么改进（一句话，只是建议，不一定被采纳）',
         },
+        expect_min: {
+          type: 'number',
+          description: '可选但鼓励：你预估这个工作要多少分钟。提醒按这个数字算，在你报的范围内不会打扰你；报少了可以带新数字+理由改',
+        },
+        expect_why: {
+          type: 'string',
+          description: '可选：预估依据（一句话，比如“先看代码结构再改”）',
+        },
         rework: {
           type: 'string',
           enum: ['redo', 'major', 'minor', 'none'],
@@ -250,7 +260,8 @@ export function apply(ctx, config = {}) {
       state.reported = true;
       state.everReported = true;
       const retire = result.phase === 'end' ? (callCore({ op: 'pending_retire' }) || '') : '';
-      const recorded = `recorded ${result.phase} ${result.task_id} (${result.minutes ?? 0} min in this block)`;
+      const expect = Number(args?.expect_min) > 0 ? ` · 预估 ${Number(args.expect_min)} 分钟` : '';
+      const recorded = `recorded ${result.phase} ${result.task_id} (${result.minutes ?? 0} min in this block)${expect}`;
       return {
         ok: true,
         phase: result.phase,
@@ -484,15 +495,16 @@ export function apply(ctx, config = {}) {
       const boundWork = state.toolsUsed ? (callCore({ op: 'binding', context: { sid, workspace } }) || '') : '';
       if (state.toolsUsed && !boundWork && !state.bindNudged) {
         state.bindNudged = true;
-        notes.push('[crop] 你已经在调用工具，但还没有绑定任何工作。先调 crop_report(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>") 再继续，这样这段时间才有归属。');
+        notes.push('[crop] 你已经在调用工具，但还没有绑定任何工作。先调 crop_report(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>", expect_min=预估分钟) 再继续，这样这段时间才有归属；顺手报个预期时长，鞭子就按你的数字算。');
       }
 
       if (state.missed > 0) {
         const streak = state.missed;
         state.missed = 0;
-        notes.push(streak === 1
-          ? '[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 probe_report 写一行。'
-          : `[crop] 已经连续 ${streak} 轮没有登记工作状态。请现在调 probe_report 写一行：在做什么 / 卡在哪 / 下一步。`);
+        const nudge = callCore({ op: 'miss_nudge', context: { sid, workspace }, streak });
+        notes.push(nudge || (streak === 1
+          ? '[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_report 写一行。'
+          : `[crop] 已经连续 ${streak} 轮没有登记工作状态。请现在调 crop_report 写一行：在做什么 / 卡在哪 / 下一步。`));
       }
 
       // Turn-start (step 1) or post-compaction: one line of current work state.

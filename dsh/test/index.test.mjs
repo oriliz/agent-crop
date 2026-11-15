@@ -192,7 +192,7 @@ test('asks for a report after a substantial turn without one', async (t) => {
   event(session, { type: 'turn/end', data: {} });
 
   const decision = await preStep({ agent: { session }, turn: 2, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
-  assert.ok(decision.messages.some((message) => message.content[0].text.includes('没有登记')));
+  assert.ok(decision.messages.some((message) => message.content[0].text.includes('在做什么 / 卡在哪 / 下一步')));
 });
 
 test('pure chat turns never count as missed reports', async (t) => {
@@ -206,7 +206,7 @@ test('pure chat turns never count as missed reports', async (t) => {
   const preStep = ctx.handlers.get('agent/pre-step');
 
   const decision = await preStep({ agent: { session }, turn: 2, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
-  assert.ok(!decision.messages.some((message) => message.content[0].text.includes('没有登记')));
+  assert.ok(!decision.messages.some((message) => message.content[0].text.includes('在做什么 / 卡在哪 / 下一步')));
 });
 
 test('nags an unbound session that already used tools', async (t) => {
