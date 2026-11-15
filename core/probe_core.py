@@ -711,15 +711,16 @@ def format_open_tasks(tasks: list[dict]) -> str:
 def format_start_hint(tasks: list[dict]) -> str:
     head = (
         "[探针] 开工前先绑定工作（一句话说给用户，不用解释规则）：\n"
-        "- 续接下面某条：crop switch <work_id>\n"
-        '- 新开一条：probe_report(phase="start", task_id="<kebab-slug>", summary="<一句话>")\n'
-        "没绑定之前不要开始干活。"
+        '- 续接下面某条：直接调 probe_report(phase="progress", task_id="<候选 id>", summary="续接")\n'
+        '- 新开一条：直接调 probe_report(phase="start", task_id="<kebab-slug>", summary="<一句话>")\n'
+        "绑定只用 probe_report：不要先找命令，不要先读代码或跑 shell。"
     )
     body = format_open_tasks(tasks)
     text = head + ("\n" + body if body else "")
     if tasks:
         text += (
-            f"\n跟最近活跃的那条：crop switch {tasks[0].get('task_id')}；"
+            f'\n跟最近活跃的那条：probe_report(phase="progress", '
+            f'task_id="{tasks[0].get("task_id")}", summary="续接")；'
             "都对不上就新建一条。"
         )
     return text
