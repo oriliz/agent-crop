@@ -57,8 +57,8 @@
 <text x="1215" y="202" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#3b6bb0" opacity="1">收工总结</text>
 <line x1="250" y1="260" x2="250" y2="392" stroke="#c8912f" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.45"/>
 <circle cx="250" cy="250" r="5" fill="#ffffff" stroke="#c8912f" stroke-width="2"/>
-<rect x="180.0" y="392" width="140.0" height="56" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
-<text x="250" y="428" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#c8912f" opacity="1">认领并绑定</text>
+<rect x="154.4" y="392" width="191.2" height="56" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
+<text x="250" y="428" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#c8912f" opacity="1">创建/绑定工作项</text>
 <line x1="620" y1="260" x2="620" y2="392" stroke="#c8912f" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.45"/>
 <circle cx="620" cy="250" r="5" fill="#ffffff" stroke="#c8912f" stroke-width="2"/>
 <rect x="550.0" y="392" width="140.0" height="56" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
