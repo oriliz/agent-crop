@@ -556,15 +556,20 @@ def record_prompt(sid: str, prompt: str, workspace: str) -> None:
         except Exception:
             gap_ms = 0
         within = _in_work_hours()
+        # 等待属于「刚结束的那个 block」的工作：否则看板上的等待列永远空着。
+        work_id = str(last_stop.get("work_id") or "")
+        if not work_id:
+            work_id = str((_claimed_work(sid) or {}).get("task_id") or "")
+        ownership = {"work_id": work_id} if work_id else {}
         if gap_ms > IDLE_MIN * 60000 or not within:
             append_event({
                 "ev": "idle_gap", "sid": sid, "gap_ms": gap_ms,
-                "reason": "off-hours" if not within else "idle",
+                "reason": "off-hours" if not within else "idle", **ownership,
             })
         else:
             append_event({
                 "ev": "user_wait", "sid": sid,
-                "waiting_ms": gap_ms, "within_work_hours": within,
+                "waiting_ms": gap_ms, "within_work_hours": within, **ownership,
             })
     append_event({"ev": "prompt", "sid": sid, "workspace": workspace, "snippet": prompt[:160]})
     write_runtime(sid, workspace, now_ms())
@@ -613,7 +618,12 @@ def record_stop(sid: str) -> None:
     end = now_ms()
     minutes = max(0.0, (end - start) / 60000.0)
     tools = [event for event in load_events(sid=sid) if event.get("ev") == "tool" and event.get("t", 0) >= start]
-    append_event({"ev": "stop", "sid": sid, "block_start": start, "minutes": round(minutes, 1)})
+    # 机械计时：块结束时按当前认领自动归属，probe_report 只负责补语义。
+    work_id = str((_claimed_work(sid) or {}).get("task_id") or "")
+    append_event({
+        "ev": "stop", "sid": sid, "block_start": start,
+        "minutes": round(minutes, 1), "work_id": work_id,
+    })
     append_jsonl(os.path.join(paths()["blocks_dir"], f"{today()}.jsonl"), {
         "t": end,
         "host": host(),
@@ -623,7 +633,10 @@ def record_stop(sid: str) -> None:
         "minutes": round(minutes, 1),
         "tools": len(tools),
         "failed_tools": sum(1 for event in tools if event.get("is_error")),
+        "work_id": work_id,
     })
+    if work_id:
+        link_task(work_id, start)
     write_runtime(sid, read_runtime().get("workspace", ""), None)
 
 
@@ -789,6 +802,11 @@ def _start_of_today_ms() -> int:
     return int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
 
 
+def start_of_today_ms() -> int:
+    """Local midnight — the dashboard's「今天」and natural-day windows start here."""
+    return _start_of_today_ms()
+
+
 def status_summary(workspace: str | None = None) -> dict:
     runtime = read_runtime()
     sid = str(runtime.get("sid") or "")
@@ -851,6 +869,24 @@ def format_status(summary: dict) -> str:
     return "\n".join(lines)
 
 
+def _claimed_work(sid: str) -> dict | None:
+    """This session's work: explicit claim first, else the single active work.
+
+    Several sessions can share a workspace, so "the only active work" is only a
+    safe fallback when there is exactly one. 块结束时用它自动归属时间。
+    """
+    tasks = [
+        task for task in load_open().get("tasks", {}).values()
+        if task.get("status", "open") == "open" and task.get("state", "open") == "open"
+    ]
+    if sid:
+        for task in tasks:
+            if task.get("last_sid") == sid:
+                return task
+    active = [task for task in tasks if float(task.get("active_until") or 0) > now_ms()]
+    return active[0] if len(active) == 1 else None
+
+
 def work_status_line(workspace: str | None = None, sid: str | None = None) -> str:
     """One line for the turn-start injection.
 
@@ -862,13 +898,13 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
     tasks = open_tasks(workspace, 3, sid)
     if not tasks:
         return ""
+    current_ms = now_ms()
     claimed = next((t for t in tasks if sid and t.get("last_sid") == sid), None)
     inherited = None
     if not claimed:
         # 会话重启/fork 会换 sid，认领会断。只要有效期内只有一条活跃工作，
         # 就不存在“选哪个”的问题，直接接着用；有多条才列候选交给 AI 判断。
-        now = now_ms()
-        active = [t for t in tasks if float(t.get("active_until") or 0) > now]
+        active = [t for t in tasks if float(t.get("active_until") or 0) > current_ms]
         if len(active) == 1:
             inherited = active[0]
     current = claimed or inherited
@@ -990,9 +1026,101 @@ def _events_between(start_ms: int, end_ms: int) -> list[dict]:
     return [event for event in events if start_ms <= int(event.get("t") or 0) <= end_ms]
 
 
-def period_summary(days: float = 7.0, now: int | None = None) -> dict:
+def _closed_works_between(start_ms: int, end_ms: int) -> list[dict]:
+    """Works finished in [start, end]: the dashboard's 完成工作."""
+    works: list[dict] = []
+    directory = paths()["closed_dir"]
+    try:
+        names = sorted(os.listdir(directory))
+    except Exception:
+        return works
+    for name in names:
+        if not name.endswith(".jsonl"):
+            continue
+        try:
+            with open(os.path.join(directory, name), encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        task = json.loads(line)
+                    except Exception:
+                        continue
+                    closed_at = int(task.get("closed_at") or 0)
+                    if start_ms <= closed_at <= end_ms:
+                        works.append(task)
+        except Exception:
+            continue
+    return works
+
+
+def _work_list(events: list[dict], completed: list[dict], start_ms: int) -> list[dict]:
+    """One row per work for the dashboard table: 灯点 / 工作 / 类型 / 活跃 / 等待."""
+    tasks: dict[str, dict] = {}
+    for task in load_open().get("tasks", {}).values():
+        if task.get("status", "open") == "open" and task.get("state", "open") == "open":
+            tasks[str(task.get("task_id") or "")] = task
+    finished = set()
+    for task in completed:
+        work_id = str(task.get("task_id") or "")
+        if work_id:
+            finished.add(work_id)
+            tasks.setdefault(work_id, task)
+    wait_ms: dict[str, int] = {}
+    seen: set[str] = set()
+    for event in events:
+        work_id = str(event.get("work_id") or event.get("task_id") or "")
+        if not work_id:
+            continue
+        seen.add(work_id)
+        if event.get("ev") == "user_wait":
+            wait_ms[work_id] = wait_ms.get(work_id, 0) + int(event.get("waiting_ms") or 0)
+
+    minutes_cache: dict[str, float] = {}
+    baseline_cache: dict[tuple, tuple] = {}
+    rows = []
+    for work_id, task in tasks.items():
+        in_range = (
+            work_id in seen
+            or work_id in finished
+            or int(task.get("last_seen_at") or 0) >= start_ms
+        )
+        if not in_range:
+            continue
+        if work_id not in minutes_cache:
+            minutes_cache[work_id] = work_minutes(work_id)
+        minutes = minutes_cache[work_id]
+        key = (task.get("type"), task.get("difficulty"))
+        if key not in baseline_cache:
+            baseline_cache[key] = baseline_minutes(*key)
+        baseline, source = baseline_cache[key]
+        ratio = round(minutes / baseline, 2) if baseline else 0.0
+        level = "green" if ratio < 0.6 else ("yellow" if ratio < 1.5 else "red")
+        rows.append({
+            "work_id": work_id,
+            "goal": task.get("goal") or task.get("title") or task.get("summary") or "",
+            "type": task.get("type") or "",
+            "difficulty": task.get("difficulty") or "",
+            "minutes": minutes,
+            "wait_minutes": round(wait_ms.get(work_id, 0) / 60000.0, 1),
+            "baseline": baseline,
+            "baseline_source": source,
+            "ratio": ratio,
+            "level": level,
+            "state": "done" if work_id in finished else task.get("state", "open"),
+        })
+    rows.sort(key=lambda row: row["minutes"], reverse=True)
+    return rows[:50]
+
+
+def period_summary(
+    days: float = 7.0, now: int | None = None, start: int | None = None
+) -> dict:
+    """Range totals for the dashboard and the text report.
+
+    `start` pins a natural-day window (the dashboard's 今天 / 7 天 / 30 天);
+    without it the window stays rolling, which is what the CLI report uses.
+    """
     end = now if now is not None else now_ms()
-    start = end - int(days * 86400000)
+    start = int(start) if start is not None else end - int(days * 86400000)
     events = _events_between(start, end)
     blocks = [event for event in events if event.get("ev") == "stop"]
     reports = [event for event in events if event.get("ev") == "probe_report"]
@@ -1004,6 +1132,10 @@ def period_summary(days: float = 7.0, now: int | None = None) -> dict:
     for block in blocks:
         day = datetime.fromtimestamp(int(block.get("t") or 0) / 1000).strftime("%Y-%m-%d")
         minutes_by_day[day] = minutes_by_day.get(day, 0.0) + float(block.get("minutes") or 0)
+    wait_by_day: dict[str, float] = {}
+    for wait in waits:
+        day = datetime.fromtimestamp(int(wait.get("t") or 0) / 1000).strftime("%Y-%m-%d")
+        wait_by_day[day] = wait_by_day.get(day, 0.0) + int(wait.get("waiting_ms") or 0) / 60000.0
 
     works: dict[str, dict] = {}
     for report in reports:
@@ -1020,6 +1152,17 @@ def period_summary(days: float = 7.0, now: int | None = None) -> dict:
             if report.get(key):
                 item[key] = report[key]
 
+    total_minutes = sum(float(block.get("minutes") or 0) for block in blocks)
+    wait_minutes = sum(int(event.get("waiting_ms") or 0) for event in waits) / 60000.0
+    active_minutes = max(0.0, total_minutes - wait_minutes)
+    completed = _closed_works_between(start, end)
+    count = len(completed)
+    day_keys = sorted(set(minutes_by_day) | set(wait_by_day))
+    active_by_day = {
+        day: round(max(0.0, minutes_by_day.get(day, 0.0) - wait_by_day.get(day, 0.0)), 1)
+        for day in day_keys
+    }
+
     top = sorted(works.values(), key=lambda item: item["minutes"], reverse=True)[:3]
     return {
         "days": days,
@@ -1027,8 +1170,26 @@ def period_summary(days: float = 7.0, now: int | None = None) -> dict:
         "end": end,
         "events": len(events),
         "blocks": len(blocks),
-        "total_minutes": round(sum(float(block.get("minutes") or 0) for block in blocks), 1),
+        "total_minutes": round(total_minutes, 1),
+        "active_minutes": round(active_minutes, 1),
+        "wait_minutes": round(wait_minutes, 1),
         "minutes_by_day": {day: round(value, 1) for day, value in sorted(minutes_by_day.items())},
+        "active_by_day": active_by_day,
+        "wait_by_day": {day: round(value, 1) for day, value in sorted(wait_by_day.items())},
+        "completed": count,
+        "completed_works": [
+            {
+                "work_id": task.get("task_id"),
+                "goal": task.get("goal") or task.get("title") or "",
+                "type": task.get("type") or "",
+                "difficulty": task.get("difficulty") or "",
+                "closed_at": task.get("closed_at"),
+            }
+            for task in completed
+        ],
+        "avg_active_minutes": round(active_minutes / count, 1) if count else None,
+        "avg_wait_minutes": round(wait_minutes / count, 1) if count else None,
+        "work_list": _work_list(events, completed, start),
         "works": sorted(works.values(), key=lambda item: item["minutes"], reverse=True),
         "top_works": top,
         "human_wait_ms": sum(int(event.get("waiting_ms") or 0) for event in waits),
@@ -1066,9 +1227,11 @@ def format_report(summary: dict) -> str:
     return "\n".join(lines)
 
 
-def daily_breakdown(days: float = 14.0, now: int | None = None) -> list[dict]:
+def daily_breakdown(
+    days: float = 14.0, now: int | None = None, start: int | None = None
+) -> list[dict]:
     end = now if now is not None else now_ms()
-    start = end - int(days * 86400000)
+    start = int(start) if start is not None else end - int(days * 86400000)
     events = _events_between(start, end)
     buckets: dict[str, dict] = {}
     for event in events:
@@ -1076,7 +1239,8 @@ def daily_breakdown(days: float = 14.0, now: int | None = None) -> list[dict]:
         day = datetime.fromtimestamp(stamp / 1000).strftime("%Y-%m-%d")
         bucket = buckets.setdefault(day, {
             "date": day, "events": 0, "blocks": 0, "minutes": 0.0,
-            "tools": 0, "failures": 0, "waits": 0, "rework": 0, "works": set(),
+            "tools": 0, "failures": 0, "waits": 0, "rework": 0,
+            "wait_minutes": 0.0, "works": set(),
         })
         bucket["events"] += 1
         kind = event.get("ev")
@@ -1089,6 +1253,7 @@ def daily_breakdown(days: float = 14.0, now: int | None = None) -> list[dict]:
                 bucket["failures"] += 1
         elif kind == "user_wait":
             bucket["waits"] += 1
+            bucket["wait_minutes"] += int(event.get("waiting_ms") or 0) / 60000.0
         elif kind == "rework_signal":
             bucket["rework"] += 1
         elif kind == "probe_report":
@@ -1099,6 +1264,8 @@ def daily_breakdown(days: float = 14.0, now: int | None = None) -> list[dict]:
     for day, bucket in sorted(buckets.items()):
         bucket["works"] = len(bucket["works"])
         bucket["minutes"] = round(bucket["minutes"], 1)
+        bucket["wait_minutes"] = round(bucket["wait_minutes"], 1)
+        bucket["active_minutes"] = round(max(0.0, bucket["minutes"] - bucket["wait_minutes"]), 1)
         rows.append(bucket)
     return rows
 
@@ -1365,24 +1532,33 @@ def work_minutes(work_id: str) -> float:
             if abs(stamp - start) < 5000:
                 return sid
         return None
+    def canonical(start: int) -> int:
+        # DSH 的 JS block start 与 Python prompt 时间戳会差几毫秒：按 5 秒容差对齐。
+        if start in table:
+            return start
+        best = start
+        gap_best = 5000
+        for key in table:
+            gap = abs(key - start)
+            if gap <= gap_best:
+                gap_best = gap
+                best = key
+        return best
+
     total = 0.0
-    linked: list[int] = []
+    # 一个 block 只归一个工作：对齐后同一 block 的多条 task_link，以最后一条为准。
+    owner: dict[int, str] = {}
     for event in events:
-        if event.get("ev") != "task_link" or event.get("task_id") != work_id:
+        if event.get("ev") != "task_link":
             continue
         start = int(event.get("block_start") or 0)
-        if not start:
+        linked_work = str(event.get("task_id") or "")
+        if not start or not linked_work:
             continue
-        # several reports in one turn must not count the same block twice
-        if any(abs(other - start) <= 5000 for other in linked):
-            continue
-        linked.append(start)
-        # JS block start and the core's prompt timestamp differ by milliseconds
-        best = None
-        for block_start, block_minutes in table.items():
-            if abs(block_start - start) <= 5000:
-                best = max(best or 0.0, block_minutes)
-        total += best or 0.0
+        owner[canonical(start)] = linked_work
+    linked: list[int] = [start for start, linked_work in owner.items() if linked_work == work_id]
+    for start in linked:
+        total += table.get(start, 0.0)
 
     # the block that has not closed yet, on whichever session opened this work
     task = load_open().get("tasks", {}).get(work_id) or {}

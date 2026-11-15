@@ -258,5 +258,102 @@ class StatusViewTest(unittest.TestCase):
         self.assertIn("data_dir", payload)
 
 
+    def test_block_closes_into_claimed_work(self):
+        core = self.core
+        core.record_report(
+            {"phase": "start", "task_id": "t1", "summary": "做面板"},
+            {"sid": "s1", "workspace": "/tmp/ws"},
+        )
+        core.record_prompt("s1", "开工", "/tmp/ws")
+        start = core.current_block_start("s1")
+        core.record_stop("s1")
+        links = [e for e in core.load_events() if e.get("ev") == "task_link" and e.get("block_start") == start]
+        self.assertEqual([e["task_id"] for e in links], ["t1"])
+        stop = [e for e in core.load_events() if e.get("ev") == "stop"][-1]
+        self.assertEqual(stop.get("work_id"), "t1")
+
+    def test_wait_is_attributed_to_previous_work(self):
+        core = self.core
+        core.record_report(
+            {"phase": "start", "task_id": "t1", "summary": "做面板"},
+            {"sid": "s1", "workspace": "/tmp/ws"},
+        )
+        core.record_prompt("s1", "开工", "/tmp/ws")
+        core.record_stop("s1")
+        core.record_prompt("s1", "继续", "/tmp/ws")
+        waits = [e for e in core.load_events(sid="s1") if e.get("ev") == "user_wait"]
+        self.assertEqual(waits[-1].get("work_id"), "t1")
+
+    def test_one_block_belongs_to_last_linked_work(self):
+        core = self.core
+        block_start = 1700000000000
+        core.append_jsonl(
+            os.path.join(core.paths()["blocks_dir"], core.today() + ".jsonl"),
+            {"start": block_start, "end": block_start + 600000, "minutes": 10.0},
+        )
+        core.link_task("old", block_start)
+        core.link_task("new", block_start)
+        self.assertEqual(core.work_minutes("old"), 0.0)
+        self.assertEqual(core.work_minutes("new"), 10.0)
+
+    def test_period_summary_reports_active_and_completed(self):
+        core = self.core
+        core.record_report(
+            {"phase": "start", "task_id": "t1", "summary": "做面板"},
+            {"sid": "s1", "workspace": "/tmp/ws"},
+        )
+        core.record_prompt("s1", "开工", "/tmp/ws")
+        core.record_stop("s1")
+        core.record_report(
+            {"phase": "end", "task_id": "t1", "summary": "面板收尾"},
+            {"sid": "s1", "workspace": "/tmp/ws"},
+        )
+        summary = core.period_summary(7, start=0)
+        self.assertEqual(summary["completed"], 1)
+        self.assertAlmostEqual(
+            summary["active_minutes"],
+            round(summary["total_minutes"] - summary["wait_minutes"], 1),
+        )
+        self.assertTrue(any(row["work_id"] == "t1" for row in summary["work_list"]))
+
+    def test_daily_breakdown_splits_active_and_wait(self):
+        core = self.core
+        core.record_prompt("s1", "开工", "/tmp/ws")
+        core.record_stop("s1")
+        core.record_prompt("s1", "继续", "/tmp/ws")
+        rows = core.daily_breakdown(1, start=0)
+        self.assertTrue(rows)
+        self.assertIn("wait_minutes", rows[-1])
+        self.assertIn("active_minutes", rows[-1])
+
+    def test_natural_day_window_starts_at_midnight(self):
+        import crop_serve
+        start = crop_serve._range_start(7)
+        self.assertEqual(crop_serve._range_start(1), self.core.start_of_today_ms())
+        self.assertEqual(start, self.core.start_of_today_ms() - 6 * 86400000)
+
+    def test_block_start_millisecond_offset_still_counts(self):
+        core = self.core
+        block_start = 1700000000000
+        core.append_jsonl(
+            os.path.join(core.paths()["blocks_dir"], core.today() + ".jsonl"),
+            {"start": block_start, "end": block_start + 600000, "minutes": 10.0},
+        )
+        # DSH host reports a block_start a few ms off the Python prompt timestamp
+        core.link_task("t1", block_start + 33)
+        self.assertEqual(core.work_minutes("t1"), 10.0)
+
+    def test_offset_duplicates_count_once(self):
+        core = self.core
+        block_start = 1700000000000
+        core.append_jsonl(
+            os.path.join(core.paths()["blocks_dir"], core.today() + ".jsonl"),
+            {"start": block_start, "end": block_start + 600000, "minutes": 10.0},
+        )
+        core.link_task("t1", block_start)
+        core.link_task("t1", block_start + 33)
+        self.assertEqual(core.work_minutes("t1"), 10.0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -62,7 +62,7 @@ class EventFlowTest(unittest.TestCase):
         self.assertIn("user_wait", self.kinds())
 
     def test_long_gap_is_idle(self):
-        self.core.IDLE_MIN = 0.0
+        self.core.IDLE_MIN = -1.0  # any non-negative gap exceeds the threshold
         self.core.record_prompt(self.sid, "一", "/tmp/ws")
         self.core.record_stop(self.sid)
         self.core.record_prompt(self.sid, "二", "/tmp/ws")

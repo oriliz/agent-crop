@@ -24,13 +24,14 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `session_start` | 宿主会话开始 | `sid` `workspace` `host` | 会话边界 |
 | `prompt` | 用户发一条消息 | `sid` `workspace` `snippet`(≤160) | 任务块起点 |
 | `tool` | 每次工具调用结束 | `sid` `name` `is_error` | 工具分布、失败率 |
-| `stop` | 回合结束 | `sid` `block_start` `minutes` | 任务块终点 |
+| `stop` | 回合结束 | `sid` `block_start` `minutes` `work_id` | 任务块终点；`work_id` = 结束时的认领 |
 | `reminder` | 超红线提醒注入 | `sid` `block_start` `minutes` | 提醒效果 |
 | `probe_report` | AI 主动上报 | `phase` `task_id` `summary` `cause` `next` `category` `minutes` `turn` `step` | 归因与任务状态 |
-| `task_link` | 报告关联到块 | `task_id` `block_start` | 把报告挂到时间线上 |
+| `task_link` | 报告/块归属到工作 | `task_id` `block_start` | 把工作挂到时间线上；同一 `block_start` 以最后一条为准 |
 | `session_end` | 会话结束 | `sid` | 收尾 |
 
 所有事件公共字段：`ev`（类型）、`t`（毫秒时间戳）、`host`（dsh / claude-code / …）、`sid`。
+`user_wait` / `idle_gap` 自 v1 起带 `work_id`（等待归属到它前面那个 block 的工作）。
 
 ### 1.2 新增（v1，按 grillme 决策）
 
