@@ -46,7 +46,8 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `idle_gap` | 用户回话间隔超阈值 | `sid` `gap_ms` `reason`(idle/off-hours) | D2 |
 | `side_issue` | 发现主线外的枝节 | `work_id` `note` `suggest`(new_session/later) | D4 / D10 |
 | `adjustment` | 采纳了一个改进 | `work_id` `before` `after` `evidence` | D13 |
-| `rework_signal` | 检测到返工痕迹 | `work_id` `kind`(repeat-tool/repeat-file/test-red/redo) `count` | D3 / D5 |
+| `tool_churn` | 工具层的重复/失败（事实信号，**不是返工**） | `kind`(repeat-tool) `tool` `count` `failures` | D3 |
+| `self_review` | AI 判断的返工档次（redo/major/minor/none） | `work_id` `rework` `sentiment` `reason` | D3 / D5 |
 
 `tool` 事件的 `name` 来自 `tool/call`（插件先记 callId→name，`tool/result` 再回填）；
 早期数据里出现过 callId 当工具名的情况，属于 v1 之前的问题，不回溯修。
@@ -58,7 +59,7 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 
 - **活跃时长**：`turn_end.minutes` 之和，且只取工作时段内、间隔 < 15 分钟（D2）
 - **等人的时长**：`user_wait.waiting_ms` 归一化到活跃段
-- **返工次数**：同 `work_id` 内 `rework_signal` 计数
+- **返工档次**：`self_review.rework`（AI 判断），工具重复单独看 `tool_churn`
 - **估准率**：`difficulty_est` vs `difficulty_actual`
 - **情绪痕迹**：纠正次数、重复提问次数——从 `prompt` 序列里数，不读语义
 

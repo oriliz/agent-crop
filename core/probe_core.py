@@ -45,6 +45,8 @@ WORK_END = os.environ.get("KIT_WORK_END", "18:00")
 IDLE_MIN = float(os.environ.get("KIT_IDLE_MIN", "15"))
 CLAIM_TTL_MIN = float(os.environ.get("KIT_CLAIM_TTL_MIN", "120"))
 VERDICTS = ("justified", "not-justified", "unknown")
+REVIEW_LEVELS = ("redo", "major", "minor", "none")
+SENTIMENTS = ("pos", "neu", "neg")
 WORK_TYPES = ("design", "implement", "debug", "docs")
 DIFFICULTIES = ("s", "m", "l")
 MAX_TEXT = 600
@@ -602,7 +604,7 @@ def record_tool(sid: str, name: str, is_error: bool) -> None:
         if len(tail) >= REPEAT_TOOL_THRESHOLD and all(event.get("name") == tool for event in tail):
             failures = sum(1 for event in tail if event.get("is_error"))
             append_event({
-                "ev": "rework_signal", "sid": sid, "work_id": "",
+                "ev": "tool_churn", "sid": sid, "work_id": "",
                 "kind": "repeat-tool", "tool": tool,
                 "count": len(tail), "failures": failures,
             })
@@ -1290,7 +1292,7 @@ def daily_breakdown(
         elif kind == "user_wait":
             bucket["waits"] += 1
             bucket["wait_minutes"] += int(event.get("waiting_ms") or 0) / 60000.0
-        elif kind == "rework_signal":
+        elif kind in ("tool_churn", "rework_signal"):
             bucket["rework"] += 1
         elif kind == "probe_report":
             work_id = event.get("work_id") or event.get("task_id")
@@ -1405,7 +1407,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
     blocks = [e for e in events if e.get("ev") == "stop"]
     tools = [e for e in events if e.get("ev") == "tool"]
     waits = [e for e in events if e.get("ev") == "user_wait"]
-    reworks = [e for e in events if e.get("ev") == "rework_signal"]
+    reworks = [e for e in events if e.get("ev") in ("tool_churn", "rework_signal")]
     reports = [e for e in events if e.get("ev") == "probe_report"]
 
     tool_counts: dict[str, int] = {}
@@ -1695,3 +1697,30 @@ def format_work_reminder(health: dict, config: dict) -> str:
         "2. 反思：现在的方法还对吗？有没有走错路、绕远路？",
         "3. 调 crop_report 写一行：cause=为什么慢；verdict=justified（活本来就难）或 not-justified（自己走错路）。",
     ])
+
+
+def record_review(args: dict, context: dict | None = None) -> dict:
+    """AI-judged rework level after user feedback. No keyword matching anywhere."""
+    context = context or {}
+    sid = str(context.get("sid") or "unknown")
+    level = _text(args.get("rework"), "rework").lower()
+    if level not in REVIEW_LEVELS:
+        raise ValueError(f"rework must be one of {', '.join(REVIEW_LEVELS)}")
+    sentiment = _text(args.get("sentiment"), "sentiment").lower()
+    if sentiment and sentiment not in SENTIMENTS:
+        raise ValueError(f"sentiment must be one of {', '.join(SENTIMENTS)}")
+    reason = _text(args.get("reason"), "reason")
+    work_id = normalize_task_id(args.get("work_id") or _latest_work_for_session(sid) or "")
+
+    append_event({
+        "ev": "self_review", "sid": sid, "work_id": work_id,
+        "rework": level, "sentiment": sentiment, "reason": reason,
+    })
+    if work_id:
+        value = load_open()
+        task = value.get("tasks", {}).get(work_id)
+        if task:
+            task["last_review"] = {"rework": level, "sentiment": sentiment, "at": now_ms()}
+            task["last_seen_at"] = now_ms()
+            save_open(value)
+    return {"work_id": work_id, "rework": level, "sentiment": sentiment, "reason": reason}

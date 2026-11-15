@@ -119,11 +119,20 @@ class EventFlowTest(unittest.TestCase):
         finally:
             self.core.work_health = original
 
-    def test_rework_signal_after_repeated_tool(self):
+    def test_tool_churn_after_repeated_tool(self):
         self.core.record_prompt(self.sid, "开工", "/tmp/ws")
         for _ in range(self.core.REPEAT_TOOL_THRESHOLD):
             self.core.record_tool(self.sid, "bash", True)
-        self.assertIn("rework_signal", self.kinds())
+        self.assertIn("tool_churn", self.kinds())
+
+    def test_review_levels_are_ai_judged(self):
+        self.report(phase="start")
+        result = self.core.record_review({"rework": "major", "sentiment": "neg", "reason": "要重写"},
+                                         {"sid": self.sid})
+        self.assertEqual(result["rework"], "major")
+        self.assertIn("self_review", self.kinds())
+        with self.assertRaises(ValueError):
+            self.core.record_review({"rework": "bad"}, {"sid": self.sid})
 
     # -- 6. work lifecycle -------------------------------------------------
     def test_claim_suspend_archive(self):

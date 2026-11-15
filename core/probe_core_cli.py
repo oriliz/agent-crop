@@ -31,6 +31,8 @@ def dispatch(payload: dict):
     if core is None:
         raise RuntimeError("probe core unavailable")
 
+    if op == "record_review":
+        return core.record_review(payload.get("args") or {}, context)
     if op == "record_report":
         return core.record_report(payload.get("args") or {}, context)
     if op == "record_session_start":

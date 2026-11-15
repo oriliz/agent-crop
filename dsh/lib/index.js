@@ -38,6 +38,7 @@ const PROTOCOL_TEXT = [
   '- 途中状态变化用 phase="progress"；卡住用 phase="blocked" 并写 cause 与 verdict。',
   '- 黄线提醒：先安抚用户一句，再反思方法对不对，然后上报。红线提醒：先判断是否还走在正确路上，能阶段性交付就先交付。',
   '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
+  '- 用户表达不满、否定或要求重做时，调 crop_review 记一档（redo=推翻重做 / major=大改 / minor=小修）；普通确认不用调。',
   '- 用户确认完成后再 crop_report(phase="end")，写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',
 ].join('\n');
 
@@ -250,6 +251,42 @@ export function apply(ctx, config = {}) {
   const legacyTool = { ...tool, name: 'probe_report',
     description: 'Deprecated, use crop_report. ' + tool.description };
 
+  const reviewTool = {
+    name: 'crop_review',
+    description:
+      '记录用户对上一轮产出的反馈档次。只在用户表达不满、否定、或要求重做时调用；'
+      + '普通的确认、追问、补充信息都不用调。档次：redo=完全不可用、要推翻重做；'
+      + 'major=方向对但需要大改；minor=只需小修；none=其实没问题（一般不用调）。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        rework: { type: 'string', enum: ['redo', 'major', 'minor', 'none'] },
+        sentiment: { type: 'string', enum: ['pos', 'neu', 'neg'], description: '用户这句话的语气' },
+        reason: { type: 'string', description: '一句话说明为什么是这一档' },
+        work_id: { type: 'string', description: '可选，默认取本会话最近的工作' },
+      },
+      required: ['rework'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { ok: { type: 'boolean' }, text: { type: 'string' } },
+        required: ['ok', 'text'],
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute(args, exec) {
+      const session = exec.agent?.session;
+      const sid = session ? String(session.id) : '';
+      const workspace = session?.header?.cwd || process.cwd();
+      const result = callCore({ op: 'record_review', args, context: { sid, workspace } });
+      if (!result) throw new Error('crop_review could not be recorded');
+      return { ok: true, text: `已记录：${result.rework}${result.sentiment ? ' / ' + result.sentiment : ''}` };
+    },
+  };
+
   const worksTool = {
     name: 'crop_works',
     description: 'List works in progress on this machine (newest first). Use it when you are not sure which work this session should continue.',
@@ -290,6 +327,7 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => ctx.tools.register(tool), 'agent-crop.crop_report');
   ctx.effect(() => ctx.tools.register(legacyTool), 'agent-crop.probe_report (alias)');
   ctx.effect(() => ctx.tools.register(worksTool), 'agent-crop.crop_works');
+  ctx.effect(() => ctx.tools.register(reviewTool), 'agent-crop.crop_review');
 
   ctx.on('session/event', (session, event) => {
     try {
