@@ -8,7 +8,7 @@
 
 ## 怎么验证
 
-- [ ] `python3 -m unittest tests.test_crop_cli`（20 tests OK）
+- [ ] `python3 -m unittest discover -s tests -t .`（25 tests OK）
 - [ ] `node --test dsh/test/index.test.mjs`（7 pass）
 - [ ] `bash tests/probe-smoke.sh`（PASS）
 

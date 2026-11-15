@@ -28,8 +28,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: python3 -m unittest tests.test_crop_cli -v
-        run: python3 -m unittest tests.test_crop_cli -v
+      - name: python3 -m unittest discover -s tests -t . -v
+        run: python3 -m unittest discover -s tests -t . -v
 
   test-node:
     name: node ${{ matrix.node }} · node --test

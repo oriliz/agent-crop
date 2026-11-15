@@ -42,9 +42,9 @@
     "!**/*.pyc"
   ],
   "scripts": {
-    "test": "node --test dsh/test/index.test.mjs && python3 -m unittest tests.test_crop_cli && bash tests/probe-smoke.sh",
+    "test": "node --test dsh/test/index.test.mjs && python3 -m unittest discover -s tests -t . && bash tests/probe-smoke.sh",
     "test:node": "node --test dsh/test/index.test.mjs",
-    "test:python": "python3 -m unittest tests.test_crop_cli",
+    "test:python": "python3 -m unittest discover -s tests -t .",
     "test:smoke": "bash tests/probe-smoke.sh"
   },
   "dsh": {

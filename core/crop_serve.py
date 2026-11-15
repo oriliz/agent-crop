@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -101,6 +102,22 @@ def _summary(days: float = 14.0) -> dict:
     }
 
 
+LOOPBACK_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$")
+
+
+def _cors_headers(handler: BaseHTTPRequestHandler) -> list[tuple[str, str]]:
+    """Only loopback origins may read this JSON from another origin.
+
+    The DSH web client runs on a different port, so it needs CORS; a wildcard
+    would let any page in the user's browser fetch the same data. Requests with
+    no Origin header (curl, CLI, the same-origin page) need no CORS header at all.
+    """
+    origin = handler.headers.get("Origin")
+    if origin and LOOPBACK_ORIGIN.match(origin):
+        return [("Access-Control-Allow-Origin", origin), ("Vary", "Origin")]
+    return []
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         if self.path.startswith("/api/day"):
@@ -120,7 +137,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(payload, ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            for name, value in _cors_headers(self):
+                self.send_header(name, value)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -133,7 +151,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(payload, ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            for name, value in _cors_headers(self):
+                self.send_header(name, value)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -148,7 +167,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(_summary(days), ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            for name, value in _cors_headers(self):
+                self.send_header(name, value)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -165,6 +185,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(host: str = "127.0.0.1", port: int = 8765) -> None:
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"warning: {host} 不是回环地址，本机工作时间线会对局域网可见，只应临时使用", file=sys.stderr)
     server = ThreadingHTTPServer((host, port), Handler)
     print(f"Agent Crop dashboard: http://{host}:{port}")
     try:

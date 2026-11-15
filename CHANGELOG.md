@@ -20,6 +20,14 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
 - 打包元数据补齐 `bin`：在此之前 `npm pack` 漏掉 `bin/crop`，按 npm 装法拿不到 `crop` 命令
 - 发版流水线加人工审批门：`npm publish` 与 GitHub Release 都必须经维护者批准后才执行
 
+### Fixed（修复）
+
+- 面板 `/api/*` 的 `Access-Control-Allow-Origin: *` 改为只对回环 Origin 回显：此前
+  用户浏览器里任何网页都能跨源读到工作时间线（工作短名、自述、耗时），一个 GET 就够。
+  非回环绑定时另打印警告
+- Python 测试改用 `unittest discover`，新增面板 CORS 回归用例（5 条，覆盖回环/外来 Origin、
+  无 Origin 头、三个端点的行为一致性）
+
 ### Removed（移除）
 
 - `tests/behavior/TRACE-2026-11-15.md`：一次被污染的真实会话追踪，含真实提示与本地路径，

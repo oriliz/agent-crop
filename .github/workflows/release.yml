@@ -27,8 +27,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: python3 -m unittest tests.test_crop_cli -v
-        run: python3 -m unittest tests.test_crop_cli -v
+      - name: python3 -m unittest discover -s tests -t . -v
+        run: python3 -m unittest discover -s tests -t . -v
       - name: node --test dsh/test/index.test.mjs
         run: node --test dsh/test/index.test.mjs
       - name: bash tests/probe-smoke.sh

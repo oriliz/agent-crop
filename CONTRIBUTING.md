@@ -12,7 +12,7 @@ Agent Crop 是给 AI 编程助手用的本地探针：只观察、只记在你�
 ```bash
 git clone https://github.com/oriliz/agent-crop.git ~/agent-crop
 cd ~/agent-crop
-python3 -m unittest tests.test_crop_cli
+python3 -m unittest discover -s tests -t .
 node --test dsh/test/index.test.mjs
 bash tests/probe-smoke.sh
 python3 bin/crop status      # 把 bin/crop 放进 PATH 之后就是 crop status
@@ -22,7 +22,7 @@ python3 bin/crop status      # 把 bin/crop 放进 PATH 之后就是 crop status
 
 | 命令 | 应该看到 |
 |---|---|
-| `python3 -m unittest tests.test_crop_cli` | `Ran 20 tests` … `OK` |
+| `python3 -m unittest discover -s tests -t .` | `Ran 25 tests` … `OK` |
 | `node --test dsh/test/index.test.mjs` | `pass 7` / `fail 0` |
 | `bash tests/probe-smoke.sh` | `PASS: probe smoke test` |
 | `python3 bin/crop status` | 当前块、今日事件、进行中的工作；退出码 0 |
