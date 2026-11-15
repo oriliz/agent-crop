@@ -33,7 +33,7 @@ const CATEGORIES = [
 
 const PROTOCOL_TEXT = [
   'Crop 协议：',
-  '- 开工先绑定工作：先看未完成工作列表。绑定只用这个工具，不要一边干活一边补登。',
+  '- 一句话能答完的任务可以不登记；但一旦要进入第二轮、或需要动手改文件，先绑定工作再继续。绑定只用这个工具，不要一边干活一边补登。',
   '- 接着做：crop_report(phase="start", task_id=已有 id)；新开：crop_report(phase="start", task_id="<2-3 个词的短名>")。',
   '- 途中状态变化用 phase="progress"；卡住用 phase="blocked" 并写 cause 与 verdict。',
   '- 黄线提醒：先安抚用户一句，再反思方法对不对，然后上报。红线提醒：先判断是否还走在正确路上，能阶段性交付就先交付。',
@@ -118,7 +118,7 @@ export function apply(ctx, config = {}) {
   const stateFor = (sid) => {
     let state = states.get(sid);
     if (!state) {
-      state = { started: false, blockStart: null, pending: [], injected: new Set(), calls: new Map(), reported: false, missed: 0 };
+      state = { started: false, blockStart: null, pending: [], injected: new Set(), calls: new Map(), reported: false, missed: 0, everReported: false };
       states.set(sid, state);
     }
     return state;
@@ -233,6 +233,7 @@ export function apply(ctx, config = {}) {
       });
       if (!result) throw new Error('probe_report could not be recorded');
       state.reported = true;
+      state.everReported = true;
       return {
         ok: true,
         phase: result.phase,
@@ -364,6 +365,10 @@ export function apply(ctx, config = {}) {
       if (state.pending.length) {
         notes.push(...state.pending);
         state.pending = [];
+      }
+
+      if (payload.turn >= 2 && payload.step === 1 && !state.everReported) {
+        notes.push('[crop] 这已经是第二轮对话，仍未绑定工作。一句话能答完的任务可以不登记；但任务一旦要继续，先绑定：crop_report(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>")。');
       }
 
       if (state.missed > 0) {

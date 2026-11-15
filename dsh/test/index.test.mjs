@@ -190,3 +190,17 @@ test('asks for a report after a substantial turn without one', async (t) => {
   const decision = await preStep({ agent: { session }, turn: 2, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
   assert.ok(decision.messages.some((message) => message.content[0].text.includes('没有登记')));
 });
+
+test('nudges an unbound session on the second turn', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const session = fakeSession('s-second');
+  const preStep = ctx.handlers.get('agent/pre-step');
+
+  const decision = await preStep({ agent: { session }, turn: 2, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
+  assert.ok(decision.messages.some((message) => message.content[0].text.includes('第二轮')));
+});
