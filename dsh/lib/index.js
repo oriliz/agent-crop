@@ -6,6 +6,7 @@
  * the returned notes at the next model step.  Zero runtime dependencies.
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { statSync } from 'node:fs';
 import z from '@deepseek-ai/schemastery';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -95,19 +96,75 @@ export function apply(ctx, config = {}) {
   const python = setting(config?.python, 'python3');
   const states = new Map();
 
+  // The dashboard on 8765 is a detached singleton shared by every DSH instance.
+  // Spawning blindly made the second instance lose the bind race, and the first
+  // owner's exit took the service down for everyone. So: probe first, reuse the
+  // running one, replace only a stale build, and let a watchdog resurrect it.
+  const dashboardPort = 8765;
+  const healthUrl = `http://127.0.0.1:${dashboardPort}/api/health`;
   let dashboard = null;
-  try {
-    if (process.env.KIT_DASHBOARD === '0') throw new Error('dashboard disabled');
-    dashboard = spawn(python, [DASHBOARD, '--host', '127.0.0.1', '--port', '8765'], {
-      stdio: 'ignore', detached: true,
-    });
-    dashboard.unref();
-    dashboard.on('error', () => { dashboard = null; });
-    dashboard.on('exit', () => { dashboard = null; });
-  } catch {
-    dashboard = null;
-  }
+  let dashboardTimer = null;
+
+  const probeDashboard = async () => {
+    try {
+      const response = await fetch(healthUrl, { signal: AbortSignal.timeout(900), cache: 'no-store' });
+      return response.ok ? await response.json() : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const dashboardStale = (health) => {
+    try {
+      // Python reports int(mtime * 1000); Node reports a float. Compare with a
+      // tolerance so a rounding difference can never read as "stale build" and
+      // start a kill/respawn loop.
+      const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1500;
+      const serve = statSync(DASHBOARD).mtimeMs;
+      const core = statSync(join(HERE, '..', '..', 'core', 'probe_core.py')).mtimeMs;
+      return !close(health.serve_mtime, serve) || !close(health.core_mtime, core);
+    } catch {
+      return false;
+    }
+  };
+
+  const spawnDashboard = () => {
+    try {
+      const child = spawn(python, [DASHBOARD, '--host', '127.0.0.1', '--port', String(dashboardPort)], {
+        stdio: 'ignore', detached: true,
+      });
+      child.unref();
+      dashboard = child;
+      ctx.logger?.info?.('[crop] dashboard spawned pid %s', child.pid);
+      child.on('error', (error) => { ctx.logger?.warn?.('[crop] dashboard spawn error: %s', error?.message); if (dashboard === child) dashboard = null; });
+      child.on('exit', (code) => { ctx.logger?.info?.('[crop] dashboard exited code %s', code); if (dashboard === child) dashboard = null; });
+    } catch {
+      dashboard = null;
+    }
+  };
+
+  const ensureDashboard = async () => {
+    if (process.env.KIT_DASHBOARD === '0') {
+      ctx.logger?.info?.('[crop] dashboard disabled by KIT_DASHBOARD=0');
+      return;
+    }
+    const health = await probeDashboard();
+    ctx.logger?.info?.('[crop] dashboard probe: %o', health ? { pid: health.pid } : null);
+    if (health && health.ok) {
+      if (!dashboardStale(health)) return;
+      ctx.logger?.info?.('[crop] dashboard stale (mtime mismatch), replacing pid %s', health.pid);
+      try { process.kill(health.pid, 'SIGTERM'); } catch { /* already gone */ }
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+    spawnDashboard();
+  };
+
+  ensureDashboard().catch(() => {});
+  dashboardTimer = setInterval(() => { ensureDashboard().catch(() => {}); }, 30000);
+  dashboardTimer.unref?.();
+
   ctx.effect(() => () => {
+    if (dashboardTimer) clearInterval(dashboardTimer);
     try { dashboard?.kill(); } catch { /* already gone */ }
   }, 'crop: dashboard server');
 
