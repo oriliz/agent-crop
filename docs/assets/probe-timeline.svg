@@ -1,86 +1,61 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720" role="img" aria-labelledby="tlTitle tlDesc">
-<title id="tlTitle">一次对话里的探针与工具</title>
-<desc id="tlDesc">横向时间线：上方是宿主自动记录的探针事件，下方是 AI 应该调用的工具与上报字段。</desc>
-<rect x="0" y="0" width="1400" height="720" rx="18" fill="#ffffff"/>
-<rect x="0.8" y="0.8" width="1398.4" height="718.4" rx="18" fill="none" stroke="#e2e8f0" stroke-width="1.6"/>
-<rect x="40" y="40" width="16" height="16" rx="4" fill="#2563eb"/>
-<text x="64" y="54" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" fill="#64748b">探针：宿主自动写</text>
-<rect x="256" y="40" width="16" height="16" rx="4" fill="#b45309"/>
-<text x="280" y="54" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" fill="#64748b">AI：工具 + 上报</text>
-<text x="1360" y="54" text-anchor="end" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">一条对话 · 从第一轮到最后收尾</text>
-<line x1="90" y1="345" x2="1340" y2="345" stroke="#cbd5e1" stroke-width="3"/>
-<path d="M 1340 336 L 1362 345 L 1340 354 Z" fill="#cbd5e1"/>
-<text x="90" y="379" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">时间</text>
-<line x1="165" y1="198" x2="165" y2="331" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<line x1="165" y1="359" x2="165" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<rect x="67.0" y="96" width="196" height="102" rx="12" fill="#f5f9ff" stroke="#dbeafe" stroke-width="1.4"/>
-<text x="165" y="126" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#0f172a">对话开始</text>
-<text x="165" y="154" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">记 prompt</text>
-<text x="165" y="184" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">开一个计时块</text>
-<circle cx="165" cy="345" r="7" fill="#ffffff" stroke="#0f172a" stroke-width="2.4"/>
-<rect x="67.0" y="430" width="196" height="144" rx="12" fill="#fffbeb" stroke="#f3e6c8" stroke-width="1.4"/>
-<text x="165" y="460" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">crop_report(</text>
-<text x="165" y="490" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">  phase="start")</text>
-<text x="165" y="520" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">task_id / summary</text>
-<text x="165" y="550" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">expect_min 报预期</text>
-<line x1="370" y1="198" x2="370" y2="331" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<line x1="370" y1="359" x2="370" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<rect x="272.0" y="96" width="196" height="102" rx="12" fill="#f5f9ff" stroke="#dbeafe" stroke-width="1.4"/>
-<text x="370" y="126" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#0f172a">第一轮注入</text>
-<text x="370" y="154" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">系统提示常驻协议</text>
-<text x="370" y="184" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">注入候选 / 当前工作</text>
-<circle cx="370" cy="345" r="7" fill="#ffffff" stroke="#0f172a" stroke-width="2.4"/>
-<rect x="272.0" y="430" width="196" height="114" rx="12" fill="#fffbeb" stroke="#f3e6c8" stroke-width="1.4"/>
-<text x="370" y="460" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">接着做已有的</text>
-<text x="370" y="490" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">或新开一个短名</text>
-<text x="370" y="520" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">没绑定就动手→提示</text>
-<line x1="575" y1="228" x2="575" y2="331" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<line x1="575" y1="359" x2="575" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<rect x="477.0" y="96" width="196" height="132" rx="12" fill="#f5f9ff" stroke="#dbeafe" stroke-width="1.4"/>
-<text x="575" y="126" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#0f172a">每次工具调用</text>
-<text x="575" y="154" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">记 tool / result</text>
-<text x="575" y="184" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">名字 + 成功/失败</text>
-<text x="575" y="214" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">同工具反复 → 返工</text>
-<circle cx="575" cy="345" r="7" fill="#ffffff" stroke="#0f172a" stroke-width="2.4"/>
-<rect x="477.0" y="430" width="196" height="84" rx="12" fill="#fffbeb" stroke="#f3e6c8" stroke-width="1.4"/>
-<text x="575" y="460" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">先绑定再动手</text>
-<text x="575" y="490" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">干完补登 = 没归属</text>
-<line x1="780" y1="198" x2="780" y2="331" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<line x1="780" y1="359" x2="780" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<rect x="682.0" y="96" width="196" height="102" rx="12" fill="#f5f9ff" stroke="#dbeafe" stroke-width="1.4"/>
-<text x="780" y="126" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#0f172a">等你回话</text>
-<text x="780" y="154" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">ask 工具起止</text>
-<text x="780" y="184" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">→ user_wait 时长</text>
-<circle cx="780" cy="345" r="7" fill="#ffffff" stroke="#0f172a" stroke-width="2.4"/>
-<rect x="682.0" y="430" width="196" height="84" rx="12" fill="#fffbeb" stroke="#f3e6c8" stroke-width="1.4"/>
-<text x="780" y="460" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">问题带选项，一次问清</text>
-<text x="780" y="490" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">别拆成三轮</text>
-<line x1="985" y1="198" x2="985" y2="331" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<line x1="985" y1="359" x2="985" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<rect x="887.0" y="96" width="196" height="102" rx="12" fill="#f5f9ff" stroke="#dbeafe" stroke-width="1.4"/>
-<text x="985" y="126" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#0f172a">黄线 / 红线</text>
-<text x="985" y="154" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">到点注入提醒</text>
-<text x="985" y="184" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">每轮只提一次</text>
-<circle cx="985" cy="345" r="7" fill="#ffffff" stroke="#0f172a" stroke-width="2.4"/>
-<rect x="887.0" y="430" width="196" height="144" rx="12" fill="#fffbeb" stroke="#f3e6c8" stroke-width="1.4"/>
-<text x="985" y="460" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">phase="blocked"</text>
-<text x="985" y="490" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">cause / verdict</text>
-<text x="985" y="520" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">category 九选一</text>
-<text x="985" y="550" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">先安抚 再反思</text>
-<line x1="1190" y1="258" x2="1190" y2="331" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<line x1="1190" y1="359" x2="1190" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.55"/>
-<rect x="1092.0" y="96" width="196" height="162" rx="12" fill="#f5f9ff" stroke="#dbeafe" stroke-width="1.4"/>
-<text x="1190" y="126" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#0f172a">回合结束 · 收尾</text>
-<text x="1190" y="154" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">记 stop 活跃分钟</text>
-<text x="1190" y="184" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">漏报 → 记 miss</text>
-<text x="1190" y="214" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">关工作:</text>
-<text x="1190" y="244" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">what / cost / next</text>
-<circle cx="1190" cy="345" r="7" fill="#ffffff" stroke="#0f172a" stroke-width="2.4"/>
-<rect x="1092.0" y="430" width="196" height="114" rx="12" fill="#fffbeb" stroke="#f3e6c8" stroke-width="1.4"/>
-<text x="1190" y="460" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">phase="end"</text>
-<text x="1190" y="490" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">rework / improve</text>
-<text x="1190" y="520" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#b45309">crop_review 定档</text>
-<rect x="60" y="610" width="1280" height="66" rx="12" fill="#f0fdfa" stroke="#ccfbf1" stroke-width="1.4"/>
-<text x="90" y="652" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#0f766e">数据去处</text>
-<text x="220" y="652" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19" fill="#0f172a">会话页 <tspan font-weight="600">Crop</tspan> 页签（单会话）　·　侧边栏 <tspan font-weight="600">Crop 全局</tspan>（跨会话趋势 + 改进兑现）</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="540" viewBox="0 0 1400 540" role="img" aria-labelledby="t1 t2">
+<title id="t1">一次对话：探针在哪采集，在哪推 AI 一把</title>
+<desc id="t2">横向时间线。上方是探针自动记下的东西，下方是它给 AI 注入的一句话。</desc>
+<rect width="1400" height="540" rx="18" fill="#ffffff"/>
+<rect x="0.8" y="0.8" width="1398.4" height="538.4" rx="18" fill="none" stroke="#e2e8f0" stroke-width="1.6"/>
+<rect x="42" y="36" width="16" height="16" rx="4" fill="#1d4ed8"/>
+<text x="66" y="50" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" fill="#64748b">采集：探针自动记，不打扰 AI</text>
+<rect x="404" y="36" width="16" height="16" rx="4" fill="#b45309"/>
+<text x="428" y="50" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="20" fill="#64748b">影响：注入一句，改变它下一步</text>
+<line x1="90" y1="330" x2="1342" y2="330" stroke="#cbd5e1" stroke-width="3"/>
+<path d="M 1342 321 L 1364 330 L 1342 339 Z" fill="#cbd5e1"/>
+<text x="1360" y="364" text-anchor="end" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="18" fill="#64748b">时间</text>
+<rect x="138.0" y="315" width="64.0" height="30" rx="15" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+<text x="170" y="337" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19" fill="#0f172a">开场</text>
+<line x1="170" y1="158" x2="170" y2="312" stroke="#1d4ed8" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="106.0" y="96" width="128.0" height="62" rx="14" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.6"/>
+<text x="170" y="135" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#1d4ed8">开始计时</text>
+<line x1="170" y1="348" x2="170" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="116.5" y="430" width="107.0" height="62" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
+<text x="170" y="469" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#b45309">先认领</text>
+<rect x="348.0" y="315" width="64.0" height="30" rx="15" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+<text x="380" y="337" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19" fill="#0f172a">干活</text>
+<line x1="380" y1="238" x2="380" y2="312" stroke="#1d4ed8" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="326.5" y="176" width="107.0" height="62" rx="14" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.6"/>
+<text x="380" y="215" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#1d4ed8">记目标</text>
+<line x1="380" y1="348" x2="380" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="316.0" y="430" width="128.0" height="62" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
+<text x="380" y="469" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#b45309">接着上次</text>
+<rect x="548.5" y="315" width="83.0" height="30" rx="15" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+<text x="590" y="337" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19" fill="#0f172a">每一步</text>
+<line x1="590" y1="158" x2="590" y2="312" stroke="#1d4ed8" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="536.5" y="96" width="107.0" height="62" rx="14" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.6"/>
+<text x="590" y="135" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#1d4ed8">记工具</text>
+<line x1="590" y1="348" x2="590" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="505.0" y="430" width="170.0" height="62" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
+<text x="590" y="469" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#b45309">没认领就提醒</text>
+<rect x="758.5" y="315" width="83.0" height="30" rx="15" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+<text x="800" y="337" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19" fill="#0f172a">等回话</text>
+<line x1="800" y1="238" x2="800" y2="312" stroke="#1d4ed8" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="746.5" y="176" width="107.0" height="62" rx="14" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.6"/>
+<text x="800" y="215" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#1d4ed8">记等待</text>
+<line x1="800" y1="348" x2="800" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="736.0" y="430" width="128.0" height="62" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
+<text x="800" y="469" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#b45309">问清一次</text>
+<rect x="978.0" y="315" width="64.0" height="30" rx="15" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+<text x="1010" y="337" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19" fill="#0f172a">超时</text>
+<line x1="1010" y1="158" x2="1010" y2="312" stroke="#1d4ed8" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="956.5" y="96" width="107.0" height="62" rx="14" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.6"/>
+<text x="1010" y="135" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#1d4ed8">记提醒</text>
+<line x1="1010" y1="348" x2="1010" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="935.5" y="430" width="149.0" height="62" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
+<text x="1010" y="469" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#b45309">催它说卡点</text>
+<rect x="1188.0" y="315" width="64.0" height="30" rx="15" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+<text x="1220" y="337" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19" fill="#0f172a">收尾</text>
+<line x1="1220" y1="238" x2="1220" y2="312" stroke="#1d4ed8" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="1166.5" y="176" width="107.0" height="62" rx="14" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.6"/>
+<text x="1220" y="215" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#1d4ed8">记时长</text>
+<line x1="1220" y1="348" x2="1220" y2="430" stroke="#b45309" stroke-width="1.6" stroke-dasharray="4 5" opacity="0.5"/>
+<rect x="1145.5" y="430" width="149.0" height="62" rx="14" fill="#fffbeb" stroke="#fde68a" stroke-width="1.6"/>
+<text x="1220" y="469" text-anchor="middle" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="21" font-weight="600" fill="#b45309">留一句复盘</text>
 </svg>
