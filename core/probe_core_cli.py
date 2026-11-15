@@ -38,6 +38,10 @@ def dispatch(payload: dict):
             int(payload.get("started_at") or 0),
             int(payload.get("ended_at") or 0) or None,
         )
+    if op == "pending_retire":
+        return core.format_pending_retire()
+    if op == "mark_stale":
+        return core.mark_stale_works()
     if op == "binding":
         return core.resolve_binding(sid)
     if op == "record_review":

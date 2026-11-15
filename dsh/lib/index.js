@@ -40,6 +40,7 @@ const PROTOCOL_TEXT = [
   '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
   '- 用户表达不满、否定或要求重做时，调 crop_review 记一档（redo=推翻重做 / major=大改 / minor=小修）；普通确认不用调。',
   '- 用户确认完成后再 crop_report(phase="end")，写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',
+  '- 看到“待清退”的工作：先问用户要继续 / 挂起 / 清退，再用 crop_work 执行，不要自己决定。',
 ].join('\n');
 
 function textOf(message) {
@@ -234,9 +235,11 @@ export function apply(ctx, config = {}) {
           block_start: state.blockStart,
         },
       });
-      if (!result) throw new Error('probe_report could not be recorded');
+      if (!result) throw new Error('crop_report could not be recorded');
       state.reported = true;
       state.everReported = true;
+      const retire = result.phase === 'end' ? (callCore({ op: 'pending_retire' }) || '') : '';
+      const recorded = `recorded ${result.phase} ${result.task_id} (${result.minutes ?? 0} min in this block)`;
       return {
         ok: true,
         phase: result.phase,
@@ -244,7 +247,7 @@ export function apply(ctx, config = {}) {
         session_id: sid,
         turn,
         step,
-        recorded: `recorded ${result.phase} ${result.task_id} (${result.minutes ?? 0} min in this block)`,
+        recorded: retire ? recorded + '\n' + retire : recorded,
       };
     },
   };
@@ -252,6 +255,41 @@ export function apply(ctx, config = {}) {
   // Deprecated alias: older prompts and sessions still call probe_report.
   const legacyTool = { ...tool, name: 'probe_report',
     description: 'Deprecated, use crop_report. ' + tool.description };
+
+  const workTool = {
+    name: 'crop_work',
+    description:
+      '挂起 / 恢复 / 清退一条工作。用户说“这条先放着”用 suspend；说“继续做”用 resume；'
+      + '确认不再做了用 archive。清退前先问用户一句，不要自己决定。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        action: { type: 'string', enum: ['suspend', 'resume', 'archive'] },
+        work_id: { type: 'string' },
+      },
+      required: ['action', 'work_id'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { ok: { type: 'boolean' }, text: { type: 'string' } },
+        required: ['ok', 'text'],
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute(args, exec) {
+      const session = exec.agent?.session;
+      const sid = session ? String(session.id) : '';
+      const workspace = session?.header?.cwd || process.cwd();
+      const map = { suspend: 'work_suspend', resume: 'work_resume', archive: 'work_archive' };
+      const op = map[String(args?.action)];
+      if (!op) throw new Error('action must be suspend, resume or archive');
+      const ok = callCore({ op, context: { sid, workspace }, work_id: args.work_id });
+      return { ok: Boolean(ok), text: ok ? `已${args.action}：${args.work_id}` : `没有找到工作：${args.work_id}` };
+    },
+  };
 
   const reviewTool = {
     name: 'crop_review',
@@ -330,6 +368,7 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => ctx.tools.register(legacyTool), 'agent-crop.probe_report (alias)');
   ctx.effect(() => ctx.tools.register(worksTool), 'agent-crop.crop_works');
   ctx.effect(() => ctx.tools.register(reviewTool), 'agent-crop.crop_review');
+  ctx.effect(() => ctx.tools.register(workTool), 'agent-crop.crop_work');
 
   ctx.on('session/event', (session, event) => {
     try {

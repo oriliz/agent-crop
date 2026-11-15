@@ -540,6 +540,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
 def record_session_start(sid: str, workspace: str) -> None:
     try:
         migrate_bindings()
+        mark_stale_works()
     except Exception:
         pass
     append_event({"ev": "session_start", "sid": sid, "workspace": workspace})
@@ -1553,6 +1554,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
 # Work health: active minutes, baseline, lamp
 
 DIFFICULTY_DEFAULT_MINUTES = {"s": 10.0, "m": 30.0, "l": 90.0}
+RETIRE_DAYS = float(os.environ.get("KIT_RETIRE_DAYS", "14"))
 
 
 def _block_minutes(days: int = 5) -> dict[int, float]:
@@ -1838,3 +1840,44 @@ def record_human_wait(sid: str, reason: str, started_at: int, ended_at: int | No
     }
     append_event(event)
     return event
+
+
+# ---------------------------------------------------------------------------
+# Silent retirement: no activity for two weeks -> pending retire, never auto-close
+
+
+def mark_stale_works(days: float | None = None, now: int | None = None) -> list[str]:
+    threshold = days if days is not None else RETIRE_DAYS
+    cutoff = (now if now is not None else now_ms()) - int(threshold * 86400000)
+    value = load_open()
+    marked: list[str] = []
+    for task in value.get("tasks", {}).values():
+        if task.get("state", "open") != "open":
+            continue
+        if int(task.get("last_seen_at") or 0) >= cutoff:
+            continue
+        task["state"] = "pending_retire"
+        task["pending_retire_at"] = now_ms()
+        marked.append(str(task.get("task_id")))
+        append_event({"ev": "work_pending_retire", "work_id": task.get("task_id"),
+                      "days": threshold})
+    if marked:
+        save_open(value)
+    return marked
+
+
+def pending_retire_works() -> list[dict]:
+    return [task for task in load_open().get("tasks", {}).values()
+            if task.get("state") == "pending_retire"]
+
+
+def format_pending_retire(limit: int = 5) -> str:
+    works = pending_retire_works()
+    if not works:
+        return ""
+    names = "、".join(f"{w.get('task_id')}（{ago(w.get('last_seen_at', 0))}）" for w in works[:limit])
+    more = f" 等 {len(works)} 条" if len(works) > limit else ""
+    return (
+        f"[crop] 有长期没动的工作待清退：{names}{more}。"
+        "问用户一句：这些还要继续吗？要继续 / 先挂起 / 确认清退。"
+    )

@@ -45,6 +45,8 @@ test('registers probe_report with the documented schema', async (t) => {
   assert.ok(tool, 'crop_report should be registered');
   assert.ok(ctx.registered.some((item) => item.name === 'probe_report'), 'alias stays for old prompts');
   assert.ok(ctx.registered.some((item) => item.name === 'crop_works'));
+  assert.ok(ctx.registered.some((item) => item.name === 'crop_review'));
+  assert.ok(ctx.registered.some((item) => item.name === 'crop_work'));
   assert.deepEqual(tool.parameters.required, ['phase', 'task_id', 'summary']);
   assert.ok(tool.parameters.properties.phase.enum.includes('blocked'));
   assert.equal(typeof tool.execute, 'function');
