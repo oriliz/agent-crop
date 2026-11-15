@@ -108,6 +108,20 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(voice.fmt_minutes(180), "3 小时")
         self.assertEqual(voice.fmt_minutes(8), "8 分钟")
 
+    def test_action_asks_for_a_user_facing_flavor_line(self):
+        for tier, meta in (("warm", {"m": 32, "e": 40}),
+                           ("yellow", {"m": 48, "e": 40}),
+                           ("red", {"m": 70, "e": 40}),
+                           ("overdue", {"m": 130, "e": 40})):
+            text = voice.reminder(tier, meta, self.state)
+            self.assertTrue("梗" in text or "自嘲" in text, tier)
+            self.assertRegex(text, r"比如[：:]?「", tier)
+
+    def test_yellow_example_carries_the_real_numbers(self):
+        text = voice.reminder("yellow", {"m": 48, "e": 40}, self.state)
+        self.assertIn("我报的 40 分钟到了", text)
+        self.assertIn("现在 48 分钟", text)
+
     def test_red_fallback_names_the_red_line(self):
         text = voice.reminder("red", {"m": 35, "e": None, "default": 30, "line": "红线"}, self.state)
         self.assertIn("默认红线", text)
