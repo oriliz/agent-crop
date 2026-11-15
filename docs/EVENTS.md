@@ -24,13 +24,14 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `session_start` | 宿主会话开始 | `sid` `workspace` `host` | 会话边界 |
 | `prompt` | 用户发一条消息 | `sid` `workspace` `snippet`(≤160) | 任务块起点 |
 | `tool` | 每次工具调用结束 | `sid` `name` `is_error` | 工具分布、失败率 |
-| `stop` | 回合结束 | `sid` `block_start` `minutes` | 任务块终点 |
+| `stop` | 回合结束 | `sid` `block_start` `minutes` `work_id` | 任务块终点；`work_id` = 结束时的认领 |
 | `reminder` | 超红线提醒注入 | `sid` `block_start` `minutes` | 提醒效果 |
 | `probe_report` | AI 主动上报 | `phase` `task_id` `summary` `cause` `next` `category` `minutes` `turn` `step` | 归因与任务状态 |
-| `task_link` | 报告关联到块 | `task_id` `block_start` | 把报告挂到时间线上 |
+| `task_link` | 报告/块归属到工作 | `task_id` `block_start` | 把工作挂到时间线上；同一 `block_start` 以最后一条为准 |
 | `session_end` | 会话结束 | `sid` | 收尾 |
 
 所有事件公共字段：`ev`（类型）、`t`（毫秒时间戳）、`host`（dsh / claude-code / …）、`sid`。
+`user_wait` / `idle_gap` 自 v1 起带 `work_id`（等待归属到它前面那个 block 的工作）。
 
 ### 1.2 新增（v1，按 grillme 决策）
 
@@ -45,7 +46,8 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `idle_gap` | 用户回话间隔超阈值 | `sid` `gap_ms` `reason`(idle/off-hours) | D2 |
 | `side_issue` | 发现主线外的枝节 | `work_id` `note` `suggest`(new_session/later) | D4 / D10 |
 | `adjustment` | 采纳了一个改进 | `work_id` `before` `after` `evidence` | D13 |
-| `rework_signal` | 检测到返工痕迹 | `work_id` `kind`(repeat-tool/repeat-file/test-red/redo) `count` | D3 / D5 |
+| `tool_churn` | 工具层的重复/失败（事实信号，**不是返工**） | `kind`(repeat-tool) `tool` `count` `failures` | D3 |
+| `self_review` | AI 判断的返工档次（redo/major/minor/none） | `work_id` `rework` `sentiment` `reason` | D3 / D5 |
 
 `tool` 事件的 `name` 来自 `tool/call`（插件先记 callId→name，`tool/result` 再回填）；
 早期数据里出现过 callId 当工具名的情况，属于 v1 之前的问题，不回溯修。
@@ -57,7 +59,7 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 
 - **活跃时长**：`turn_end.minutes` 之和，且只取工作时段内、间隔 < 15 分钟（D2）
 - **等人的时长**：`user_wait.waiting_ms` 归一化到活跃段
-- **返工次数**：同 `work_id` 内 `rework_signal` 计数
+- **返工档次**：`self_review.rework`（AI 判断），工具重复单独看 `tool_churn`
 - **估准率**：`difficulty_est` vs `difficulty_actual`
 - **情绪痕迹**：纠正次数、重复提问次数——从 `prompt` 序列里数，不读语义
 

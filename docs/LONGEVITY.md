@@ -44,7 +44,7 @@ ctx.systemPrompt.section({
 
 - 注入点：`agent/pre-step`，且只在 `step === 1` 或工作状态变化时
 - 内容：一行，≤ 80 字，例如
-  `[crop] 当前工作：crop-dsh-runtime；本回合第 12 分钟；上次上报 25 分钟前`
+  `[crop] 当前工作：runtime；本回合第 12 分钟；上次上报 25 分钟前`
 - 位置：消息列表最末 → 是最新、最显眼的位置
 
 为什么是每 turn 而不是每 step：每 step 注入会稀释注意力、增加 token；turn 首步已经覆盖了「这次要干什么」的决策点。

@@ -66,6 +66,27 @@ class StatusViewTest(unittest.TestCase):
         finally:
             core.IDLE_MIN = previous
 
+    def test_shared_home_prefers_agentcrop_and_falls_back_once(self):
+        core = self.core
+        new_home = tempfile.mkdtemp(prefix="agentcrop-home-")
+        old_home = tempfile.mkdtemp(prefix="legacy-home-")
+        saved = (core.DEFAULT_SHARED_HOME, core.LEGACY_SHARED_HOME)
+        saved_env = os.environ.pop("KIT_SHARED_HOME", None)
+        try:
+            core.DEFAULT_SHARED_HOME, core.LEGACY_SHARED_HOME = new_home, old_home
+            self.assertEqual(core.shared_home(), new_home)
+            # Only an upgrade that has no ~/.agentcrop yet reads the old home.
+            core.DEFAULT_SHARED_HOME = os.path.join(new_home, "missing")
+            self.assertEqual(core.shared_home(), old_home)
+            # An explicit override always wins.
+            os.environ["KIT_SHARED_HOME"] = new_home
+            self.assertEqual(core.shared_home(), new_home)
+        finally:
+            core.DEFAULT_SHARED_HOME, core.LEGACY_SHARED_HOME = saved
+            os.environ.pop("KIT_SHARED_HOME", None)
+            if saved_env is not None:
+                os.environ["KIT_SHARED_HOME"] = saved_env
+
     def test_work_status_line_has_goal(self):
         core = self.core
         core.record_report(
@@ -137,14 +158,49 @@ class StatusViewTest(unittest.TestCase):
         core.save_open(value)
         self.assertIn("旧目标", core.work_status_line("/tmp/ws", "s-me"))
 
+    def test_start_hint_honors_an_existing_binding(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "甲"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        hint = core.format_start_hint(core.open_tasks("/tmp/ws", 3, "s1"), core.open_works_count(), "s1")
+        self.assertIn("当前工作", hint)
+        self.assertNotIn("哪个属于本会话", hint)
+
+    def test_start_hint_honors_a_binding_outside_the_candidates(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "t0", "summary": "主线", "goal": "甲目标"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        for index, sid in enumerate(["s2", "s3", "s4"], start=1):
+            core.record_report({"phase": "start", "task_id": f"t{index}",
+                                "summary": f"别的{index}", "goal": f"目标{index}"},
+                               {"sid": sid, "workspace": "/tmp/ws"})
+        # The bound work was touched by another session and three newer works
+        # push it out of the three candidates; the binding is still live.
+        value = core.load_open()
+        now = core.now_ms()
+        value["tasks"]["t0"]["last_sid"] = "s-other"
+        value["tasks"]["t0"]["last_seen_at"] = now - 20 * 60000
+        for index in range(1, 4):
+            value["tasks"][f"t{index}"]["last_seen_at"] = now - index * 60000
+        core.save_open(value)
+
+        candidates = core.open_tasks("/tmp/ws", 3, "s1")
+        self.assertEqual([task["task_id"] for task in candidates], ["t1", "t2", "t3"])
+        hint = core.format_start_hint(candidates, core.open_works_count(), "s1")
+        self.assertIn("当前工作", hint)
+        self.assertIn("甲目标", hint)
+        self.assertIn("t0", hint)
+        self.assertNotIn("哪个属于本会话", hint)
+
     def test_start_hint_requires_binding(self):
         core = self.core
         core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "甲"},
                            {"sid": "s1", "workspace": "/tmp/ws"})
         hint = core.format_start_hint(core.open_tasks("/tmp/ws", 3))
         self.assertIn("绑定", hint)
-        self.assertIn("crop switch", hint)
-        self.assertIn("crop switch t1", hint)
+        self.assertIn("crop_report", hint)
+        self.assertIn('task_id="t1"', hint)
+        self.assertNotIn("crop switch", hint)
 
     def test_side_issue_report_does_not_create_task(self):
         core = self.core
@@ -160,7 +216,8 @@ class StatusViewTest(unittest.TestCase):
         core = self.core
         core.record_report({"phase": "start", "task_id": "a", "summary": "甲", "goal": "甲"},
                            {"sid": "s1", "workspace": "/tmp/ws"})
-        self.assertTrue(core.record_side_issue("DSH 不渲染 mermaid", "later"))
+        core.record_report({"phase": "progress", "task_id": "a", "summary": "顺手记一笔",
+                            "category": "side-issue"}, {"sid": "s1", "workspace": "/tmp/ws"})
         events = [e for e in core.load_events() if e.get("ev") == "side_issue"]
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["suggest"], "later")
@@ -223,6 +280,22 @@ class StatusViewTest(unittest.TestCase):
         self.assertIn("w3", archived)
         self.assertNotIn("w3", core.load_open()["tasks"])
 
+    def test_work_level_reminder_fires_past_sixty_percent(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "w9", "summary": "慢活", "goal": "慢活"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        original = core.work_health
+        core.work_health = lambda work_id=None: {
+            "work_id": "w9", "goal": "慢活", "minutes": 25.0,
+            "baseline": 30.0, "ratio": 0.83, "level": "yellow",
+        }
+        try:
+            text = core.maybe_work_reminder("s1")
+        finally:
+            core.work_health = original
+        self.assertIn("[crop]", text)
+        self.assertIn("verdict", text)
+
     def test_period_summary_counts_blocks(self):
         core = self.core
         core.record_prompt("s1", "开工", "/tmp/ws")
@@ -240,6 +313,103 @@ class StatusViewTest(unittest.TestCase):
         payload = json.loads(out.stdout)
         self.assertIn("today_events", payload)
         self.assertIn("data_dir", payload)
+
+
+    def test_block_closes_into_claimed_work(self):
+        core = self.core
+        core.record_report(
+            {"phase": "start", "task_id": "t1", "summary": "做面板"},
+            {"sid": "s1", "workspace": "/tmp/ws"},
+        )
+        core.record_prompt("s1", "开工", "/tmp/ws")
+        start = core.current_block_start("s1")
+        core.record_stop("s1")
+        links = [e for e in core.load_events() if e.get("ev") == "task_link" and e.get("block_start") == start]
+        self.assertEqual([e["task_id"] for e in links], ["t1"])
+        stop = [e for e in core.load_events() if e.get("ev") == "stop"][-1]
+        self.assertEqual(stop.get("work_id"), "t1")
+
+    def test_wait_is_attributed_to_previous_work(self):
+        core = self.core
+        core.record_report(
+            {"phase": "start", "task_id": "t1", "summary": "做面板"},
+            {"sid": "s1", "workspace": "/tmp/ws"},
+        )
+        core.record_prompt("s1", "开工", "/tmp/ws")
+        core.record_stop("s1")
+        core.record_prompt("s1", "继续", "/tmp/ws")
+        waits = [e for e in core.load_events(sid="s1") if e.get("ev") == "user_wait"]
+        self.assertEqual(waits[-1].get("work_id"), "t1")
+
+    def test_one_block_belongs_to_last_linked_work(self):
+        core = self.core
+        block_start = 1700000000000
+        core.append_jsonl(
+            os.path.join(core.paths()["blocks_dir"], core.today() + ".jsonl"),
+            {"start": block_start, "end": block_start + 600000, "minutes": 10.0},
+        )
+        core.link_task("old", block_start)
+        core.link_task("new", block_start)
+        self.assertEqual(core.work_minutes("old"), 0.0)
+        self.assertEqual(core.work_minutes("new"), 10.0)
+
+    def test_period_summary_reports_active_and_completed(self):
+        core = self.core
+        core.record_report(
+            {"phase": "start", "task_id": "t1", "summary": "做面板"},
+            {"sid": "s1", "workspace": "/tmp/ws"},
+        )
+        core.record_prompt("s1", "开工", "/tmp/ws")
+        core.record_stop("s1")
+        core.record_report(
+            {"phase": "end", "task_id": "t1", "summary": "面板收尾"},
+            {"sid": "s1", "workspace": "/tmp/ws"},
+        )
+        summary = core.period_summary(7, start=0)
+        self.assertEqual(summary["completed"], 1)
+        self.assertAlmostEqual(
+            summary["active_minutes"],
+            round(summary["total_minutes"] - summary["wait_minutes"], 1),
+        )
+        self.assertTrue(any(row["work_id"] == "t1" for row in summary["work_list"]))
+
+    def test_daily_breakdown_splits_active_and_wait(self):
+        core = self.core
+        core.record_prompt("s1", "开工", "/tmp/ws")
+        core.record_stop("s1")
+        core.record_prompt("s1", "继续", "/tmp/ws")
+        rows = core.daily_breakdown(1, start=0)
+        self.assertTrue(rows)
+        self.assertIn("wait_minutes", rows[-1])
+        self.assertIn("active_minutes", rows[-1])
+
+    def test_natural_day_window_starts_at_midnight(self):
+        import crop_serve
+        start = crop_serve._range_start(7)
+        self.assertEqual(crop_serve._range_start(1), self.core.start_of_today_ms())
+        self.assertEqual(start, self.core.start_of_today_ms() - 6 * 86400000)
+
+    def test_block_start_millisecond_offset_still_counts(self):
+        core = self.core
+        block_start = 1700000000000
+        core.append_jsonl(
+            os.path.join(core.paths()["blocks_dir"], core.today() + ".jsonl"),
+            {"start": block_start, "end": block_start + 600000, "minutes": 10.0},
+        )
+        # DSH host reports a block_start a few ms off the Python prompt timestamp
+        core.link_task("t1", block_start + 33)
+        self.assertEqual(core.work_minutes("t1"), 10.0)
+
+    def test_offset_duplicates_count_once(self):
+        core = self.core
+        block_start = 1700000000000
+        core.append_jsonl(
+            os.path.join(core.paths()["blocks_dir"], core.today() + ".jsonl"),
+            {"start": block_start, "end": block_start + 600000, "minutes": 10.0},
+        )
+        core.link_task("t1", block_start)
+        core.link_task("t1", block_start + 33)
+        self.assertEqual(core.work_minutes("t1"), 10.0)
 
 
 if __name__ == "__main__":

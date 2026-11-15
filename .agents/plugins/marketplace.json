@@ -1,11 +1,11 @@
 {
-  "name": "ai-coding-kit",
+  "name": "agent-crop",
   "interface": {
-    "displayName": "AI Coding 提效套件"
+    "displayName": "Agent Crop"
   },
   "plugins": [
     {
-      "name": "ai-coding-efficiency-kit",
+      "name": "agent-crop",
       "source": {
         "source": "local",
         "path": "."

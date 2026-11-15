@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Shared core for the AI coding efficiency probe.
+"""Shared core for Agent Crop.
 
 One data model serves every host (Claude Code, DSH, Qoder, Codex).  All
 functions fail open: a broken probe must never block a prompt or a turn.
 
 Data location, in order:
   1. KIT_DATA_DIR
-  2. $KIT_SHARED_HOME/data (default ~/.ai-coding-efficiency/data)
+  2. $KIT_SHARED_HOME/data (default ~/.agentcrop/data)
   3. $KIT_IDE_HOME/task-metrics/data
 """
 
@@ -25,7 +25,15 @@ try:
 except Exception:  # pragma: no cover - non-POSIX
     fcntl = None
 
-DEFAULT_SHARED_HOME = os.path.expanduser("~/.ai-coding-efficiency")
+try:
+    import crop_voice as voice
+except Exception:  # pragma: no cover - copy pools are optional at runtime
+    voice = None
+
+DEFAULT_SHARED_HOME = os.path.expanduser("~/.agentcrop")
+# Pre-rename installs used this path.  Only fall back to it when the new home
+# does not exist yet, so an upgrade keeps seeing its old data exactly once.
+LEGACY_SHARED_HOME = os.path.expanduser("~/.ai-coding-efficiency")
 
 PHASES = ("start", "progress", "blocked", "end")
 CATEGORIES = (
@@ -44,6 +52,9 @@ WORK_START = os.environ.get("KIT_WORK_START", "10:00")
 WORK_END = os.environ.get("KIT_WORK_END", "18:00")
 IDLE_MIN = float(os.environ.get("KIT_IDLE_MIN", "15"))
 CLAIM_TTL_MIN = float(os.environ.get("KIT_CLAIM_TTL_MIN", "120"))
+VERDICTS = ("justified", "not-justified", "unknown")
+REVIEW_LEVELS = ("redo", "major", "minor", "none")
+SENTIMENTS = ("pos", "neu", "neg")
 WORK_TYPES = ("design", "implement", "debug", "docs")
 DIFFICULTIES = ("s", "m", "l")
 MAX_TEXT = 600
@@ -59,7 +70,12 @@ def ide_home() -> str:
 
 
 def shared_home() -> str:
-    return os.path.expanduser(os.environ.get("KIT_SHARED_HOME") or DEFAULT_SHARED_HOME)
+    explicit = os.environ.get("KIT_SHARED_HOME")
+    if explicit:
+        return os.path.expanduser(explicit)
+    if not os.path.isdir(DEFAULT_SHARED_HOME) and os.path.isdir(LEGACY_SHARED_HOME):
+        return LEGACY_SHARED_HOME
+    return DEFAULT_SHARED_HOME
 
 
 def host() -> str:
@@ -99,7 +115,7 @@ def data_dir() -> str:
                 pass
             return candidate
     # Last resort: a private temp directory, still usable for this process.
-    fallback = os.path.join(tempfile.gettempdir(), "ai-coding-efficiency-probe")
+    fallback = os.path.join(tempfile.gettempdir(), "agent-crop-probe")
     os.makedirs(fallback, mode=0o700, exist_ok=True)
     return fallback
 
@@ -110,12 +126,14 @@ def paths(data: str | None = None) -> dict[str, str]:
         "root": root,
         "events": os.path.join(root, "events.jsonl"),
         "open": os.path.join(root, "tasks", "open.json"),
+        "bindings": os.path.join(root, "tasks", "bindings.json"),
         "closed_dir": os.path.join(root, "tasks", "closed"),
         "reports_dir": os.path.join(root, "reports"),
         "archive_dir": os.path.join(root, "tasks", "archive"),
         "blocks_dir": os.path.join(root, "blocks"),
         "runtime": os.path.join(root, "runtime"),
         "config": os.path.join(root, "config.json"),
+        "voice": os.path.join(root, "voice.json"),
     }
 
 
@@ -210,10 +228,15 @@ def load_events(limit: int = MAX_EVENTS_READ, sid: str | None = None) -> list[di
 
 
 DEFAULT_CONFIG = {
+    "yellow_min": 10.0,
     "red_min": 30.0,
     "remind_min": 15.0,
     "user_facing": True,
     "max_open_tasks": 3,
+    # 预估工时（expect_min）为时钟时的档位倍数；没报预期才退回 yellow_min / red_min。
+    "warm_ratio": 0.8,
+    "red_ratio": 1.5,
+    "overdue_ratio": 2.5,
 }
 
 
@@ -228,6 +251,7 @@ def load_config() -> dict:
     except Exception:
         pass
     for env, key, cast in (
+        ("KIT_TASK_YELLOW_MIN", "yellow_min", float),
         ("KIT_TASK_RED_MIN", "red_min", float),
         ("KIT_TASK_REMIND_MIN", "remind_min", float),
     ):
@@ -276,7 +300,7 @@ def normalize_task_id(value: str) -> str:
     text = str(value or "").strip().lower()
     text = re.sub(r"[^a-z0-9_-]+", "-", text)
     text = re.sub(r"-{2,}", "-", text).strip("-_")
-    return text[:64]
+    return text[:32]
 
 
 def load_open() -> dict:
@@ -342,10 +366,31 @@ def _upsert_task(report: dict, workspace: str) -> None:
         task["category"] = report["category"]
     if report.get("goal"):
         task["goal"] = report["goal"]
+    if report.get("verdict"):
+        task["verdict"] = report["verdict"]
     if report.get("type"):
         task["type"] = report["type"]
     if report.get("difficulty"):
         task["difficulty"] = report["difficulty"]
+    if report.get("expect_min"):
+        current = float(report["expect_min"])
+        previous = task.get("expect_min")
+        try:
+            previous = float(previous) if previous else None
+        except Exception:
+            previous = None
+        if previous and abs(previous - current) > 0.01:
+            reason = report.get("cause") or report.get("summary") or ""
+            task.setdefault("expect_history", []).append({
+                "from": previous, "to": current, "reason": reason, "at": report["t"],
+            })
+            append_event({
+                "ev": "estimate_revised", "sid": report.get("sid", ""),
+                "work_id": task_id, "from": previous, "to": current, "reason": reason,
+            })
+        task["expect_min"] = current
+        task["expect_why"] = report.get("expect_why") or task.get("expect_why", "")
+        task["expect_set_at"] = report["t"]
     if not task.get("title") or task["title"] == task_id:
         task["title"] = report.get("summary") or task_id
     task["status"] = "open"
@@ -367,10 +412,13 @@ def close_task(task_id: str) -> None:
     append_jsonl(os.path.join(paths()["closed_dir"], f"{today()}.jsonl"), task)
 
 
-def link_task(task_id: str, block_start: int | None) -> None:
+def link_task(task_id: str, block_start: int | None, sid: str | None = None) -> None:
     if not task_id or not block_start:
         return
-    append_event({"ev": "task_link", "task_id": task_id, "block_start": block_start})
+    event = {"ev": "task_link", "task_id": task_id, "block_start": block_start}
+    if sid:
+        event["sid"] = sid
+    append_event(event)
 
 
 # ---------------------------------------------------------------------------
@@ -411,6 +459,29 @@ def validate_report(args: dict) -> dict:
     difficulty = _text(args.get("difficulty"), "difficulty").lower()
     if difficulty and difficulty not in DIFFICULTIES:
         raise ValueError(f"difficulty must be one of {', '.join(DIFFICULTIES)}")
+    verdict = _text(args.get("verdict"), "verdict").lower()
+    if verdict and verdict not in VERDICTS:
+        raise ValueError(f"verdict must be one of {', '.join(VERDICTS)}")
+    rework = _text(args.get("rework"), "rework").lower()
+    if rework and rework not in REVIEW_LEVELS:
+        raise ValueError(f"rework must be one of {', '.join(REVIEW_LEVELS)}")
+    sentiment = _text(args.get("sentiment"), "sentiment").lower()
+    if sentiment and sentiment not in SENTIMENTS:
+        raise ValueError(f"sentiment must be one of {', '.join(SENTIMENTS)}")
+    improve = _text(args.get("improve"), "improve")
+    expect_min = args.get("expect_min")
+    if expect_min is None or str(expect_min).strip() == "":
+        expect_min = None
+    else:
+        try:
+            expect_min = float(expect_min)
+        except Exception:
+            raise ValueError("expect_min must be a number of minutes")
+        if expect_min <= 0:
+            raise ValueError("expect_min must be greater than 0")
+        if expect_min > 1440:
+            raise ValueError("expect_min must be at most 1440 minutes (24h)")
+    expect_why = _text(args.get("expect_why"), "expect_why")
     what = _text(args.get("what"), "what")
     cost = _text(args.get("cost"), "cost")
     next_time = _text(args.get("next_time"), "next_time")
@@ -426,6 +497,12 @@ def validate_report(args: dict) -> dict:
         "goal": goal,
         "type": work_type,
         "difficulty": difficulty,
+        "verdict": verdict,
+        "improve": improve,
+        "expect_min": expect_min,
+        "expect_why": expect_why,
+        "rework": rework,
+        "sentiment": sentiment,
         "what": what,
         "cost": cost,
         "next_time": next_time,
@@ -461,6 +538,12 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         "next": report["next"],
         "category": report["category"],
         "goal": report.get("goal", ""),
+        "verdict": report.get("verdict", ""),
+        "improve": report.get("improve", ""),
+        "expect_min": report.get("expect_min"),
+        "expect_why": report.get("expect_why", ""),
+        "rework": report.get("rework", ""),
+        "sentiment": report.get("sentiment", ""),
         "type": report.get("type", ""),
         "difficulty": report.get("difficulty", ""),
         "turn": context.get("turn"),
@@ -490,7 +573,14 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         if report.get("what") or report.get("cost") or report.get("next_time"):
             append_event({
                 "ev": "work_summary",
+                "sid": sid,
                 "work_id": report["task_id"],
+                "verdict": report.get("verdict", ""),
+        "improve": report.get("improve", ""),
+        "expect_min": report.get("expect_min"),
+        "expect_why": report.get("expect_why", ""),
+        "rework": report.get("rework", ""),
+        "sentiment": report.get("sentiment", ""),
                 "what": report.get("what", ""),
                 "cost": report.get("cost", ""),
                 "next_time": report.get("next_time", ""),
@@ -500,10 +590,29 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                 "ev": "work_summary", "what": report.get("what", ""),
                 "cost": report.get("cost", ""), "next_time": report.get("next_time", ""),
             })
+        append_event({"ev": "work_close", "sid": sid, "work_id": report["task_id"],
+                      "verdict": report.get("verdict", "")})
+        release_binding(sid)
         close_task(report["task_id"])
     else:
         _upsert_task(record, workspace)
-    link_task(report["task_id"], block_start)
+        bind_session(sid, report["task_id"])
+        if report["phase"] == "start":
+            append_event({"ev": "work_open", "sid": sid, "work_id": report["task_id"],
+                          "goal": report.get("goal", ""), "type": report.get("type", ""),
+                          "difficulty": report.get("difficulty", "")})
+    link_task(report["task_id"], block_start, sid)
+    # 用户不满时，返工档次可以随这次上报一起带进来，省掉一次单独调用
+    if report.get("rework"):
+        try:
+            record_review(
+                {"rework": report.get("rework"), "sentiment": report.get("sentiment", ""),
+                 "reason": report.get("cause") or report.get("summary") or "",
+                 "work_id": report["task_id"]},
+                {"sid": sid},
+            )
+        except ValueError:
+            pass
     return record
 
 
@@ -512,6 +621,12 @@ def record_report(args: dict, context: dict | None = None) -> dict:
 
 
 def record_session_start(sid: str, workspace: str) -> None:
+    try:
+        migrate_bindings()
+        normalize_bindings()
+        mark_stale_works()
+    except Exception:
+        pass
     append_event({"ev": "session_start", "sid": sid, "workspace": workspace})
     write_runtime(sid, workspace, None)
 
@@ -541,15 +656,20 @@ def record_prompt(sid: str, prompt: str, workspace: str) -> None:
         except Exception:
             gap_ms = 0
         within = _in_work_hours()
+        # 等待属于「刚结束的那个 block」的工作：否则看板上的等待列永远空着。
+        work_id = str(last_stop.get("work_id") or "")
+        if not work_id:
+            work_id = resolve_binding(sid) or str((_claimed_work(sid) or {}).get("task_id") or "")
+        ownership = {"work_id": work_id} if work_id else {}
         if gap_ms > IDLE_MIN * 60000 or not within:
             append_event({
                 "ev": "idle_gap", "sid": sid, "gap_ms": gap_ms,
-                "reason": "off-hours" if not within else "idle",
+                "reason": "off-hours" if not within else "idle", **ownership,
             })
         else:
             append_event({
                 "ev": "user_wait", "sid": sid,
-                "waiting_ms": gap_ms, "within_work_hours": within,
+                "waiting_ms": gap_ms, "within_work_hours": within, **ownership,
             })
     append_event({"ev": "prompt", "sid": sid, "workspace": workspace, "snippet": prompt[:160]})
     write_runtime(sid, workspace, now_ms())
@@ -582,7 +702,7 @@ def record_tool(sid: str, name: str, is_error: bool) -> None:
         if len(tail) >= REPEAT_TOOL_THRESHOLD and all(event.get("name") == tool for event in tail):
             failures = sum(1 for event in tail if event.get("is_error"))
             append_event({
-                "ev": "rework_signal", "sid": sid, "work_id": "",
+                "ev": "tool_churn", "sid": sid, "work_id": "",
                 "kind": "repeat-tool", "tool": tool,
                 "count": len(tail), "failures": failures,
             })
@@ -598,7 +718,12 @@ def record_stop(sid: str) -> None:
     end = now_ms()
     minutes = max(0.0, (end - start) / 60000.0)
     tools = [event for event in load_events(sid=sid) if event.get("ev") == "tool" and event.get("t", 0) >= start]
-    append_event({"ev": "stop", "sid": sid, "block_start": start, "minutes": round(minutes, 1)})
+    # 机械计时：块结束时按当前认领自动归属，probe_report 只负责补语义。
+    work_id = resolve_binding(sid) or str((_claimed_work(sid) or {}).get("task_id") or "")
+    append_event({
+        "ev": "stop", "sid": sid, "block_start": start,
+        "minutes": round(minutes, 1), "work_id": work_id,
+    })
     append_jsonl(os.path.join(paths()["blocks_dir"], f"{today()}.jsonl"), {
         "t": end,
         "host": host(),
@@ -608,35 +733,168 @@ def record_stop(sid: str) -> None:
         "minutes": round(minutes, 1),
         "tools": len(tools),
         "failed_tools": sum(1 for event in tools if event.get("is_error")),
+        "work_id": work_id,
     })
+    if work_id:
+        link_task(work_id, start, sid)
     write_runtime(sid, read_runtime().get("workspace", ""), None)
+
+
+def miss_nudge(streak: int) -> str:
+    """Missing-report nudge; streaks of 2+ switch to the harsher pool."""
+    if voice is not None:
+        try:
+            return voice.miss(int(streak or 0), paths().get("voice"))
+        except Exception:
+            pass
+    return "[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_report 写一行。"
 
 
 def record_session_end(sid: str) -> None:
     append_event({"ev": "session_end", "sid": sid})
 
 
-def maybe_reminder(sid: str) -> str:
-    config = load_config()
-    start = current_block_start(sid)
-    if not start:
-        return ""
-    minutes = max(0.0, (now_ms() - start) / 60000.0)
-    if minutes < float(config["red_min"]):
-        return ""
-    last = None
+def _latest_work_for_session(sid: str) -> str | None:
     for event in reversed(load_events(sid=sid)):
-        if event.get("ev") == "reminder" and event.get("block_start") == start:
-            last = int(event.get("t") or 0)
-            break
-    if last and now_ms() - last < float(config["remind_min"]) * 60000:
+        if event.get("ev") == "probe_report" and event.get("task_id"):
+            return str(event["task_id"])
+    return None
+
+
+def _nudge(tier: str, meta: dict) -> str:
+    """Draw one nudge; plain wording is the fallback if the copy pools are gone."""
+    if voice is not None:
+        try:
+            return voice.reminder(tier, meta, paths().get("voice"))
+        except Exception:
+            pass
+    return format_reminder(float(meta.get("m") or 0), load_config())
+
+
+def _cooldown_active(sid: str, minutes: float, tier: str, work_id: str = "") -> bool:
+    """Same tier inside remind_min stays quiet; the next tier is a new contract.
+
+    Legacy reminder events carry no tier, so they match any tier — an upgrade
+    does not double-nudge just because the field is new.
+    """
+    window = float(minutes) * 60000
+    for event in reversed(load_events(sid=sid)):
+        if event.get("ev") != "reminder":
+            continue
+        if event.get("tier") not in (None, tier):
+            continue
+        if work_id and event.get("work_id") != work_id:
+            continue
+        return now_ms() - int(event.get("t") or 0) < window
+    return False
+
+
+def reminder_tier(health: dict, config: dict) -> str | None:
+    """Which notch of the contract this work is at (None = stay quiet).
+
+    With an estimate the ladder is relative to the AI's own number: nothing
+    before 0.8E, warm up to E, yellow to 1.5E, red to 2.5E, overdue beyond.
+    Without one we keep the legacy minutes so existing works still get nudged.
+    """
+    minutes = float(health.get("minutes") or 0)
+    expect = health.get("expect_min")
+    if expect:
+        try:
+            ratio = minutes / float(expect)
+        except Exception:
+            ratio = 0.0
+        if ratio < float(config.get("warm_ratio", 0.8)):
+            return None
+        if ratio < 1.0:
+            return "warm"
+        if ratio < float(config.get("red_ratio", 1.5)):
+            return "yellow"
+        if ratio < float(config.get("overdue_ratio", 2.5)):
+            return "red"
+        return "overdue"
+    if minutes >= float(config.get("yellow_min", 10.0)):
+        return "yellow"
+    return None
+
+
+def _nudge_meta(health: dict, config: dict) -> dict:
+    expect = health.get("expect_min")
+    meta = {
+        "m": float(health.get("minutes") or 0),
+        "e": float(expect) if expect else None,
+        "goal": health.get("goal") or "",
+        "default": float(config.get("yellow_min", 10.0)),
+        "line": "黄线",
+        "changes": int(health.get("expect_changes") or 0),
+    }
+    if not expect:
+        meta["no_expect"] = True
+    return meta
+
+
+def maybe_work_reminder(sid: str) -> str:
+    config = load_config()
+    task_id = _latest_work_for_session(sid)
+    if not task_id:
         return ""
-    append_event({"ev": "reminder", "sid": sid, "block_start": start, "minutes": round(minutes, 1)})
-    return format_reminder(minutes, config)
+    health = work_health(task_id)
+    if not health:
+        return ""
+    tier = reminder_tier(health, config)
+    if not tier:
+        return ""
+    if _cooldown_active(sid, float(config["remind_min"]), tier, work_id=task_id):
+        return ""
+    append_event({
+        "ev": "reminder", "sid": sid, "work_id": task_id, "tier": tier,
+        "minutes": round(float(health.get("minutes") or 0), 1),
+        "expect_min": health.get("expect_min"),
+        "kind": "work",
+    })
+    return _nudge(tier, _nudge_meta(health, config))
+
+
+def maybe_reminder(sid: str) -> str:
+    """One call per step: the estimate ladder wins, legacy minutes are the net."""
+    config = load_config()
+    task_id = _latest_work_for_session(sid)
+    health = work_health(task_id) if task_id else None
+    has_estimate = bool(health and health.get("expect_min"))
+    start = current_block_start(sid)
+    if start and not has_estimate:
+        minutes = max(0.0, (now_ms() - start) / 60000.0)
+        red = float(config["red_min"])
+        if minutes >= red and not _cooldown_active(sid, float(config["remind_min"]), "red"):
+            append_event({
+                "ev": "reminder", "sid": sid, "block_start": start, "tier": "red",
+                "minutes": round(minutes, 1), "kind": "block",
+            })
+            return _nudge("red", {
+                "m": minutes, "e": None, "goal": "",
+                "default": red, "line": "红线", "no_expect": True,
+            })
+    return maybe_work_reminder(sid)
 
 
 # ---------------------------------------------------------------------------
 # Prompt text
+
+
+def fmt_minutes(minutes: float) -> str:
+    """Duration in the copy's voice ('3 小时 30 分'); plain fallback without pools."""
+    if voice is not None:
+        try:
+            return voice.fmt_minutes(minutes)
+        except Exception:
+            pass
+    try:
+        value = int(round(float(minutes or 0)))
+    except Exception:
+        return "0 分钟"
+    if value < 60:
+        return f"{value} 分钟"
+    hours, rest = divmod(value, 60)
+    return f"{hours} 小时" if not rest else f"{hours} 小时 {rest} 分"
 
 
 def ago(ms: int) -> str:
@@ -649,69 +907,59 @@ def ago(ms: int) -> str:
     return f"{minutes // 60} 小时前"
 
 
-def format_open_tasks(tasks: list[dict]) -> str:
+ESTIMATE_HINT = (
+    "绑定后先报预期（不阻断，但必须报）：crop_report 带 expect_min=多少分钟 + expect_why=一句为什么。"
+    "提醒按你报的数字算——在你报的时长内不会有人抽鞭子；觉得报少了，就带着理由改。"
+)
+
+
+def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
+    # A live binding decides the first-turn line: the bound work may have
+    # dropped out of the three candidates (another session touched it, or newer
+    # works pushed it past the limit), so ask the binding, not the list.
+    if sid and resolve_binding(sid):
+        bound_line = work_status_line(None, sid)
+        if bound_line:
+            return bound_line
     if not tasks:
-        return ""
-    lines = ["[探针] 未完成任务（可续接）："]
+        return ("[crop] 本机当前没有进行中的工作。新开一条："
+                "crop_report(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\", "
+                "expect_min=预估分钟, expect_why=\"一句为什么\")。"
+                "提醒按你报的时长算：在你自己报的范围内不会被打扰。")
+    claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
+    if claimed:
+        return work_status_line(None, sid)
+    count = total if total is not None else len(tasks)
+    lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
     for task in tasks:
         lines.append(
-            f"- {task.get('task_id')} — {task.get('title') or task.get('summary') or ''}"
-            f"（最后活跃 {ago(task.get('last_seen_at', 0))}；下一步：{task.get('next') or '未记录'}）"
+            f"- {task.get('task_id')} — {task.get('goal') or task.get('title') or ''}"
+            f"（{ago(task.get('last_seen_at', 0))}）"
         )
+    extra = count - len(tasks)
+    if extra > 0:
+        lines.append(f"另有 {extra} 条，用 crop_works 查看或筛选。")
+    example = tasks[0].get("task_id")
     lines.append(
-        "续接请沿用上面的 task_id；新任务请调用 probe_report("
-        'phase="start", task_id="<kebab-slug>", summary="<一句话>")。'
+        "哪个属于本会话？先判断是接着做还是新开（先绑定，再干活）：接着做用 "
+        f'crop_report(phase="start", task_id="{example}")；新开用 2-3 个词的短名。'
     )
+    lines.append(ESTIMATE_HINT)
+    lines.append("尽量让一个会话只对应一件工作；要做的其实是几件事就拆开，一件一件来。")
     return "\n".join(lines)
 
 
-def format_start_hint(tasks: list[dict]) -> str:
-    head = (
-        "[探针] 开工前先绑定工作（一句话说给用户，不用解释规则）：\n"
-        "- 续接下面某条：crop switch <work_id>\n"
-        '- 新开一条：probe_report(phase="start", task_id="<kebab-slug>", summary="<一句话>")\n'
-        "没绑定之前不要开始干活。"
-    )
-    body = format_open_tasks(tasks)
-    text = head + ("\n" + body if body else "")
-    if tasks:
-        text += (
-            f"\n跟最近活跃的那条：crop switch {tasks[0].get('task_id')}；"
-            "都对不上就新建一条。"
-        )
-    return text
-
-
-def record_side_issue(note: str, suggest: str = "later") -> bool:
-    """Record an off-topic thread without moving the current work.
-
-    A side issue is a note, not a task: it must be cheap enough to record in the
-    middle of real work, and it must never steal the session's claim.
-    """
-    note = (note or "").strip()
-    if not note:
-        return False
-    runtime = read_runtime()
-    sid = str(runtime.get("sid") or "")
-    workspace = str(runtime.get("workspace") or os.getcwd())
-    active = ""
-    for task in open_tasks(workspace, 5, sid):
-        if sid and task.get("last_sid") == sid:
-            active = task.get("task_id", "")
-            break
-    append_event({
-        "ev": "side_issue",
-        "sid": sid,
-        "work_id": active,
-        "note": note[:200],
-        "suggest": suggest,
-    })
-    return True
+def format_start_hint(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
+    return format_open_tasks(tasks, total, sid)
 
 
 def format_reminder(minutes: float, config: dict) -> str:
     lines = [
-        f"[探针] 当前任务块已 {minutes:.0f} 分钟（红线 {float(config['red_min']):.0f}）。",
+        f"[crop] 红线告警：这一轮已经 {minutes:.0f} 分钟（红线 {float(config['red_min']):.0f}），用户等了很久还没拿到结果。",
+        "先别急着继续，确认三件事：",
+        "1. 还走在正确的路上吗？有没有更快的路径？",
+        "2. 能不能先给用户一个阶段性交付？",
+        "3. 安抚用户，并把判断写进 crop_report（cause + verdict）。",
         "请做两件事：",
     ]
     if config.get("user_facing", True):
@@ -744,6 +992,11 @@ def format_reminder(minutes: float, config: dict) -> str:
 def _start_of_today_ms() -> int:
     now = datetime.now()
     return int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+
+
+def start_of_today_ms() -> int:
+    """Local midnight — the dashboard's「今天」and natural-day windows start here."""
+    return _start_of_today_ms()
 
 
 def status_summary(workspace: str | None = None) -> dict:
@@ -808,22 +1061,42 @@ def format_status(summary: dict) -> str:
     return "\n".join(lines)
 
 
-def work_status_line(workspace: str | None = None, sid: str | None = None) -> str:
-    """One line for the turn-start injection.
+def _claimed_work(sid: str) -> dict | None:
+    """This session's work: explicit claim first, else the single active work.
 
-    The program never picks "the current work" by itself: several sessions can
-    share a workspace and only the model knows which work this conversation is
-    on. Program shows candidates; the model claims one via probe_report. Once
-    claimed, the line reflects that claim instead of guessing.
+    Several sessions can share a workspace, so "the only active work" is only a
+    safe fallback when there is exactly one. 块结束时用它自动归属时间。
     """
+    tasks = [
+        task for task in load_open().get("tasks", {}).values()
+        if task.get("status", "open") == "open" and task.get("state", "open") == "open"
+    ]
+    if sid:
+        for task in tasks:
+            if task.get("last_sid") == sid:
+                return task
+    active = [task for task in tasks if float(task.get("active_until") or 0) > now_ms()]
+    return active[0] if len(active) == 1 else None
+
+
+def work_status_line(workspace: str | None = None, sid: str | None = None) -> str:
+    """Turn-start line: plain prose when bound, candidate list when ambiguous."""
     tasks = open_tasks(workspace, 3, sid)
-    if not tasks:
+    bound_id = resolve_binding(sid) if sid else ""
+    claimed = None
+    if bound_id:
+        # Read the bound task directly: it does not have to be a top-3 candidate.
+        bound_task = load_open().get("tasks", {}).get(bound_id)
+        if (bound_task
+                and bound_task.get("status", "open") == "open"
+                and bound_task.get("state", "open") == "open"):
+            claimed = bound_task
+    if not tasks and not claimed:
         return ""
-    claimed = next((t for t in tasks if sid and t.get("last_sid") == sid), None)
+    if not claimed:
+        claimed = next((t for t in tasks if sid and t.get("last_sid") == sid), None)
     inherited = None
     if not claimed:
-        # 会话重启/fork 会换 sid，认领会断。只要有效期内只有一条活跃工作，
-        # 就不存在“选哪个”的问题，直接接着用；有多条才列候选交给 AI 判断。
         now = now_ms()
         active = [t for t in tasks if float(t.get("active_until") or 0) > now]
         if len(active) == 1:
@@ -831,19 +1104,43 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
     current = claimed or inherited
     if current:
         aim = current.get("goal") or current.get("title") or current.get("task_id")
-        stale = ago(current.get("last_seen_at", 0))
+        health = work_health(current.get("task_id")) or {}
+        minutes = float(health.get("minutes", 0.0))
+        expect = health.get("expect_min")
         note = "" if claimed else "（上个会话认领，仍在有效期内）"
+        if expect:
+            gap = minutes - float(expect)
+            clock = (f"已进行 {fmt_minutes(minutes)} / 你报的 {fmt_minutes(expect)}"
+                     + (f"（超 {fmt_minutes(gap)}）" if gap >= 0.5 else f"（还剩 {fmt_minutes(-gap)}）"))
+            tail = "留意用户是否把话题岔到另一件事（分叉），或上一轮的产出是否被推翻（返工）；有变化就更新一行。"
+        else:
+            yellow = float(load_config().get("yellow_min", 10.0))
+            overtime = "已超过黄线" if minutes >= yellow else "未超时"
+            clock = f"已进行 {fmt_minutes(minutes)}，{overtime}（黄线 {fmt_minutes(yellow)}）"
+            tail = ("还没报预期时长：开工或下次上报时给个数字（crop_report 带 expect_min），"
+                    "鞭子就按你的数字算。留意分叉与返工；有变化就更新一行。")
         return (
-            f"[crop] 当前工作：{aim}（{current.get('task_id')}）{note}；上次更新 {stale}。"
-            "状态有变就调 probe_report 更新一行。"
+            f"[crop] 当前工作：{aim}（{current.get('task_id')}）{note}。"
+            f"{clock}；上次更新 {ago(current.get('last_seen_at', 0))}。{tail}"
         )
-    candidates = "、".join(
-        f"{task.get('task_id')}（{ago(task.get('last_seen_at', 0))}）" for task in tasks
+    count = open_works_count(workspace)
+    lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
+    for task in tasks:
+        lines.append(
+            f"- {task.get('task_id')} — {task.get('goal') or task.get('title') or ''}"
+            f"（{ago(task.get('last_seen_at', 0))}）"
+        )
+    extra = count - len(tasks)
+    if extra > 0:
+        lines.append(f"另有 {extra} 条，用 crop_works 查看或筛选。")
+    example = tasks[0].get("task_id")
+    lines.append(
+        "哪个属于本会话？先绑定再干活：接着做用 "
+        f'crop_report(phase="start", task_id="{example}")；'
+        "新开用 2-3 个词的短名。尽量一个会话只对应一件工作。"
     )
-    return (
-        f"[crop] 未完成的工作：{candidates}。"
-        "哪个属于本会话？调 probe_report 认领；都不是就新开。"
-    )
+    lines.append(ESTIMATE_HINT)
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -868,11 +1165,12 @@ def switch_claim(work_id: str, sid: str) -> bool:
             other.pop("last_sid", None)
     target["last_sid"] = sid
     save_open(value)
+    bind_session(sid, target["task_id"])
     append_event({"ev": "work_claim", "work_id": target["task_id"], "sid": sid})
     return True
 
 
-def set_work_state(work_id: str, state: str) -> bool:
+def set_work_state(work_id: str, state: str, sid: str | None = None) -> bool:
     work_id = normalize_task_id(work_id)
     value = load_open()
     tasks = value.setdefault("tasks", {})
@@ -882,12 +1180,14 @@ def set_work_state(work_id: str, state: str) -> bool:
     task["state"] = state
     task["state_changed_at"] = now_ms()
     save_open(value)
-    append_event({"ev": "work_" + ("suspend" if state == "suspended" else "resume"),
-                  "work_id": work_id})
+    event = {"ev": "work_" + ("suspend" if state == "suspended" else "resume"), "work_id": work_id}
+    if sid:
+        event["sid"] = sid
+    append_event(event)
     return True
 
 
-def archive_work(work_id: str, reason: str = "manual") -> bool:
+def archive_work(work_id: str, reason: str = "manual", sid: str | None = None) -> bool:
     work_id = normalize_task_id(work_id)
     value = load_open()
     tasks = value.setdefault("tasks", {})
@@ -899,7 +1199,10 @@ def archive_work(work_id: str, reason: str = "manual") -> bool:
     task["archive_reason"] = reason
     save_open(value)
     append_jsonl(os.path.join(paths()["archive_dir"], f"{today()}.jsonl"), task)
-    append_event({"ev": "work_archive", "work_id": work_id, "reason": reason})
+    event = {"ev": "work_archive", "work_id": work_id, "reason": reason}
+    if sid:
+        event["sid"] = sid
+    append_event(event)
     return True
 
 
@@ -942,9 +1245,101 @@ def _events_between(start_ms: int, end_ms: int) -> list[dict]:
     return [event for event in events if start_ms <= int(event.get("t") or 0) <= end_ms]
 
 
-def period_summary(days: float = 7.0, now: int | None = None) -> dict:
+def _closed_works_between(start_ms: int, end_ms: int) -> list[dict]:
+    """Works finished in [start, end]: the dashboard's 完成工作."""
+    works: list[dict] = []
+    directory = paths()["closed_dir"]
+    try:
+        names = sorted(os.listdir(directory))
+    except Exception:
+        return works
+    for name in names:
+        if not name.endswith(".jsonl"):
+            continue
+        try:
+            with open(os.path.join(directory, name), encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        task = json.loads(line)
+                    except Exception:
+                        continue
+                    closed_at = int(task.get("closed_at") or 0)
+                    if start_ms <= closed_at <= end_ms:
+                        works.append(task)
+        except Exception:
+            continue
+    return works
+
+
+def _work_list(events: list[dict], completed: list[dict], start_ms: int) -> list[dict]:
+    """One row per work for the dashboard table: 灯点 / 工作 / 类型 / 活跃 / 等待."""
+    tasks: dict[str, dict] = {}
+    for task in load_open().get("tasks", {}).values():
+        if task.get("status", "open") == "open" and task.get("state", "open") == "open":
+            tasks[str(task.get("task_id") or "")] = task
+    finished = set()
+    for task in completed:
+        work_id = str(task.get("task_id") or "")
+        if work_id:
+            finished.add(work_id)
+            tasks.setdefault(work_id, task)
+    wait_ms: dict[str, int] = {}
+    seen: set[str] = set()
+    for event in events:
+        work_id = str(event.get("work_id") or event.get("task_id") or "")
+        if not work_id:
+            continue
+        seen.add(work_id)
+        if event.get("ev") == "user_wait":
+            wait_ms[work_id] = wait_ms.get(work_id, 0) + int(event.get("waiting_ms") or 0)
+
+    minutes_cache: dict[str, float] = {}
+    baseline_cache: dict[tuple, tuple] = {}
+    rows = []
+    for work_id, task in tasks.items():
+        in_range = (
+            work_id in seen
+            or work_id in finished
+            or int(task.get("last_seen_at") or 0) >= start_ms
+        )
+        if not in_range:
+            continue
+        if work_id not in minutes_cache:
+            minutes_cache[work_id] = work_minutes(work_id)
+        minutes = minutes_cache[work_id]
+        key = (task.get("type"), task.get("difficulty"))
+        if key not in baseline_cache:
+            baseline_cache[key] = baseline_minutes(*key)
+        baseline, source = baseline_cache[key]
+        ratio = round(minutes / baseline, 2) if baseline else 0.0
+        level = "green" if ratio < 0.6 else ("yellow" if ratio < 1.5 else "red")
+        rows.append({
+            "work_id": work_id,
+            "goal": task.get("goal") or task.get("title") or task.get("summary") or "",
+            "type": task.get("type") or "",
+            "difficulty": task.get("difficulty") or "",
+            "minutes": minutes,
+            "wait_minutes": round(wait_ms.get(work_id, 0) / 60000.0, 1),
+            "baseline": baseline,
+            "baseline_source": source,
+            "ratio": ratio,
+            "level": level,
+            "state": "done" if work_id in finished else task.get("state", "open"),
+        })
+    rows.sort(key=lambda row: row["minutes"], reverse=True)
+    return rows[:50]
+
+
+def period_summary(
+    days: float = 7.0, now: int | None = None, start: int | None = None
+) -> dict:
+    """Range totals for the dashboard and the text report.
+
+    `start` pins a natural-day window (the dashboard's 今天 / 7 天 / 30 天);
+    without it the window stays rolling, which is what the CLI report uses.
+    """
     end = now if now is not None else now_ms()
-    start = end - int(days * 86400000)
+    start = int(start) if start is not None else end - int(days * 86400000)
     events = _events_between(start, end)
     blocks = [event for event in events if event.get("ev") == "stop"]
     reports = [event for event in events if event.get("ev") == "probe_report"]
@@ -956,6 +1351,10 @@ def period_summary(days: float = 7.0, now: int | None = None) -> dict:
     for block in blocks:
         day = datetime.fromtimestamp(int(block.get("t") or 0) / 1000).strftime("%Y-%m-%d")
         minutes_by_day[day] = minutes_by_day.get(day, 0.0) + float(block.get("minutes") or 0)
+    wait_by_day: dict[str, float] = {}
+    for wait in waits:
+        day = datetime.fromtimestamp(int(wait.get("t") or 0) / 1000).strftime("%Y-%m-%d")
+        wait_by_day[day] = wait_by_day.get(day, 0.0) + int(wait.get("waiting_ms") or 0) / 60000.0
 
     works: dict[str, dict] = {}
     for report in reports:
@@ -972,6 +1371,17 @@ def period_summary(days: float = 7.0, now: int | None = None) -> dict:
             if report.get(key):
                 item[key] = report[key]
 
+    total_minutes = sum(float(block.get("minutes") or 0) for block in blocks)
+    wait_minutes = sum(int(event.get("waiting_ms") or 0) for event in waits) / 60000.0
+    active_minutes = max(0.0, total_minutes - wait_minutes)
+    completed = _closed_works_between(start, end)
+    count = len(completed)
+    day_keys = sorted(set(minutes_by_day) | set(wait_by_day))
+    active_by_day = {
+        day: round(max(0.0, minutes_by_day.get(day, 0.0) - wait_by_day.get(day, 0.0)), 1)
+        for day in day_keys
+    }
+
     top = sorted(works.values(), key=lambda item: item["minutes"], reverse=True)[:3]
     return {
         "days": days,
@@ -979,8 +1389,26 @@ def period_summary(days: float = 7.0, now: int | None = None) -> dict:
         "end": end,
         "events": len(events),
         "blocks": len(blocks),
-        "total_minutes": round(sum(float(block.get("minutes") or 0) for block in blocks), 1),
+        "total_minutes": round(total_minutes, 1),
+        "active_minutes": round(active_minutes, 1),
+        "wait_minutes": round(wait_minutes, 1),
         "minutes_by_day": {day: round(value, 1) for day, value in sorted(minutes_by_day.items())},
+        "active_by_day": active_by_day,
+        "wait_by_day": {day: round(value, 1) for day, value in sorted(wait_by_day.items())},
+        "completed": count,
+        "completed_works": [
+            {
+                "work_id": task.get("task_id"),
+                "goal": task.get("goal") or task.get("title") or "",
+                "type": task.get("type") or "",
+                "difficulty": task.get("difficulty") or "",
+                "closed_at": task.get("closed_at"),
+            }
+            for task in completed
+        ],
+        "avg_active_minutes": round(active_minutes / count, 1) if count else None,
+        "avg_wait_minutes": round(wait_minutes / count, 1) if count else None,
+        "work_list": _work_list(events, completed, start),
         "works": sorted(works.values(), key=lambda item: item["minutes"], reverse=True),
         "top_works": top,
         "human_wait_ms": sum(int(event.get("waiting_ms") or 0) for event in waits),
@@ -1018,9 +1446,120 @@ def format_report(summary: dict) -> str:
     return "\n".join(lines)
 
 
-def daily_breakdown(days: float = 14.0, now: int | None = None) -> list[dict]:
+def _natural_start(days: float) -> int:
+    """Natural-day window start: 今天 = 0 点，7 天 = 含今天在内的 7 个自然日。"""
+    return start_of_today_ms() - int((max(1.0, float(days)) - 1) * 86400000)
+
+
+def _window_metrics(start_ms: int, end_ms: int) -> dict:
+    """Friction numbers for one window — the raw material of the global page.
+
+    Only facts the event log already carries: no judgement, no inference. A
+    metric whose denominator is 0 comes back as None so the panel can say
+    "no sample" instead of drawing a fake trend.
+    """
+    events = _events_between(start_ms, end_ms)
+    blocks = [event for event in events if event.get("ev") == "stop"]
+    waits = [event for event in events if event.get("ev") == "user_wait"]
+    tools = [event for event in events if event.get("ev") == "tool"]
+    churn = [event for event in events if event.get("ev") in ("tool_churn", "rework_signal")]
+    failures = [event for event in tools if event.get("is_error")]
+    total = sum(float(block.get("minutes") or 0) for block in blocks)
+    wait = sum(int(wait_event.get("waiting_ms") or 0) for wait_event in waits) / 60000.0
+    active = max(0.0, total - wait)
+    completed = len(_closed_works_between(start_ms, end_ms))
+    return {
+        "start": start_ms,
+        "end": end_ms,
+        "events": len(events),
+        "blocks": len(blocks),
+        "tools": len(tools),
+        "failures": len(failures),
+        "failure_rate": round(len(failures) / len(tools), 4) if tools else None,
+        "churn": len(churn),
+        "churn_per_block": round(len(churn) / len(blocks), 3) if blocks else None,
+        "tools_per_block": round(len(tools) / len(blocks), 3) if blocks else None,
+        "total_minutes": round(total, 1),
+        "active_minutes": round(active, 1),
+        "wait_minutes": round(wait, 1),
+        "wait_ratio": round(wait / total, 4) if total > 0 else None,
+        "completed": completed,
+        "active_per_completed": round(active / completed, 1) if completed else None,
+    }
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return round(ordered[middle], 1)
+    return round((ordered[middle - 1] + ordered[middle]) / 2, 1)
+
+
+def improvement_summary(days: float = 7.0) -> dict:
+    """Global page payload: friction this window against the one before it.
+
+    The comparison window has the same length, so a 7-day panel compares with
+    the previous 7 natural days. Both windows come from the same event log; a
+    fresh install leaves the previous window empty (events = 0, metrics None)
+    instead of inventing a baseline.
+    """
+    days = max(1.0, float(days))
+    end = now_ms()
+    start = _natural_start(days)
+    previous_start = start - int(days * 86400000)
+
+    current = _window_metrics(start, end)
+    previous = _window_metrics(previous_start, start - 1)
+
+    summary = period_summary(days, start=start)
+    works = summary.get("work_list") or []
+    per_work = [float(row.get("minutes") or 0) for row in works if row.get("minutes")]
+    current["works"] = len(works)
+    current["median_active_per_work"] = _median(per_work)
+
+    events = _events_between(start, end)
+    reports = [event for event in events if event.get("ev") == "probe_report"]
+    improvements = []
+    for report in reports:
+        text = str(report.get("improve") or "").strip()
+        if text:
+            improvements.append({
+                "work_id": report.get("work_id") or report.get("task_id") or "",
+                "goal": report.get("goal") or "",
+                "improve": text,
+                "t": report.get("t"),
+            })
+    categories: dict[str, int] = {}
+    for report in reports:
+        category = str(report.get("category") or "").strip()
+        if category:
+            categories[category] = categories.get(category, 0) + 1
+
+    return {
+        "days": days,
+        "start": start,
+        "end": end,
+        "current": current,
+        "previous": previous,
+        "daily": daily_breakdown(days, start=start),
+        "work_list": works,
+        "improvements": improvements,
+        "categories": sorted(
+            ({"category": key, "count": value} for key, value in categories.items()),
+            key=lambda item: item["count"],
+            reverse=True,
+        ),
+    }
+
+
+def daily_breakdown(
+    days: float = 14.0, now: int | None = None, start: int | None = None
+) -> list[dict]:
     end = now if now is not None else now_ms()
-    start = end - int(days * 86400000)
+    start = int(start) if start is not None else end - int(days * 86400000)
     events = _events_between(start, end)
     buckets: dict[str, dict] = {}
     for event in events:
@@ -1028,7 +1567,8 @@ def daily_breakdown(days: float = 14.0, now: int | None = None) -> list[dict]:
         day = datetime.fromtimestamp(stamp / 1000).strftime("%Y-%m-%d")
         bucket = buckets.setdefault(day, {
             "date": day, "events": 0, "blocks": 0, "minutes": 0.0,
-            "tools": 0, "failures": 0, "waits": 0, "rework": 0, "works": set(),
+            "tools": 0, "failures": 0, "waits": 0, "rework": 0,
+            "wait_minutes": 0.0, "works": set(),
         })
         bucket["events"] += 1
         kind = event.get("ev")
@@ -1041,7 +1581,8 @@ def daily_breakdown(days: float = 14.0, now: int | None = None) -> list[dict]:
                 bucket["failures"] += 1
         elif kind == "user_wait":
             bucket["waits"] += 1
-        elif kind == "rework_signal":
+            bucket["wait_minutes"] += int(event.get("waiting_ms") or 0) / 60000.0
+        elif kind in ("tool_churn", "rework_signal"):
             bucket["rework"] += 1
         elif kind == "probe_report":
             work_id = event.get("work_id") or event.get("task_id")
@@ -1051,6 +1592,8 @@ def daily_breakdown(days: float = 14.0, now: int | None = None) -> list[dict]:
     for day, bucket in sorted(buckets.items()):
         bucket["works"] = len(bucket["works"])
         bucket["minutes"] = round(bucket["minutes"], 1)
+        bucket["wait_minutes"] = round(bucket["wait_minutes"], 1)
+        bucket["active_minutes"] = round(max(0.0, bucket["minutes"] - bucket["wait_minutes"]), 1)
         rows.append(bucket)
     return rows
 
@@ -1154,7 +1697,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
     blocks = [e for e in events if e.get("ev") == "stop"]
     tools = [e for e in events if e.get("ev") == "tool"]
     waits = [e for e in events if e.get("ev") == "user_wait"]
-    reworks = [e for e in events if e.get("ev") == "rework_signal"]
+    reworks = [e for e in events if e.get("ev") in ("tool_churn", "rework_signal")]
     reports = [e for e in events if e.get("ev") == "probe_report"]
 
     tool_counts: dict[str, int] = {}
@@ -1232,7 +1775,8 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         health = work_health(task_id)
         if health:
             session_works.append(health)
-    active = session_works[0] if session_works else work_health()
+    # never fall back to a work from another session: that reads as "wrong data"
+    active = session_works[0] if session_works else None
 
     latest_cause = ""
     latest_category = ""
@@ -1244,7 +1788,16 @@ def session_summary(sid: str, now: int | None = None) -> dict:
             latest_at = int(report.get("t") or 0)
             break
 
+    tool_rank = []
+    for name, calls in tool_counts.items():
+        if name.startswith("call_") or name == "tool":
+            continue
+        tool_rank.append({"name": name, "calls": calls, "failures": failure_counts.get(name, 0)})
+    tool_rank.sort(key=lambda item: (item["failures"], item["calls"]), reverse=True)
+
     return {
+        "tool_rank": tool_rank[:6],
+        "latest_verdict": str(next((r.get("verdict") for r in reversed(reports) if r.get("verdict")), "")),
         "latest_cause": latest_cause,
         "latest_category": latest_category,
         "latest_at": latest_at,
@@ -1273,6 +1826,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
 # Work health: active minutes, baseline, lamp
 
 DIFFICULTY_DEFAULT_MINUTES = {"s": 10.0, "m": 30.0, "l": 90.0}
+RETIRE_DAYS = float(os.environ.get("KIT_RETIRE_DAYS", "14"))
 
 
 def _block_minutes(days: int = 5) -> dict[int, float]:
@@ -1307,15 +1861,32 @@ def work_minutes(work_id: str) -> float:
             if abs(stamp - start) < 5000:
                 return sid
         return None
+    def canonical(start: int) -> int:
+        # DSH 的 JS block start 与 Python prompt 时间戳会差几毫秒：按 5 秒容差对齐。
+        if start in table:
+            return start
+        best = start
+        gap_best = 5000
+        for key in table:
+            gap = abs(key - start)
+            if gap <= gap_best:
+                gap_best = gap
+                best = key
+        return best
+
     total = 0.0
-    linked: list[int] = []
+    # 一个 block 只归一个工作：对齐后同一 block 的多条 task_link，以最后一条为准。
+    owner: dict[int, str] = {}
     for event in events:
-        if event.get("ev") != "task_link" or event.get("task_id") != work_id:
+        if event.get("ev") != "task_link":
             continue
         start = int(event.get("block_start") or 0)
-        if not start:
+        linked_work = str(event.get("task_id") or "")
+        if not start or not linked_work:
             continue
-        linked.append(start)
+        owner[canonical(start)] = linked_work
+    linked: list[int] = [start for start, linked_work in owner.items() if linked_work == work_id]
+    for start in linked:
         total += table.get(start, 0.0)
 
     # the block that has not closed yet, on whichever session opened this work
@@ -1386,6 +1957,11 @@ def work_health(work_id: str | None = None) -> dict | None:
     baseline, source = baseline_minutes(task.get("type"), task.get("difficulty"))
     ratio = round(minutes / baseline, 2) if baseline else 0.0
     level = "green" if ratio < 0.6 else ("yellow" if ratio < 1.5 else "red")
+    expect = task.get("expect_min")
+    try:
+        expect = float(expect) if expect else None
+    except Exception:
+        expect = None
     return {
         "work_id": task.get("task_id"),
         "goal": task.get("goal") or task.get("title") or "",
@@ -1396,4 +1972,225 @@ def work_health(work_id: str | None = None) -> dict | None:
         "baseline_source": source,
         "ratio": ratio,
         "level": level,
+        # 主时钟：AI 自己报的预期工时；没有就退回 yellow_min / red_min
+        "expect_min": expect,
+        "expect_why": task.get("expect_why") or "",
+        "expect_changes": len(task.get("expect_history") or []),
     }
+
+
+def open_works_count(workspace: str | None = None) -> int:
+    return len([
+        task for task in load_open().get("tasks", {}).values()
+        if task.get("status", "open") == "open" and task.get("state", "open") == "open"
+    ])
+
+
+def format_work_reminder(health: dict, config: dict) -> str:
+    tier = reminder_tier(health, config) or "yellow"
+    return _nudge(tier, _nudge_meta(health, config))
+
+
+def record_review(args: dict, context: dict | None = None) -> dict:
+    """AI-judged rework level after user feedback. No keyword matching anywhere."""
+    context = context or {}
+    sid = str(context.get("sid") or "unknown")
+    level = _text(args.get("rework"), "rework").lower()
+    if level not in REVIEW_LEVELS:
+        raise ValueError(f"rework must be one of {', '.join(REVIEW_LEVELS)}")
+    sentiment = _text(args.get("sentiment"), "sentiment").lower()
+    if sentiment and sentiment not in SENTIMENTS:
+        raise ValueError(f"sentiment must be one of {', '.join(SENTIMENTS)}")
+    reason = _text(args.get("reason"), "reason")
+    work_id = normalize_task_id(args.get("work_id") or _latest_work_for_session(sid) or "")
+
+    append_event({
+        "ev": "self_review", "sid": sid, "work_id": work_id,
+        "rework": level, "sentiment": sentiment, "reason": reason,
+    })
+    if work_id:
+        value = load_open()
+        task = value.get("tasks", {}).get(work_id)
+        if task:
+            task["last_review"] = {"rework": level, "sentiment": sentiment, "at": now_ms()}
+            task["last_seen_at"] = now_ms()
+            save_open(value)
+    return {"work_id": work_id, "rework": level, "sentiment": sentiment, "reason": reason}
+
+
+# ---------------------------------------------------------------------------
+# Session <-> work bindings (many-to-many)
+
+CLAIM_TTL_MIN = 30.0
+
+
+def load_bindings() -> dict:
+    path = paths()["bindings"]
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+            return data if isinstance(data, dict) else {"bindings": []}
+    except Exception:
+        return {"bindings": []}
+
+
+def save_bindings(value: dict) -> None:
+    write_json(paths()["bindings"], value)
+
+
+def bind_session(sid: str, work_id: str, ttl_min: float = CLAIM_TTL_MIN) -> bool:
+    """Point this session at a work; one active binding per session."""
+    if not sid or not work_id:
+        return False
+    value = load_bindings()
+    now = now_ms()
+    kept = []
+    for item in value.get("bindings", []):
+        if item.get("sid") == sid:
+            continue  # this session moves to the new work
+        if float(item.get("expires_at") or 0) <= now:
+            continue  # expired
+        kept.append(item)
+    kept.append({"sid": sid, "work_id": work_id, "claimed_at": now,
+                 "expires_at": now + int(ttl_min * 60000)})
+    value["bindings"] = kept
+    save_bindings(value)
+    # keep the legacy field in sync while old consumers still read it
+    tasks = load_open().get("tasks", {})
+    if work_id in tasks:
+        tasks[work_id]["last_sid"] = sid
+        tasks[work_id]["active_until"] = now + int(ttl_min * 60000)
+        value_open = load_open()
+        value_open["tasks"][work_id] = tasks[work_id]
+        save_open(value_open)
+    return True
+
+
+def resolve_binding(sid: str) -> str:
+    """The work this session is currently bound to, or an empty string."""
+    now = now_ms()
+    candidates = [
+        item for item in load_bindings().get("bindings", [])
+        if item.get("sid") == sid and float(item.get("expires_at") or 0) > now
+    ]
+    if not candidates:
+        return ""
+    newest = max(candidates, key=lambda item: int(item.get("claimed_at") or 0))
+    return str(newest.get("work_id") or "")
+
+
+def normalize_bindings() -> int:
+    """One active binding per session: keep the newest, drop the rest."""
+    value = load_bindings()
+    now = now_ms()
+    best: dict[str, dict] = {}
+    dropped = 0
+    for item in value.get("bindings", []):
+        sid = item.get("sid")
+        if not sid or float(item.get("expires_at") or 0) <= now:
+            dropped += 1
+            continue
+        current = best.get(sid)
+        if current is None or int(item.get("claimed_at") or 0) > int(current.get("claimed_at") or 0):
+            if current is not None:
+                dropped += 1
+            best[sid] = item
+        else:
+            dropped += 1
+    if dropped:
+        value["bindings"] = list(best.values())
+        save_bindings(value)
+    return dropped
+
+
+def release_binding(sid: str) -> None:
+    value = load_bindings()
+    now = now_ms()
+    value["bindings"] = [item for item in value.get("bindings", [])
+                         if not (item.get("sid") == sid and float(item.get("expires_at") or 0) > now)]
+    save_bindings(value)
+
+
+def migrate_bindings() -> int:
+    """One-time: turn legacy last_sid into an active binding."""
+    moved = 0
+    value = load_bindings()
+    have = {(item.get("sid"), item.get("work_id")) for item in value.get("bindings", [])}
+    now = now_ms()
+    newest: dict[str, dict] = {}
+    for task in load_open().get("tasks", {}).values():
+        sid = task.get("last_sid")
+        if sid:
+            keep = newest.get(sid)
+            if keep is None or int(task.get("last_seen_at") or 0) > int(keep.get("last_seen_at") or 0):
+                newest[sid] = task
+    active_sids = {item.get("sid") for item in value.get("bindings", [])
+                   if float(item.get("expires_at") or 0) > now}
+    allowed = {sid: task.get("task_id") for sid, task in newest.items() if sid not in active_sids}
+    for task in load_open().get("tasks", {}).values():
+        sid, work_id = task.get("last_sid"), task.get("task_id")
+        if not sid or not work_id or (sid, work_id) in have:
+            continue
+        if allowed.get(sid) != work_id:
+            continue
+        value.setdefault("bindings", []).append({
+            "sid": sid, "work_id": work_id,
+            "claimed_at": int(task.get("last_seen_at") or now),
+            "expires_at": now + int(CLAIM_TTL_MIN * 60000),
+        })
+        moved += 1
+    if moved:
+        save_bindings(value)
+    return moved
+
+
+def record_human_wait(sid: str, reason: str, started_at: int, ended_at: int | None = None) -> dict:
+    ended = int(ended_at or now_ms())
+    waiting_ms = max(0, ended - int(started_at))
+    event = {
+        "ev": "human_wait", "sid": sid, "reason": reason or "ask-human",
+        "started_at": int(started_at), "ended_at": ended, "waiting_ms": waiting_ms,
+    }
+    append_event(event)
+    return event
+
+
+# ---------------------------------------------------------------------------
+# Silent retirement: no activity for two weeks -> pending retire, never auto-close
+
+
+def mark_stale_works(days: float | None = None, now: int | None = None) -> list[str]:
+    threshold = days if days is not None else RETIRE_DAYS
+    cutoff = (now if now is not None else now_ms()) - int(threshold * 86400000)
+    value = load_open()
+    marked: list[str] = []
+    for task in value.get("tasks", {}).values():
+        if task.get("state", "open") != "open":
+            continue
+        if int(task.get("last_seen_at") or 0) >= cutoff:
+            continue
+        task["state"] = "pending_retire"
+        task["pending_retire_at"] = now_ms()
+        marked.append(str(task.get("task_id")))
+        append_event({"ev": "work_pending_retire", "work_id": task.get("task_id"),
+                      "days": threshold})
+    if marked:
+        save_open(value)
+    return marked
+
+
+def pending_retire_works() -> list[dict]:
+    return [task for task in load_open().get("tasks", {}).values()
+            if task.get("state") == "pending_retire"]
+
+
+def format_pending_retire(limit: int = 5) -> str:
+    works = pending_retire_works()
+    if not works:
+        return ""
+    names = "、".join(f"{w.get('task_id')}（{ago(w.get('last_seen_at', 0))}）" for w in works[:limit])
+    more = f" 等 {len(works)} 条" if len(works) > limit else ""
+    return (
+        f"[crop] 有长期没动的工作待清退：{names}{more}。"
+        "问用户一句：这些还要继续吗？要继续 / 先挂起 / 确认清退。"
+    )

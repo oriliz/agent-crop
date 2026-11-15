@@ -24,7 +24,7 @@ block 通过 `task_link` 事件关联到 task；task 记录累计 block 数和�
 
 ## 数据模型
 
-默认目录：`~/.ai-coding-efficiency/data`（0700）。
+默认目录：`~/.agentcrop/data`（0700）。
 
 ```
 events.jsonl                 # 所有事件，带 host
@@ -47,7 +47,7 @@ config.json                  # red_min / remind_min / user_facing
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `KIT_DATA_DIR` | `$KIT_SHARED_HOME/data` | 最高优先级 |
-| `KIT_SHARED_HOME` | `~/.ai-coding-efficiency` | 共享根 |
+| `KIT_SHARED_HOME` | `~/.agentcrop` | 共享根 |
 | `KIT_TASK_RED_MIN` | `30` | 红线分钟 |
 | `KIT_TASK_REMIND_MIN` | `15` | 提醒间隔 |
 | `KIT_USER_FACING` | `1` | 是否让 AI 说一句人话 |
@@ -63,7 +63,7 @@ config.json                  # red_min / remind_min / user_facing
 | `SessionEnd` | 记录 session 结束 |
 
 工具通过 `.mcp.json` 暴露；模型侧名字形如
-`mcp__plugin_ai-coding-efficiency-kit_probe__probe_report`。
+`mcp__plugin_agent-crop_probe__probe_report`。
 
 ## DSH 映射
 
@@ -88,20 +88,20 @@ KIT_DATA_DIR=/tmp/probe-e2e claude --plugin-dir ~/agent-crop
 
 # 正式安装（已执行，user scope）
 claude plugin marketplace add ~/agent-crop
-claude plugin install ai-coding-efficiency-kit@ai-coding-kit -s user
+claude plugin install agent-crop@agent-crop -s user
 
 # 核对
-claude plugin list   # 应显示 ai-coding-efficiency-kit@ai-coding-kit，enabled
+claude plugin list   # 应显示 agent-crop@agent-crop，enabled
 ```
 
 安装后需要重启 Claude Code（或新开会话）才会加载插件；当前已运行的会话不会热加载。
-验证：上下文出现 `[探针]`，调用 `probe_report` 后 `~/.ai-coding-efficiency/data/events.jsonl` 有 `host:"claude-code"`。
+验证：上下文出现 `[crop]`，调用 `probe_report` 后 `~/.agentcrop/data/events.jsonl` 有 `host:"claude-code"`。
 
 卸载：
 
 ```bash
-claude plugin uninstall ai-coding-efficiency-kit@ai-coding-kit
-claude plugin marketplace remove ai-coding-kit
+claude plugin uninstall agent-crop@agent-crop
+claude plugin marketplace remove agent-crop
 ```
 
 ### DSH
@@ -113,20 +113,20 @@ dsh plugin --profile coding add ~/agent-crop
 dsh --profile coding --port 3081 --no-open
 ```
 
-验证：`~/.ai-coding-efficiency/data/events.jsonl` 出现 `host:"dsh"`；模型能调用 `probe_report`。
+验证：`~/.agentcrop/data/events.jsonl` 出现 `host:"dsh"`；模型能调用 `probe_report`。
 
 卸载：
 
 ```bash
 dsh plugin --profile coding remove agent-crop-dsh
 rm -rf ~/.dsh/profiles/coding     # 如果整个 profile 都不要了
-# 数据目录不动，手工删除 ~/.ai-coding-efficiency
+# 数据目录不动，手工删除 ~/.agentcrop
 ```
 
 ## 已验证
 
-- Claude Code 插件：`claude plugin validate` 通过；`--plugin-dir` 端到端能注入 `[探针]`、调用 `probe_report`、写入 events/reports/blocks。
-- DSH：`coding` profile 启动无错误；headless 端到端能注入 `[探针]`、调用原生 `probe_report`、写入 `turn/step`。
+- Claude Code 插件：`claude plugin validate` 通过；`--plugin-dir` 端到端能注入 `[crop]`、调用 `probe_report`、写入 events/reports/blocks。
+- DSH：`coding` profile 启动无错误；headless 端到端能注入 `[crop]`、调用原生 `probe_report`、写入 `turn/step`。
 - 跨宿主：同一 `KIT_DATA_DIR` 下同时出现 `host:"claude-code"` 与 `host:"dsh"`；DSH 能看到 Claude 写入的 open task。
 
 ## 已知边界

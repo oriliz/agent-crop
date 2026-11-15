@@ -31,6 +31,21 @@ def dispatch(payload: dict):
     if core is None:
         raise RuntimeError("probe core unavailable")
 
+    if op == "record_human_wait":
+        return core.record_human_wait(
+            sid,
+            str(payload.get("reason") or "ask-human"),
+            int(payload.get("started_at") or 0),
+            int(payload.get("ended_at") or 0) or None,
+        )
+    if op == "pending_retire":
+        return core.format_pending_retire()
+    if op == "mark_stale":
+        return core.mark_stale_works()
+    if op == "binding":
+        return core.resolve_binding(sid)
+    if op == "record_review":
+        return core.record_review(payload.get("args") or {}, context)
     if op == "record_report":
         return core.record_report(payload.get("args") or {}, context)
     if op == "record_session_start":
@@ -51,13 +66,19 @@ def dispatch(payload: dict):
     if op == "open_tasks":
         return core.open_tasks(workspace, int(payload.get("limit") or 3))
     if op == "start_hint":
-        tasks = core.open_tasks(workspace, int(payload.get("limit") or 3))
-        return core.format_start_hint(tasks)
+        tasks = core.open_tasks(workspace, int(payload.get("limit") or 3), sid)
+        return core.format_start_hint(tasks, core.open_works_count(), sid)
+    if op == "works":
+        tasks = core.open_tasks(workspace, int(payload.get("limit") or 20), sid)
+        return tasks
     if op == "open_tasks_text":
         tasks = core.open_tasks(workspace, int(payload.get("limit") or 3))
         return core.format_open_tasks(tasks)
     if op == "maybe_reminder":
         return core.maybe_reminder(sid)
+
+    if op == "miss_nudge":
+        return core.miss_nudge(int(payload.get("streak") or 1))
     if op == "work_status":
         return core.work_status_line(workspace, sid)
     if op == "work_suspend":
@@ -68,6 +89,15 @@ def dispatch(payload: dict):
         return core.archive_work(payload.get("work_id") or "", payload.get("reason") or "manual")
     if op == "work_archive_stale":
         return core.archive_stale(float(payload.get("days") or 14))
+    if op == "global":
+        args = payload.get("args") or {}
+        return core.improvement_summary(max(1.0, float(args.get("days") or 7)))
+    if op == "day":
+        args = payload.get("args") or {}
+        return core.day_detail(str(args.get("date") or core.today()))
+    if op == "session":
+        args = payload.get("args") or {}
+        return core.session_summary(str(args.get("sid") or ""))
     if op == "first_prompt":
         return not any(event.get("ev") == "prompt" for event in core.load_events(sid=sid))
     raise ValueError(f"unknown op: {op}")
