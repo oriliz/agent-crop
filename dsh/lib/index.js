@@ -73,6 +73,8 @@ export const Config = z.object({
     .description('单轮红线：一轮超过多少分钟提醒'),
   remindMin: z.number().min(1).max(240).default(15).volatile()
     .description('提醒冷却：同一条提醒多少分钟内不重复'),
+  missMin: z.number().min(0).max(60).default(2).volatile()
+    .description('缺报检测：一轮超过多少分钟且没有上报，下一轮提醒补记'),
 });
 
 function setting(value, fallback) {
@@ -114,7 +116,7 @@ export function apply(ctx, config = {}) {
   const stateFor = (sid) => {
     let state = states.get(sid);
     if (!state) {
-      state = { started: false, blockStart: null, pending: [], injected: new Set(), calls: new Map() };
+      state = { started: false, blockStart: null, pending: [], injected: new Set(), calls: new Map(), reported: false, missed: 0 };
       states.set(sid, state);
     }
     return state;
@@ -228,6 +230,7 @@ export function apply(ctx, config = {}) {
         },
       });
       if (!result) throw new Error('probe_report could not be recorded');
+      state.reported = true;
       return {
         ok: true,
         phase: result.phase,
@@ -253,6 +256,7 @@ export function apply(ctx, config = {}) {
         if (source?.kind !== 'user') return;
         const text = textOf(event.data);
         state.blockStart = Date.now();
+        state.reported = false;
         state.pending = [];
         callCore({ op: 'record_prompt', context: { sid, workspace }, text });
         return;
@@ -280,8 +284,11 @@ export function apply(ctx, config = {}) {
       }
 
       if (event.type === 'turn/end') {
+        const minutes = state.blockStart ? (Date.now() - state.blockStart) / 60000 : 0;
+        if (minutes >= Number(setting(config.missMin, 2)) && !state.reported) state.missed += 1;
         callCore({ op: 'record_stop', context: { sid, workspace } });
         state.blockStart = null;
+        state.reported = false;
         state.pending = [];
       }
     } catch (error) {
@@ -312,6 +319,14 @@ export function apply(ctx, config = {}) {
       if (state.pending.length) {
         notes.push(...state.pending);
         state.pending = [];
+      }
+
+      if (state.missed > 0) {
+        const streak = state.missed;
+        state.missed = 0;
+        notes.push(streak === 1
+          ? '[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 probe_report 写一行。'
+          : `[crop] 已经连续 ${streak} 轮没有登记工作状态。请现在调 probe_report 写一行：在做什么 / 卡在哪 / 下一步。`);
       }
 
       // Turn-start (step 1) or post-compaction: one line of current work state.

@@ -168,3 +168,24 @@ test('tool results record the tool name captured from tool/call', async (t) => {
   const tools = text.trim().split('\n').map((line) => JSON.parse(line)).filter((row) => row.ev === 'tool');
   assert.equal(tools.at(-1).name, 'Bash');
 });
+
+test('asks for a report after a substantial turn without one', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3', missMin: 0 });
+  const session = fakeSession('s-miss');
+  const event = ctx.handlers.get('session/event');
+  const preStep = ctx.handlers.get('agent/pre-step');
+
+  event(session, {
+    type: 'user/message',
+    data: { source: { kind: 'user' }, content: [{ type: 'text', text: '干活' }] },
+  });
+  event(session, { type: 'turn/end', data: {} });
+
+  const decision = await preStep({ agent: { session }, turn: 2, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
+  assert.ok(decision.messages.some((message) => message.content[0].text.includes('没有登记')));
+});
