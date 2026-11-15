@@ -137,6 +137,14 @@ class StatusViewTest(unittest.TestCase):
         core.save_open(value)
         self.assertIn("旧目标", core.work_status_line("/tmp/ws", "s-me"))
 
+    def test_start_hint_honors_an_existing_binding(self):
+        core = self.core
+        core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "甲"},
+                           {"sid": "s1", "workspace": "/tmp/ws"})
+        hint = core.format_start_hint(core.open_tasks("/tmp/ws", 3, "s1"), core.open_works_count(), "s1")
+        self.assertIn("当前工作", hint)
+        self.assertNotIn("哪个属于本会话", hint)
+
     def test_start_hint_requires_binding(self):
         core = self.core
         core.record_report({"phase": "start", "task_id": "t1", "summary": "做设计", "goal": "甲"},

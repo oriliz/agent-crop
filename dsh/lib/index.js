@@ -467,7 +467,7 @@ export function apply(ctx, config = {}) {
       if (!state.started) {
         state.started = true;
         callCore({ op: 'record_session_start', context: { sid, workspace } });
-        const hint = callCore({ op: 'start_hint', workspace, limit: 3 });
+        const hint = callCore({ op: 'start_hint', context: { sid, workspace }, limit: 3 });
         if (hint) notes.push(hint);
       }
 

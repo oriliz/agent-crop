@@ -250,3 +250,30 @@ test('stays quiet when the session is really bound', async (t) => {
   const decision = await ctx.handlers.get('agent/pre-step')({ agent: { session }, turn: 1, step: 2 }, async () => ({ kind: 'enter', messages: [] }));
   assert.ok(!decision.messages.some((message) => message.content[0].text.includes('还没有绑定')));
 });
+
+test('first turn honors an existing binding instead of listing candidates', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const session = fakeSession('s-first');
+  const tool = ctx.registered.find((item) => item.name === 'crop_report');
+  await tool.execute(
+    { phase: 'start', task_id: 'first-work', summary: '干活', goal: '把活干完' },
+    { agent: { session } },
+  );
+
+  // a fresh process reads the same store; the first step must show the bound work
+  const second = fakeCtx();
+  apply(second, { python: 'python3' });
+  const sameSession = fakeSession('s-first');
+  const decision = await second.handlers.get('agent/pre-step')(
+    { agent: { session: sameSession }, turn: 1, step: 1 },
+    async () => ({ kind: 'enter', messages: [] }),
+  );
+  const text = decision.messages.map((m) => m.content[0].text).join('\n');
+  assert.ok(text.includes('当前工作'), text);
+  assert.ok(!text.includes('哪个属于本会话'), text);
+});

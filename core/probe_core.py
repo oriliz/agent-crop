@@ -748,7 +748,10 @@ def ago(ms: int) -> str:
 def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
     if not tasks:
         return "[crop] 本机当前没有进行中的工作。新开一条：crop_report(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\")"
-    claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
+    bound_id = resolve_binding(sid) if sid else ""
+    claimed = next((task for task in tasks if bound_id and task.get("task_id") == bound_id), None)
+    if not claimed:
+        claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
     if claimed:
         return work_status_line(None, sid)
     count = total if total is not None else len(tasks)
@@ -805,7 +808,10 @@ def ago(ms: int) -> str:
 def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
     if not tasks:
         return "[crop] 本机当前没有进行中的工作。新开一条：crop_report(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\")"
-    claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
+    bound_id = resolve_binding(sid) if sid else ""
+    claimed = next((task for task in tasks if bound_id and task.get("task_id") == bound_id), None)
+    if not claimed:
+        claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
     if claimed:
         return work_status_line(None, sid)
     count = total if total is not None else len(tasks)
