@@ -76,8 +76,8 @@ test('tool execute records a report through the Python core', async (t) => {
 
 test('protocol forbids starting work before claiming and forces side issues aside', async () => {
   const source = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8');
-  assert.match(source, /crop switch/);
-  assert.match(source, /先绑定，再侦察/);
+  assert.match(source, /phase="progress"/);
+  assert.match(source, /绑定只用这个工具/);
   assert.match(source, /category="side-issue"/);
   assert.match(source, /禁止新建任务/);
 });

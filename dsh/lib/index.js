@@ -33,7 +33,7 @@ const CATEGORIES = [
 
 const PROTOCOL_TEXT = [
   'Crop 探针协议：',
-  '- 开工先绑定工作：续接已有工作用 crop switch <work_id>，新开工作用 probe_report(phase="start", task_id="<短名>", summary="<一句话>")。task_id 用 2-3 个词的短名（panel-design / readme / oss-maint），细节写进 goal；分不清时先看未完成工作再决定。先绑定，再侦察；绑定前不要读代码、不要跑命令。',
+  '- 开工先绑定工作：直接调 probe_report(phase="progress", task_id=<候选 id>, summary="续接") 续接，或 probe_report(phase="start", task_id="<短名>", summary="<一句话>") 新开。绑定只用这个工具，不要先找命令、不要先侦察。task_id 用 2-3 个词的短名，细节写进 goal。',
   '- 收到 [crop] 提醒时，先对用户说一句人话，再调用 probe_report(phase="blocked" 或 "progress", ...)，写清卡在哪 / 为什么 / 证据，并给 verdict：justified（任务本身难）/ not-justified（自己走错路）。',
   '- 与当前工作无关的问题：先用一句话回答，然后 probe_report(phase="progress", task_id=<当前工作>, category="side-issue", summary="<一句话>") 记为枝节。禁止新建任务、禁止现场排查，除非用户明确要求现在做。',
   '- 用户表示满意或明确结束时调用 probe_report(phase="end", ...)，顺手写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',

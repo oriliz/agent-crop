@@ -52,3 +52,31 @@
 | 直接回答，不绑定 | 协议里的绑定条款不够硬，或被当成背景信息 |
 | 回答了还顺手给方案 | 支线条款不够硬，或缺少「不展开」的默认动作 |
 | 绑定了但绑错工作 | 候选列表缺少足够信息（goal 太短） |
+
+
+## 铁律：必须用干净的 DSH_HOME
+
+2026-11-15 踩过的坑：只隔离 profile 和数据目录不够。**排队消息、注记、凭证都跟着 `DSH_HOME` 走**，同一个 home 下的新会话会收到别的会话排队的消息——测试里 Agent 收到的可能根本不是你发的 prompt。
+
+干净环境的最低要求：
+
+```bash
+export DSH_HOME=~/.dsh-e2e          # 独立 home：配置、profile、凭证、队列全隔离
+dsh plugin --profile lab add <被测代码路径>
+```
+
+## 跑一次（脚本）
+
+```bash
+python3 tests/behavior/run_clean.py --scenario s1-bind --prompt "继续吧"
+```
+
+脚本做四件事：建独立数据目录并播种、跑一次 `dsh --profile lab`、从会话转录里抽出注入与工具调用、做三项校验。
+
+## 三项校验，不过就判 INVALID
+
+1. 会话里第一条用户消息 == 我发的 prompt
+2. 注入里出现当前版本标记（默认 `绑定只用 probe_report`）
+3. 没有第三方 `agent/inbox/spliced` 用户消息
+
+INVALID 的跑不计入结果，必须重跑。

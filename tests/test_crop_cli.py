@@ -143,8 +143,9 @@ class StatusViewTest(unittest.TestCase):
                            {"sid": "s1", "workspace": "/tmp/ws"})
         hint = core.format_start_hint(core.open_tasks("/tmp/ws", 3))
         self.assertIn("绑定", hint)
-        self.assertIn("crop switch", hint)
-        self.assertIn("crop switch t1", hint)
+        self.assertIn("probe_report", hint)
+        self.assertIn('task_id="t1"', hint)
+        self.assertNotIn("crop switch", hint)
 
     def test_side_issue_report_does_not_create_task(self):
         core = self.core
