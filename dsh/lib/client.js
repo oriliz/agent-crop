@@ -685,6 +685,10 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-session-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr); gap: 14px; align-items: start; }
 .crop-session-main { display: grid; gap: 14px; min-width: 0; }
 .crop-reflect { position: sticky; top: 8px; max-height: calc(100vh - 240px); overflow-y: auto; }
+@media (max-width: 900px) {
+  .crop-session-grid { grid-template-columns: 1fr; }
+  .crop-reflect { position: static; max-height: none; }
+}
 .crop-pair { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start; padding: 8px 0; border-top: 1px solid rgba(160, 180, 230, .10); }
 .crop-pair-body { display: grid; gap: 6px; min-width: 0; }
 .crop-pair-no { color: #7f9fe0; font-variant-numeric: tabular-nums; padding-top: 14px; }
