@@ -27,8 +27,19 @@ events = os.path.join(data, 'events.jsonl')
 rows = [json.loads(line) for line in open(events, encoding='utf-8') if line.strip()]
 now = int(__import__('time').time() * 1000)
 for row in rows:
+    if row.get('ev') == 'session_start':
+        row['t'] = now - 40 * 60 * 1000
     if row.get('ev') == 'prompt':
         row['t'] = now - 35 * 60 * 1000
+# A 35-minute turn with no observed interaction is not active time (the
+# accounting contract counts gaps under IDLE_MIN only).  Seed two tool calls so
+# the synthetic block really has 35 minutes of activity to nudge about.
+for minutes_ago in (20, 10):
+    rows.append({
+        'ev': 'tool', 'sid': 'smoke-1', 'name': 'Bash', 'is_error': False,
+        't': now - minutes_ago * 60 * 1000, 'host': 'smoke',
+    })
+rows.sort(key=lambda row: int(row.get('t') or 0))
 open(events, 'w', encoding='utf-8').write(
     ''.join(json.dumps(row, ensure_ascii=False) + '\n' for row in rows)
 )
