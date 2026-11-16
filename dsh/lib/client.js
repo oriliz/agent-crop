@@ -91,7 +91,9 @@ window.__ModuleLoader__.load({
   display: grid;
   gap: 14px;
   align-content: start;
-  max-width: 720px;
+  width: 100%;
+  max-width: 1120px;
+  box-sizing: border-box;
   font-size: 13px;
 }
 
