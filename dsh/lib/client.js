@@ -665,7 +665,11 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-tl-cap { margin-bottom: 6px; }
 .crop-reflect { display: grid; grid-template-columns: 1fr 1.3fr; gap: 18px; padding: 12px 16px; font-size: 12px; }
 .crop-badge { margin-left: 6px; border: 1px solid rgba(160, 180, 230, .22); border-radius: 999px; padding: 0 6px; font-size: 9.5px; color: #93a1c2; }
-.crop-reflect-verdict { margin: 6px 0 4px; }
+.crop-reflect-meta { display: flex; align-items: center; gap: 6px; margin: 6px 0 5px; font-size: 11.5px; }
+.crop-verdict-tag { font-size: 10.5px; line-height: 17px; padding: 0 8px; border-radius: 999px; border: 1px solid rgba(160, 180, 230, .28); color: #c6d2ea; }
+.crop-verdict-tag--justified { color: #9fd8a8; border-color: rgba(110, 200, 130, .45); }
+.crop-verdict-tag--not-justified { color: #f0a9a9; border-color: rgba(240, 132, 132, .45); }
+.crop-verdict-tag--unknown { color: #a9b6d4; }
 .crop-reflect-cause { line-height: 1.6; color: #b9c6e2; }
 .crop-imp-row { display: flex; gap: 6px; padding: 4px 0; line-height: 1.5; color: #c6d2ea; }
 .crop-imp-main { flex: 1; min-width: 0; }
@@ -972,11 +976,18 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const reflect = h('div', { key: 'reflect', className: 'crop-card crop-reflect' },
         h('div', null,
           h('div', { className: 'crop-muted crop-small' }, '本会话反思 ', h('span', { className: 'crop-badge' }, '自评 · 待复核')),
-          reflection.verdict ? h('div', { className: 'crop-reflect-verdict' },
-            h('b', null, enumLabel('verdict', reflection.verdict)),
-            h('span', { className: 'crop-muted crop-small' },
-              ` ${reflection.work_id || ''}${reflection.revisions ? ` · 改口 ${reflection.revisions} 次` : ''}`)) : null,
-          h('div', { className: 'crop-reflect-cause' }, reflection.cause || '还没有上报过反思。')),
+          reflection.verdict || reflection.cause
+            ? h('div', { className: 'crop-reflect-meta' },
+                h('span', { className: 'crop-muted' }, '判定'),
+                h('span', { className: `crop-verdict-tag crop-verdict-tag--${reflection.verdict || 'unknown'}` },
+                  enumLabel('verdict', reflection.verdict || 'unknown')),
+                h('span', { className: 'crop-muted crop-small' }, [
+                  reflection.work_id ? labelOf(reflection.work_id) : '',
+                  reflection.revisions ? `改口 ${reflection.revisions} 次` : '',
+                ].filter(Boolean).join(' · ')))
+            : null,
+          h('div', { className: 'crop-reflect-cause' },
+            reflection.cause ? `当时：${reflection.cause}` : '还没有上报过反思。')),
         h('div', null,
           h('div', { className: 'crop-muted crop-small' }, 'AI 提出的改进'),
           improvements.length ? improvements.map((item, index) => {
