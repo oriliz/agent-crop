@@ -514,6 +514,185 @@ def validate_report(args: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Active time accounting
+#
+# A block is a wall-clock span between a prompt and the turn end, but work
+# minutes are not wall minutes: a gap in observed activity or an explicit wait
+# (the human left, an ask-human tool is open) is not agent time.  Issue #18
+# tracks the three ways the old accounting overcharged: a dangling block
+# crossing a session restart, a stop charged to "now" after hours of silence,
+# and wait events that were recorded but never subtracted.
+
+WAIT_EVENTS = ("user_wait", "idle_gap", "human_wait")
+
+
+def _last_session_start(sid: str) -> int:
+    floor = 0
+    for event in load_events(sid=sid):
+        if event.get("ev") == "session_start":
+            floor = max(floor, int(event.get("t") or 0))
+    return floor
+
+
+def _valid_block_start(sid: str, value) -> int | None:
+    """A block start only counts if it belongs to the current session turn."""
+    try:
+        start = int(value or 0)
+    except Exception:
+        return None
+    if not start or start > now_ms():
+        return None
+    floor = _last_session_start(sid)
+    # A host may record the prompt a few hundred ms before its session_start
+    # in the same turn; only a start from a previous generation is stale.
+    if floor and start < floor - 5000:
+        return None
+    return start
+
+
+def _wait_span(event: dict) -> tuple[int, int] | None:
+    kind = event.get("ev")
+    stamp = int(event.get("t") or 0)
+    if kind == "human_wait":
+        start = int(event.get("started_at") or stamp)
+        end = int(event.get("ended_at") or stamp)
+    elif kind in ("user_wait", "idle_gap"):
+        end = stamp
+        start = end - int(event.get("waiting_ms") or event.get("gap_ms") or 0)
+    else:
+        return None
+    if end <= start:
+        return None
+    return start, end
+
+
+def _wait_ms(sid: str, start: int, end: int) -> int:
+    """Merged wait milliseconds overlapping [start, end] for one session."""
+    spans = []
+    for event in load_events(sid=sid):
+        if event.get("ev") not in WAIT_EVENTS:
+            continue
+        span = _wait_span(event)
+        if not span:
+            continue
+        left, right = max(span[0], start), min(span[1], end)
+        if right > left:
+            spans.append((left, right))
+    spans.sort()
+    total, cur_left, cur_right = 0, None, None
+    for left, right in spans:
+        if cur_right is None or left > cur_right:
+            if cur_right is not None:
+                total += cur_right - cur_left
+            cur_left, cur_right = left, right
+        else:
+            cur_right = max(cur_right, right)
+    if cur_right is not None:
+        total += cur_right - cur_left
+    return total
+
+
+def active_ms(sid: str, start: int, end: int) -> int:
+    """Observed activity between start and end.
+
+    Count only gaps between adjacent events (and the boundaries) that are
+    shorter than IDLE_MIN; a longer silence is the human being away, not work.
+    Explicit wait spans are subtracted even inside a short gap.
+    """
+    try:
+        start, end = int(start), int(end)
+    except Exception:
+        return 0
+    if end <= start:
+        return 0
+    points = {start, end}
+    for event in load_events(sid=sid):
+        stamp = int(event.get("t") or 0)
+        if start <= stamp <= end:
+            points.add(stamp)
+    threshold = int(IDLE_MIN * 60000)
+    active = 0
+    ordered = sorted(points)
+    for left, right in zip(ordered, ordered[1:]):
+        if right - left <= threshold:
+            active += right - left
+    active -= _wait_ms(sid, start, end)
+    return max(0, active)
+
+
+def active_minutes(sid: str, start: int, end: int) -> float:
+    return round(active_ms(sid, start, end) / 60000.0, 1)
+
+
+def _just_returned(sid: str, window_ms: int = 90000) -> bool:
+    """True when the newest wait event is fresh: do not nudge on the doorstep."""
+    now = now_ms()
+    for event in reversed(load_events(sid=sid)):
+        span = _wait_span(event)
+        if not span:
+            continue
+        return now - span[1] <= window_ms
+    return False
+
+
+def _write_block(sid: str, start: int, end: int, work_id: str = "",
+                 abandoned: bool = False) -> dict:
+    end = max(int(start), int(end))
+    minutes = active_minutes(sid, start, end)
+    tools = [
+        event for event in load_events(sid=sid)
+        if event.get("ev") == "tool" and start <= int(event.get("t") or 0) <= end
+    ]
+    event = {
+        "ev": "stop", "sid": sid, "t": end, "block_start": start,
+        "minutes": minutes, "work_id": work_id,
+    }
+    if abandoned:
+        event["abandoned"] = True
+    append_event(event)
+    append_jsonl(os.path.join(paths()["blocks_dir"], f"{today()}.jsonl"), {
+        "t": end,
+        "host": host(),
+        "sid": sid,
+        "start": start,
+        "end": end,
+        "minutes": minutes,
+        "wall_minutes": round(max(0.0, (end - start) / 60000.0), 1),
+        "active_version": 1,
+        "abandoned": bool(abandoned),
+        "tools": len(tools),
+        "failed_tools": sum(1 for event in tools if event.get("is_error")),
+        "work_id": work_id,
+    })
+    if work_id:
+        link_task(work_id, start, sid)
+    return event
+
+
+def _close_dangling(sid: str, end: int | None = None,
+                    trust_end: bool = False) -> bool:
+    """Close a prompt that never got its turn_end.
+
+    A host restart is not evidence that the old turn kept running, so the
+    default truncates at the last event we actually saw.  A host that is alive
+    and explicitly ending the session (``trust_end``) may use the full span.
+    """
+    start = current_block_start(sid)
+    if not start:
+        return False
+    boundary = int(end or now_ms())
+    last = start
+    for event in load_events(sid=sid):
+        stamp = int(event.get("t") or 0)
+        if start <= stamp <= boundary:
+            last = max(last, stamp)
+    stop_at = boundary if trust_end else min(boundary, max(last, start))
+    work_id = resolve_binding(sid) or ""
+    _write_block(sid, start, stop_at, work_id, abandoned=True)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Report recording
 
 
@@ -523,13 +702,14 @@ def record_report(args: dict, context: dict | None = None) -> dict:
     runtime = read_runtime()
     sid = str(context.get("sid") or runtime.get("sid") or "unknown")
     workspace = str(context.get("workspace") or runtime.get("workspace") or os.getcwd())
-    block_start = context.get("block_start") or runtime.get("block_start")
-    minutes = 0.0
-    if block_start:
-        try:
-            minutes = max(0.0, (now_ms() - int(block_start)) / 60000.0)
-        except Exception:
-            minutes = 0.0
+    # Only use the shared runtime file when it belongs to this session; a stale
+    # block_start from another session is exactly what made two works charge
+    # the same wall clock in Issue #18.
+    block_start = context.get("block_start")
+    if not block_start and runtime.get("sid") == sid:
+        block_start = runtime.get("block_start")
+    block_start = _valid_block_start(sid, block_start)
+    minutes = active_minutes(sid, block_start, now_ms()) if block_start else 0.0
     record = {
         "t": now_ms(),
         "host": host(),
@@ -634,6 +814,13 @@ def record_session_start(sid: str, workspace: str) -> None:
         mark_stale_works()
     except Exception:
         pass
+    # A turn that never got its turn_end (host restart, interrupted turn) must
+    # not lend its start time to the next session.  Close it at the last event
+    # we actually saw, then open the new session boundary.
+    try:
+        _close_dangling(sid, now_ms())
+    except Exception:
+        pass
     append_event({"ev": "session_start", "sid": sid, "workspace": workspace})
     write_runtime(sid, workspace, None)
 
@@ -656,6 +843,14 @@ def _last_kind(sid: str, kinds: tuple[str, ...]) -> dict | None:
 
 
 def record_prompt(sid: str, prompt: str, workspace: str) -> None:
+    # A new prompt ends any previous turn that never got its turn_end (host
+    # without session_start, interrupted turn).  Close it at the last observed
+    # event before the new block starts, so its minutes are not lost and its
+    # start time cannot leak into this turn.
+    try:
+        _close_dangling(sid, now_ms())
+    except Exception:
+        pass
     last_stop = _last_kind(sid, ("stop",))
     if last_stop:
         try:
@@ -689,7 +884,10 @@ def current_block_start(sid: str) -> int | None:
         kind = event.get("ev")
         if kind == "prompt":
             return int(event.get("t") or 0) or None
-        if kind == "stop":
+        # A session boundary closes the previous generation of turns even if
+        # the dangling prompt never got a synthetic stop (older data, raced
+        # writes).  Never look past it.
+        if kind in ("stop", "session_start"):
             return None
     return None
 
@@ -730,28 +928,10 @@ def record_stop(sid: str) -> None:
     if not start:
         append_event({"ev": "stop", "sid": sid})
         return
-    end = now_ms()
-    minutes = max(0.0, (end - start) / 60000.0)
-    tools = [event for event in load_events(sid=sid) if event.get("ev") == "tool" and event.get("t", 0) >= start]
-    # 机械计时：块结束时只按本会话自己的绑定归属；没有绑定就是没有归属。
+    # Mechanical attribution: the block ends inside this session only, and the
+    # minutes are observed activity rather than raw wall clock (Issue #18).
     work_id = resolve_binding(sid) or ""
-    append_event({
-        "ev": "stop", "sid": sid, "block_start": start,
-        "minutes": round(minutes, 1), "work_id": work_id,
-    })
-    append_jsonl(os.path.join(paths()["blocks_dir"], f"{today()}.jsonl"), {
-        "t": end,
-        "host": host(),
-        "sid": sid,
-        "start": start,
-        "end": end,
-        "minutes": round(minutes, 1),
-        "tools": len(tools),
-        "failed_tools": sum(1 for event in tools if event.get("is_error")),
-        "work_id": work_id,
-    })
-    if work_id:
-        link_task(work_id, start, sid)
+    _write_block(sid, start, now_ms(), work_id)
     write_runtime(sid, read_runtime().get("workspace", ""), None)
 
 
@@ -766,6 +946,10 @@ def miss_nudge(streak: int) -> str:
 
 
 def record_session_end(sid: str) -> None:
+    try:
+        _close_dangling(sid, now_ms(), trust_end=True)
+    except Exception:
+        pass
     append_event({"ev": "session_end", "sid": sid})
 
 
@@ -849,6 +1033,10 @@ def _nudge_meta(health: dict, config: dict) -> dict:
 
 def maybe_work_reminder(sid: str) -> str:
     config = load_config()
+    # The human just came back from idle/ask-human: not the moment to crack the
+    # whip.  The next step will re-evaluate against active minutes.
+    if _just_returned(sid):
+        return ""
     task_id = _latest_work_for_session(sid)
     if not task_id:
         return ""
@@ -872,12 +1060,14 @@ def maybe_work_reminder(sid: str) -> str:
 def maybe_reminder(sid: str) -> str:
     """One call per step: the estimate ladder wins, legacy minutes are the net."""
     config = load_config()
+    if _just_returned(sid):
+        return ""
     task_id = _latest_work_for_session(sid)
     health = work_health(task_id) if task_id else None
     has_estimate = bool(health and health.get("expect_min"))
     start = current_block_start(sid)
     if start and not has_estimate:
-        minutes = max(0.0, (now_ms() - start) / 60000.0)
+        minutes = active_minutes(sid, start, now_ms())
         red = float(config["red_min"])
         if minutes >= red and not _cooldown_active(sid, float(config["remind_min"]), "red"):
             append_event({
@@ -1915,7 +2105,10 @@ def work_minutes(work_id: str) -> float:
         owner[canonical(start)] = linked_work
     linked: list[int] = [start for start, linked_work in owner.items() if linked_work == work_id]
     for start in linked:
-        total += table.get(start, 0.0)
+        # A link can point at a block that has not closed yet (crop_report
+        # start links the open block); do not add zero and then skip it below.
+        if start in table:
+            total += table[start]
 
     # the block that has not closed yet, on whichever session opened this work
     task = load_open().get("tasks", {}).get(work_id) or {}
@@ -1925,12 +2118,14 @@ def work_minutes(work_id: str) -> float:
         for event in events:
             if event.get("sid") != sid:
                 continue
-            if event.get("ev") == "prompt":
+            if event.get("ev") == "session_start":
+                open_start = None
+            elif event.get("ev") == "prompt":
                 open_start = int(event.get("t") or 0)
             elif event.get("ev") == "stop":
                 open_start = None
-        if open_start and open_start not in linked:
-            total += max(0.0, (now_ms() - open_start) / 60000.0)
+        if open_start and canonical(open_start) not in table:
+            total += active_minutes(sid, open_start, now_ms())
     return round(total, 1)
 
 
