@@ -838,15 +838,23 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const waits = (timeline.waits || []).filter((wait) => wait.t >= windowStart);
       const reports = (timeline.reports || []).filter((report) => report.t >= windowStart);
       const interventions = data.interventions || [];
-      const nearestIv = (mark) => {
-        let best = -1;
-        let bestGap = Infinity;
-        interventions.forEach((item, index) => {
-          const gap = Math.abs((item.at || 0) - mark.last);
-          if (gap < bestGap) { bestGap = gap; best = index; }
-        });
-        return bestGap <= 6 * 3600 * 1000 ? best : -1;
-      };
+      // Greedy one-to-one: each whip marker claims the nearest still-unused
+      // intervention. Two markers never point at the same reflection row.
+      const whipLink = new Map();
+      {
+        const used = new Set();
+        for (const whip of whips.slice().sort((a, b) => a.t - b.t)) {
+          const pool = interventions
+            .map((item, index) => ({ index, gap: Math.abs((item.at || 0) - whip.t) }))
+            .filter((item) => !used.has(item.index))
+            .sort((a, b) => a.gap - b.gap);
+          const pick = pool[0];
+          if (!pick || pick.gap > 6 * 3600 * 1000) continue;
+          used.add(pick.index);
+          whipLink.set(`${whip.work_id}|${whip.t}`, pick.index);
+        }
+      }
+      const nearestIv = (workId, mark) => whipLink.get(`${workId}|${mark.at}`) ?? -1;
 
       const laneMap = new Map();
       for (const block of blocks) {
@@ -907,7 +915,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           whipMarks.push(cluster);
         }
         const marks = whipMarks.map((mark, index) => {
-          const link = nearestIv(mark);
+          const link = nearestIv(lane.key, mark);
           const key = `${lane.key}:${index}`;
           markerLinks.push({ key, link });
           return h('img', {
