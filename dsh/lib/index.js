@@ -197,6 +197,17 @@ export function apply(ctx, config = {}) {
           path: '/api/agent-crop/session',
           handler: relay((url) => ({ op: 'session', args: { sid: url.searchParams.get('sid') ?? '' } })),
         }),
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/tool-health',
+          handler: relay((url) => ({
+            op: 'health',
+            args: {
+              days: Number(url.searchParams.get('days') ?? 7) || 7,
+              host: url.searchParams.get('host') || null,
+            },
+          })),
+        }),
       ];
       return () => { for (const dispose of disposers) { try { dispose?.(); } catch { /* gone */ } } };
     }, 'crop: data routes');
