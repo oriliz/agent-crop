@@ -42,7 +42,7 @@ th.num{text-align:right}
 .tab{background:#161920;border:1px solid #2a2f39;color:#aeb6c4;border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer}
 .tab.on{background:#233047;border-color:#3b5b8a;color:#dbe7ff}
 .view[hidden]{display:none}
-table.no-delta th:last-child,table.no-delta td:last-child{display:none}
+table.no-delta th.delta,table.no-delta td.delta{display:none}
 .diag{display:grid;grid-template-columns:10px 1fr;gap:8px;padding:8px 0;border-bottom:1px solid #1e2128}
 .diag:last-child{border-bottom:0}
 .diag .t{font-size:13px}
@@ -50,6 +50,15 @@ table.no-delta th:last-child,table.no-delta td:last-child{display:none}
 .diag .c{color:#6f7887;font-size:11px;margin-top:2px}
 .trend{color:#6f7887;font-size:11px;letter-spacing:.04em}
 .mini{color:#6f7887;font-size:10px;margin-top:2px}
+.hint{color:#6f7887;font-size:11px;margin:-6px 0 10px;line-height:1.6}
+tr.group td{color:#6f7887;font-size:11px;padding-top:14px;border-bottom:1px solid #23262d;letter-spacing:.04em}
+tr.row-red td{background:rgba(239,68,68,.06)}
+.meter{position:relative;height:16px;background:#1e2128;border-radius:4px;overflow:hidden;min-width:96px}
+.meter i{display:block;height:100%;opacity:.5}
+.meter b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:500;font-size:11px;color:#dbe7ff}
+.spark{display:flex;align-items:flex-end;gap:2px;height:18px}
+.spark i{display:block;width:6px;background:#3b5b8a;border-radius:1px 1px 0 0;min-height:2px}
+.spark i.zero{background:#23262d}
 .headline{background:#161920;border:1px solid #23262d;border-radius:10px;padding:10px 14px;font-size:13px}
 select.host{background:#161920;border:1px solid #2a2f39;color:#aeb6c4;border-radius:7px;padding:4px 8px;font-size:12px}
 .chart{display:flex;align-items:flex-end;gap:6px;height:180px;padding-top:6px}
@@ -88,12 +97,14 @@ footer{color:#6f7887;font-size:11px;padding:0 28px 24px}
   <div id="view-health" class="view" hidden>
     <div class="headline" id="health-headline"></div>
     <div class="cards" id="health-cards"></div>
-    <section><h2>被动采集 · 每个采集器在各自锚点上的覆盖率</h2>
-      <table><thead><tr><th>灯</th><th>工具</th><th>口径</th><th class="num">事件</th><th class="num">覆盖</th><th class="num">完整</th><th>7 日</th><th class="num">比上周</th></tr></thead>
+    <section><h2>被动采集</h2>
+      <div class="hint">覆盖 = 该类事件在自己锚点上的比例（会话 / 工作 / 收尾，悬停看 n/N）；趋势 = 每天的事件条数；红底 = 现在就该处理；灰条「按需」= 条件触发，不评判。</div>
+      <table><thead><tr><th>工具</th><th>口径</th><th class="num">事件</th><th>覆盖</th><th>完整</th><th>趋势（7 天）</th><th class="num delta">比上周</th></tr></thead>
         <tbody id="health-passive"></tbody></table>
     </section>
-    <section><h2>AI 主动上报 · 使用率与阶段闭环</h2>
-      <table><thead><tr><th>灯</th><th>工具</th><th>口径</th><th class="num">事件</th><th class="num">覆盖</th><th class="num">完整</th><th class="num">闭环</th><th>7 日</th><th class="num">比上周</th></tr></thead>
+    <section><h2>AI 主动上报</h2>
+      <div class="hint">闭环 = 有开始的工作里已收尾的比例；覆盖 = 工作类的口径；趋势 = 每天的事件条数。</div>
+      <table><thead><tr><th>工具</th><th>口径</th><th class="num">事件</th><th>覆盖</th><th>完整</th><th>闭环</th><th>趋势（7 天）</th><th class="num delta">比上周</th></tr></thead>
         <tbody id="health-active"></tbody></table>
     </section>
     <section><h2>诊断 · 哪些工具在一线是哑的</h2>
@@ -101,7 +112,7 @@ footer{color:#6f7887;font-size:11px;padding:0 28px 24px}
     </section>
   </div>
 </main>
-<footer>灯色 = 该工作活跃时长 ÷ 同类型同难度基线：&lt; 0.6 绿 · 0.6–1.5 黄 · ≥ 1.5 红。数字由事件机械生成，归因只引用 AI 自述。<br>健康度灯：绿 = 覆盖达标（会话 80% / 工作 70% / 收尾 80%）且字段完整 ≥ 95%；黄 = 有事件但低于阈值；红 = 该采的事件一条都没有；灰「按需」= 条件触发，只报计数不评判；灰「未上线」= 功能未实现。覆盖分母可在数字上悬停查看；指标全部从事件派生，不新增采集。</footer>
+<footer>灯色 = 该工作活跃时长 ÷ 同类型同难度基线：&lt; 0.6 绿 · 0.6–1.5 黄 · ≥ 1.5 红。数字由事件机械生成，归因只引用 AI 自述。<br>健康度：覆盖条颜色 = 状态（绿达标 / 黄偏低 / 红完全没采到），红条所在行加红底；灰条 = 不评判（按需事件或未上线）。趋势柱 = 每天的事件条数，悬停看具体日期；覆盖条悬停看 n/N（会话 / 工作 / 收尾口径）。指标全部从事件派生，不新增采集。</footer>
 <script>
 let rangeDays = 7;
 const LAMP = {green:'#4ade80', yellow:'#eab308', red:'#ef4444'};
@@ -198,18 +209,58 @@ if (hostSelect) hostSelect.addEventListener('change', () => load());
 const issueToggle = document.getElementById('only-issues');
 if (issueToggle) issueToggle.addEventListener('change', () => { onlyIssues = issueToggle.checked; load(); });
 
-function lampDot(row){
-  if (row.status === 'not-shipped') return '<span class="dot" style="background:#6b7280"></span>未上线';
-  if (row['class'] === 'on_demand') return '<span class="dot" style="background:#6b7280"></span>按需';
-  const color = LAMP[row.lamp] || '#6b7280';
-  const label = {green:'绿', yellow:'黄', red:'红'}[row.lamp] || '—';
-  return '<span class="dot" style="background:' + color + '"></span>' + label;
-}
 function pct(value){ return value == null ? '—' : Math.round(value * 100) + '%'; }
-function trendText(rows){
-  if (!rows || !rows.length) return '—';
-  return rows.map(row => row.count).join('·');
+
+function missingNote(row){
+  const entries = Object.entries(row.missing_fields || {});
+  if (!entries.length) return '';
+  return '<div class="mini">缺 ' + entries.map(([key, value]) => esc(key) + '×' + value).join('、') + '</div>';
 }
+
+function barCell(options){
+  const value = options.value;
+  if (value == null) return '<td><span class="muted">—</span></td>';
+  const width = Math.max(0, Math.min(100, Math.round(value * 100)));
+  return '<td><div class="meter" style="background:' + options.color + '1f" title="' + esc(options.title || '') + '">' +
+    '<i style="width:' + width + '%;background:' + options.color + '"></i>' +
+    '<b>' + pct(value) + '</b></div>' + (options.note || '') + '</td>';
+}
+
+function coverageCell(row){
+  if (row.status === 'not-shipped') return '<td><span class="muted">未上线</span></td>';
+  if (row['class'] === 'on_demand' || row.session_coverage == null) return '<td><span class="muted">—</span></td>';
+  const title = row.coverage_numerator != null
+    ? row.coverage_numerator + ' / ' + row.coverage_denominator + '（' + row.scope + '口径）'
+    : '';
+  const thresholds = {session: 0.8, work: 0.7, ended: 0.8, call: 0.9};
+  const value = row.session_coverage;
+  const threshold = thresholds[row['class']] || 0.8;
+  const color = value >= threshold ? '#4ade80' : (value > 0 ? '#eab308' : '#ef4444');
+  return barCell({value: value, color: color, title: title});
+}
+
+function closureCell(row, works){
+  if (row.status === 'not-shipped' || row.stage_closure == null) return '<td><span class="muted">—</span></td>';
+  const color = row.stage_closure >= 0.7 ? '#4ade80' : '#eab308';
+  const title = '已收尾 ' + (works.ended || 0) + ' / 已开始 ' + (works.started || 0);
+  return barCell({value: row.stage_closure, color: color, title: title});
+}
+
+function completenessCell(row){
+  if (!row.events) return '<td class="num"><span class="muted">—</span></td>';
+  const value = row.field_completeness;
+  const color = value >= 0.95 ? '#e6e6e6' : (value > 0 ? '#eab308' : '#ef4444');
+  return '<td class="num" style="color:' + color + '">' + pct(value) + missingNote(row) + '</td>';
+}
+
+function sparkline(rows){
+  if (!rows || !rows.length) return '—';
+  const max = Math.max(1, ...rows.map(row => row.count));
+  return '<div class="spark" title="每天的事件条数（7 天，悬停看某一天）">' + rows.map(row =>
+    '<i' + (row.count ? '' : ' class="zero"') + ' style="height:' + Math.max(2, Math.round(row.count / max * 18)) +
+    'px" title="' + esc(row.date + '：' + row.count + ' 条') + '"></i>').join('') + '</div>';
+}
+
 function deltaText(row){
   const delta = row.delta_vs_previous;
   if (delta == null) return row.events ? '<span class="muted">无上周</span>' : '—';
@@ -218,36 +269,41 @@ function deltaText(row){
   const color = up ? '#4ade80' : '#ef4444';
   return '<span style="color:' + color + '">' + (up ? '↑' : '↓') + Math.abs(Math.round(delta * 100)) + '%</span>';
 }
-function missingNote(row){
-  const entries = Object.entries(row.missing_fields || {});
-  if (!entries.length) return '';
-  return '<div class="mini">缺 ' + entries.map(([key, value]) => esc(key) + '×' + value).join('、') + '</div>';
-}
-function coverageCell(row){
-  if (row['class'] === 'on_demand') return '—';
-  if (row.status === 'not-shipped') return '—';
-  const value = pct(row.session_coverage);
-  if (row.coverage_denominator == null) return value;
-  const title = row.coverage_numerator + ' / ' + row.coverage_denominator;
-  return '<span title="' + esc(title) + '">' + value + '</span>';
-}
-function rowHtml(row, showClosure){
-  if (onlyIssues && (row.lamp === 'green' || row['class'] === 'on_demand' || row.status === 'not-shipped')) {
-    return '';
-  }
-  const closure = showClosure
-    ? (row.status === 'not-shipped' ? '—' : pct(row.stage_closure))
-    : '';
-  return '<tr><td>' + lampDot(row) + '</td>' +
+
+function rowHtml(row, showClosure, works){
+  const zeroCoverage = row.events > 0 && row.session_coverage === 0;
+  const rowClass = (row.lamp === 'red' || zeroCoverage) ? ' class="row-red"' : '';
+  return '<tr' + rowClass + '>' +
     '<td>' + esc(row.label) + '<span class="muted" style="margin-left:6px">' + esc(row.tool) + '</span></td>' +
     '<td class="muted">' + esc(row.scope || '') + '</td>' +
     '<td class="num">' + row.events + '</td>' +
-    '<td class="num">' + coverageCell(row) + '</td>' +
-    '<td class="num">' + (row.events ? pct(row.field_completeness) : '—') + missingNote(row) + '</td>' +
-    (showClosure ? '<td class="num">' + closure + '</td>' : '') +
-    '<td class="trend">' + trendText(row.trend) + '</td>' +
-    '<td class="num">' + deltaText(row) + '</td></tr>';
+    coverageCell(row) +
+    completenessCell(row) +
+    (showClosure ? closureCell(row, works) : '') +
+    '<td>' + sparkline(row.trend) + '</td>' +
+    '<td class="num delta">' + deltaText(row) + '</td></tr>';
 }
+
+function renderRows(tbodyId, rows, showClosure, works){
+  const groups = [
+    {title: '必采 · 直接决定数据能不能用', test: row => row['class'] !== 'on_demand' && row.status !== 'not-shipped'},
+    {title: '按需 · 条件触发，只看有没有在采', test: row => row['class'] === 'on_demand'},
+    {title: '未上线', test: row => row.status === 'not-shipped'},
+  ];
+  const visible = onlyIssues
+    ? rows.filter(row => row.lamp === 'red' || row.lamp === 'yellow')
+    : rows;
+  const span = showClosure ? 8 : 7;
+  const html = groups.map(group => {
+    const items = visible.filter(group.test);
+    if (!items.length) return '';
+    return '<tr class="group"><td colspan="' + span + '">' + group.title + '</td></tr>' +
+      items.map(row => rowHtml(row, showClosure, works)).join('');
+  }).join('');
+  document.getElementById(tbodyId).innerHTML = html ||
+    '<tr><td colspan="' + span + '" class="muted">没有异常。</td></tr>';
+}
+
 function syncHostOptions(hosts){
   const select = document.getElementById('host');
   if (!select) return;
@@ -257,24 +313,26 @@ function syncHostOptions(hosts){
   select.innerHTML = options.join('');
   select.value = hosts.includes(current) ? current : '';
 }
+
 function renderDiags(data){
   const diags = data.diagnostics || [];
-  document.getElementById('health-diags').innerHTML = diags.length ? diags.map(d => {
-    const color = d.severity === 'info' ? '#6b7280' : (d.severity === 'error' ? '#ef4444' : '#eab308');
-    const card = d.card ? ' · 卡 ' + esc(d.card) : '';
+  document.getElementById('health-diags').innerHTML = diags.length ? diags.map(diagnostic => {
+    const color = diagnostic.severity === 'info' ? '#6b7280'
+      : (diagnostic.severity === 'error' ? '#ef4444' : '#eab308');
+    const card = diagnostic.card ? ' · 卡 ' + esc(diagnostic.card) : '';
     return '<div class="diag"><span class="dot" style="background:' + color + '"></span><div>' +
-      '<div class="t">' + esc(d.title) + '</div>' +
-      '<div class="e">' + esc(d.evidence) + '</div>' +
-      '<div class="c">' + esc(d.cause) + card + '</div></div></div>';
+      '<div class="t">' + esc(diagnostic.title) + '</div>' +
+      '<div class="e">' + esc(diagnostic.evidence) + '</div>' +
+      '<div class="c">' + esc(diagnostic.cause) + card + '</div></div></div>';
   }).join('') : '<div class="muted">没有发现异常。</div>';
 }
 
 function renderHealth(data){
   const s = data.summary || {};
-  const headline = document.getElementById('health-headline');
-  if (headline) headline.textContent = s.headline || '';
   const sessions = data.sessions || {};
   const works = data.works || {};
+  const headline = document.getElementById('health-headline');
+  if (headline) headline.textContent = s.headline || '';
   const cards = [
     ['有效会话', sessions.eligible || 0, '共 ' + (sessions.total || 0) + ' 个，短会话不计'],
     ['工作', (works.ended || 0) + ' / ' + (works.started || 0), '已收尾 / 已开始'],
@@ -285,13 +343,11 @@ function renderHealth(data){
     '<div class="card"><div class="k">' + k + '</div><div class="v">' + (v == null ? '—' : v) + '</div>' +
     '<div class="n">' + note + '</div></div>').join('');
 
-  document.getElementById('health-passive').innerHTML =
-    (data.passive || []).map(row => rowHtml(row, false)).join('');
-  document.getElementById('health-active').innerHTML =
-    (data.active || []).map(row => rowHtml(row, true)).join('');
-  const hasPrevious = Boolean((data.summary || {}).has_previous);
+  const hasPrevious = Boolean(s.has_previous);
   document.querySelectorAll('#view-health table').forEach(table =>
     table.classList.toggle('no-delta', !hasPrevious));
+  renderRows('health-passive', data.passive || [], false, works);
+  renderRows('health-active', data.active || [], true, works);
   renderDiags(data);
   syncHostOptions(data.hosts || []);
 }
