@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal stdio MCP server exposing the probe_report tool.
+"""Minimal stdio MCP server exposing the crop tool.
 
 The Claude Code plugin starts this process through .mcp.json.  It speaks
 newline-delimited JSON-RPC on stdin/stdout and writes only to stderr for logs.
@@ -20,8 +20,12 @@ SERVER_NAME = "crop"
 SERVER_VERSION = "0.4.0"
 PROTOCOL_VERSION = "2024-11-05"
 
+TOOL_NAME = "crop"
+# 旧名保留为调用别名：升级后旧会话/旧配置仍能用，tools/list 只暴露新名。
+LEGACY_TOOL_NAMES = {"probe_report"}
+
 TOOL = {
-    "name": "probe_report",
+    "name": TOOL_NAME,
     "description": (
         "Record what the current long task is doing, why it is slow or blocked, "
         "and what comes next. Call it when the probe asks, or when the user "
@@ -101,7 +105,7 @@ def call_tool(arguments: dict) -> dict:
         )
         return {"content": [{"type": "text", "text": text}], "isError": False}
     except Exception as exc:
-        return {"content": [{"type": "text", "text": f"probe_report failed: {exc}"}], "isError": True}
+        return {"content": [{"type": "text", "text": f"{TOOL_NAME} failed: {exc}"}], "isError": True}
 
 
 def main() -> None:
@@ -133,8 +137,9 @@ def main() -> None:
         elif method == "tools/list":
             respond(request_id, {"tools": [TOOL]})
         elif method == "tools/call":
-            if params.get("name") != "probe_report":
-                fail(request_id, -32601, f"unknown tool: {params.get('name')}")
+            name = params.get("name")
+            if name != TOOL_NAME and name not in LEGACY_TOOL_NAMES:
+                fail(request_id, -32601, f"unknown tool: {name}")
                 continue
             respond(request_id, call_tool(params.get("arguments") or {}))
         elif method == "ping":

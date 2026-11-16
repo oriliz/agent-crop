@@ -13,10 +13,13 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
 ### Changed（变更）
 
 - MCP 服务名从 `probe` 改为 `crop`。多个 MCP 同时挂载时，`probe` 和产品名对不上，
-  看不出它属于 Agent Crop。Claude Code 侧工具名随之变为
-  `mcp__plugin_agent-crop_crop__probe_report`；MCP `serverInfo.name` 同步改为 `crop`。
-  **迁移**：升级后重载 Claude Code 插件（重启会话生效）；如果有按旧服务名写的权限
-  白名单（`mcp__plugin_agent-crop_probe*`），需要同步改名。
+  看不出它属于 Agent Crop。MCP `serverInfo.name` 同步改为 `crop`。
+- MCP 工具名从 `probe_report` 改为通用名 `crop`：这个工具后面还会承载工作生命周期、
+  改进记录等内容，叫 `*_report` 会越用越不对。旧名 `probe_report` 保留为**调用别名**
+  （`tools/list` 只暴露 `crop`），旧会话/旧配置仍能调用。
+  Claude Code 侧工具名变为 `mcp__plugin_agent-crop_crop__crop`。
+  **迁移**：升级后重载 Claude Code 插件（重启会话生效）；如果有按旧服务名或旧工具名
+  写的权限白名单（`mcp__plugin_agent-crop_probe*`），需要同步改名。
 
 ## [0.6.0] — 2026-11-15
 

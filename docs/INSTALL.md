@@ -57,7 +57,7 @@ claude plugin install agent-crop@agent-crop -s user
 claude plugin list
 ```
 
-Claude 侧通过 `.mcp.json` 暴露 `probe_report`，hooks 负责注入未完成任务与红线提醒。
+Claude 侧通过 `.mcp.json` 暴露 `crop` 工具，hooks 负责注入未完成任务与红线提醒。
 装完需要新开会话。
 
 ## 卸载
