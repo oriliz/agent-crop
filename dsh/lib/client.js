@@ -666,11 +666,11 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-reflect { display: grid; grid-template-columns: 1fr 1.3fr; gap: 18px; padding: 12px 16px; font-size: 12px; }
 .crop-badge { margin-left: 6px; border: 1px solid rgba(160, 180, 230, .22); border-radius: 999px; padding: 0 6px; font-size: 9.5px; color: #93a1c2; }
 .crop-reflect-meta { display: flex; align-items: center; gap: 6px; margin: 6px 0 5px; font-size: 11.5px; }
-.crop-verdict-tag { font-size: 10.5px; line-height: 17px; padding: 0 8px; border-radius: 999px; border: 1px solid rgba(160, 180, 230, .28); color: #c6d2ea; }
+.crop-verdict-tag { font-size: 12.5px; line-height: 22px; padding: 0 12px; border-radius: 999px; border: 1px solid rgba(160, 180, 230, .28); color: #c6d2ea; font-weight: 600; }
 .crop-verdict-tag--justified { color: #9fd8a8; border-color: rgba(110, 200, 130, .45); }
-.crop-reflect--urgent { border-left: 3px solid #ef4444; background: rgba(239, 68, 68, .07); }
-.crop-reflect--urgent .crop-verdict-tag--not-justified { background: rgba(239, 68, 68, .16); font-weight: 600; }
-.crop-verdict-tag--not-justified { color: #f0a9a9; border-color: rgba(240, 132, 132, .45); }
+.crop-reflect--urgent { border-left: 4px solid #e5484d; background: rgba(239, 68, 68, .08); }
+.crop-reflect--urgent .crop-reflect-meta { font-size: 12px; }
+.crop-verdict-tag--not-justified { color: #fff; background: #e5484d; border-color: #e5484d; font-weight: 700; box-shadow: 0 1px 6px rgba(229, 72, 77, .35); }
 .crop-verdict-tag--unknown { color: #a9b6d4; }
 .crop-reflect-cause { line-height: 1.6; color: #b9c6e2; }
 .crop-imp-row { display: flex; gap: 6px; padding: 4px 0; line-height: 1.5; color: #c6d2ea; }
