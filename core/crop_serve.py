@@ -52,7 +52,9 @@ table.no-delta th.delta,table.no-delta td.delta{display:none}
 .mini{color:#6f7887;font-size:10px;margin-top:2px}
 .hint{color:#6f7887;font-size:11px;margin:-6px 0 10px;line-height:1.6}
 tr.group td{color:#6f7887;font-size:11px;padding-top:14px;border-bottom:1px solid #23262d;letter-spacing:.04em}
-tr.row-red td{background:rgba(239,68,68,.06)}
+tr.row-red td{background:rgba(239,68,68,.12)}
+tr.row-red td:first-child{box-shadow:inset 3px 0 0 #ef4444}
+tr.row-red .meter{outline:1px solid rgba(239,68,68,.35)}
 .meter{position:relative;height:16px;background:#1e2128;border-radius:4px;overflow:hidden;min-width:96px}
 .meter i{display:block;height:100%;opacity:.5}
 .meter b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:500;font-size:11px;color:#dbe7ff}
@@ -221,7 +223,7 @@ function barCell(options){
   const value = options.value;
   if (value == null) return '<td><span class="muted">—</span></td>';
   const width = Math.max(0, Math.min(100, Math.round(value * 100)));
-  return '<td><div class="meter" style="background:' + options.color + '1f" title="' + esc(options.title || '') + '">' +
+  return '<td><div class="meter" style="background:' + options.color + (options.color === '#ef4444' ? '33' : '1f') + '" title="' + esc(options.title || '') + '">' +
     '<i style="width:' + width + '%;background:' + options.color + '"></i>' +
     '<b>' + pct(value) + '</b></div>' + (options.note || '') + '</td>';
 }
