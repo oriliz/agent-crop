@@ -8,49 +8,37 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
 > **v0.4.0 及更早：未整理。** 那段时间是边写边改，提交里混着设计草稿与试验，
 > 没有逐条回溯。要看那段历史，直接读 `git log`。
 
-## [Unreleased]
+## [0.7.0] — 2026-11-16
 
 ### Added（新增）
 
-- 全局面板新增「健康度」tab：按工具看**采集器本身有没有在干活**，而不是看这周干了什么。
-  - 事件分四类口径：会话 / 工作 / 调用 / 按需；覆盖按各自锚点算（会话数、工作数、收尾工作数），
-    分母可悬停查看；「按需」事件（提醒、离开、枝节、归档）只报计数、不亮红黄，避免假警报。
-  - 主动上报额外看阶段闭环（start→end，按会话×工作配对）与提醒后 10 分钟跟进率。
-  - 面板：「健康构成」环形图（正常/偏低/要处理/按需+未上线）+ 四张卡；被动采集、AI 主动上报两张表，
-    按必采/按需/未上线分组；覆盖与闭环为彩色条（条内百分比、条下 n/N），红条行加红底；
-    趋势为每日事件条数小柱图（有上周数据时合并对比）；缺字段标「缺 work_id×N」；
-    「只看异常」过滤、主机筛选；底部诊断每条带看板卡，可「复制修复指令」丢给 AI。
-  - `core.health_summary()` 计算指标，`/api/tool-health` 暴露 JSON，面板只渲染；
-    指标全部从原始事件派生，不新增采集；样本 < 3 个会话时只报「样本太少」。
-  - 统计纪律：排除 < 2 turn 的会话；闭环按「会话 × 工作」配对，避免同一 work_id 跨会话算成已收尾。
-- 测试：`tests/test_health.py` 7 条聚合单测 + `/api/tool-health` 端点契约测试。
-
-### Added（新增）
-
-- `crop health` 命令：`--days` / `--host` / `--json`，输出一句话结论、问题清单和每个工具一行；
-  同一份数据也通过 DSH 工具 `crop_health` 和 MCP 工具 `crop_health` 暴露给 AI。
-- 安装副本更新到本次版本（`~/.agentcrop/current`），本地面板默认跑在 `127.0.0.1:8765`。
-
-### Fixed（修复）
-
-- `work_claim` 现在在 `crop_update(phase="start")` 时写入：之前只有 `crop switch` 会记，
-  健康度里显示「工作认领 1/65」。
-- `session_end` 改为按宿主口径统计：DSH 没有 SessionEnd 钩子，不再拿它算 DSH 会话的分母；
-  只有 claude-code 会话参与覆盖计算，其他宿主的会话不会把它拖红。
+- 全局面板新增「健康度」：按工具看**采集器本身有没有在干活**。事件分四类口径
+  （会话 / 工作 / 调用 / 按需），覆盖按各自锚点算（会话数、工作数、收尾工作数），
+  按需事件只报计数不亮灯；环形图看健康构成，两张表按必采/按需/未上线分组，
+  覆盖与闭环是彩色条（红条行加红底），趋势为每日条数小柱图；底部诊断每条带看板卡，
+  可「复制修复指令」。`core.health_summary()` 计算，`/api/tool-health` 暴露。
+- `crop health` 命令（`--days` / `--host` / `--json`），以及 DSH / MCP 的 `crop_health` 工具。
+- 报告新增 `artifact` 字段（这次产出了什么），随 `work_summary` 与 reports 落盘。
+- 提醒文案带用户可见例句（warm / yellow / red / overdue），开工提示附一段「说话方式」。
+- 仓库工程化：`scripts/check.sh` 推前检查、`AGENTS.md`、`docs/WORKFLOW.md`。
 
 ### Changed（变更）
 
-- MCP 服务名从 `probe` 改为 `crop`。多个 MCP 同时挂载时，`probe` 和产品名对不上，
-  看不出它属于 Agent Crop。MCP `serverInfo.name` 同步改为 `crop`。
-- 工具名统一为 `crop_update`（DSH 原 `crop_report`，MCP 原 `probe_report`）。
-  这个工具做的是「工作状态更新」——绑定、推进、卡点、收尾、预估、归因，不只是打报告；
-  叫 `*_report` 会和 CLI 的 `crop report`（生成汇总报告）混，也不利于以后继续加内容。
-  旧名 `crop_report` / `probe_report` / `crop` 全部保留为**调用别名**
-  （`tools/list` 只暴露 `crop_update`），旧会话、旧提示词仍能调用。
-  Claude Code 侧工具名变为 `mcp__plugin_agent-crop_crop__crop_update`。
-  **迁移**：升级后重载插件 / 重启会话生效；如果有按旧服务名或旧工具名写的权限白名单
-  （`mcp__plugin_agent-crop_probe*`），需要同步改名。数据层不受影响：
-  事件名仍是 `probe_report`，历史数据不需要迁移。
+- 工具命名统一为 `crop_update`（MCP 原 `probe_report`、DSH 原 `crop_report`），
+  旧名保留为调用别名；MCP 服务名 `probe` → `crop`。
+- 报告 schema 对齐：DSH 侧补 `what` / `cost` / `next_time` / `artifact`；
+  MCP 侧补 `expect_min` / `verdict` / `improve` / `goal` / `type` / `difficulty` /
+  `rework` / `sentiment` / `what` / `cost` / `next_time` / `artifact`。
+- `session_end` 改为按宿主口径统计：只有 claude-code 有 SessionEnd 钩子，
+  DSH 会话不再被算进分母、也不会把这一行拖红。
+
+### Fixed（修复）
+
+- `work_claim` 现在在 `crop_update(phase="start")` 时写入：之前只有 `crop switch` 会记。
+- 时间归属只认本会话的绑定，不再串到别的会话的唯一 active 工作（卡 747c57d4）。
+- 台账工具（`crop_work` / `crop_review` / `crop_works` / `crop_health` / …）不再被当成
+  「干活」，不会误触发「你还没有绑定任何工作」（卡 815ba0e4）。
+- MCP 报告 schema 与 DSH 漂移导致 `expect_min` 等字段被拒收（Issue #11）。
 
 ## [0.6.0] — 2026-11-15
 
