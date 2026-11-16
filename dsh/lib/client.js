@@ -679,8 +679,8 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-pair--urgent { border-left: 3px solid #e5484d; background: rgba(239, 68, 68, .06); }
 .crop-pair--think { border-left: 3px solid #e8c46a; background: rgba(232, 196, 106, .06); }
 .crop-iv-tag--think { color: #1a1608; background: #e8c46a; font-weight: 700; }
-.crop-iv-tag--self { color: #1a1608; background: #f0d48a; font-weight: 700; }
-.crop-pair--self { border-left: 3px solid #f0d48a; background: rgba(240, 212, 138, .05); }
+
+
 .crop-pair--hl { background: rgba(120, 160, 255, .10); }
 .crop-pair--flash { animation: cropFlash 1.4s ease; }
 @keyframes cropFlash { 0% { background: rgba(240, 212, 138, 0); } 25% { background: rgba(240, 212, 138, .22); } 100% { background: rgba(240, 212, 138, 0); } }
@@ -695,7 +695,9 @@ body[data-ds-dark-theme] .crop-donut-hole {
 }
 .crop-pair { display: grid; grid-template-columns: 22px minmax(0, 1fr) 18px minmax(0, 1.25fr); gap: 8px; align-items: start; padding: 8px 0; border-top: 1px solid rgba(160, 180, 230, .10); }
 
-.crop-pair-no { color: #7f9fe0; font-variant-numeric: tabular-nums; padding-top: 14px; }
+.crop-pair-index { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 12px; }
+.crop-pair-no { color: #7f9fe0; font-variant-numeric: tabular-nums; }
+.crop-medal { width: 15px; height: 15px; border-radius: 50%; background: #f0d48a; color: #3a2a05; font-size: 9px; line-height: 15px; text-align: center; font-weight: 700; box-shadow: 0 0 6px rgba(240,212,138,.45); }
 .crop-pair-label { display: block; font-size: 9.5px; color: #7785a6; margin-bottom: 2px; }
 .crop-pair-text { line-height: 1.55; overflow-wrap: anywhere; word-break: break-word; }
 .crop-pair-problem .crop-pair-text { color: #a9b6d4; }
@@ -1103,7 +1105,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
               return h('div', {
                 key: `iv${index}`,
                 id: `crop-iv-${index}`,
-                className: `crop-pair${urgent && !needsIdea ? ' crop-pair--urgent' : ''}${needsIdea ? ' crop-pair--think' : ''}${selfDriven ? ' crop-pair--self' : ''}${hoverIv === index ? ' crop-pair--hl' : ''}${flashIv === index ? ' crop-pair--flash' : ''}`,
+                className: `crop-pair${urgent && !needsIdea ? ' crop-pair--urgent' : ''}${needsIdea ? ' crop-pair--think' : ''}${hoverIv === index ? ' crop-pair--hl' : ''}${flashIv === index ? ' crop-pair--flash' : ''}`,
                 onMouseEnter: () => {
                   const first = markerLinks.find((item) => item.link === index);
                   setHoverIv(index);
@@ -1117,7 +1119,10 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                   window.setTimeout(() => setFlashIv(null), 1600);
                 },
               }, [
-                h('span', { key: 'n', className: 'crop-pair-no' }, String(index + 1)),
+                h('div', { key: 'n', className: 'crop-pair-index' }, [
+                  h('span', { key: 'no', className: 'crop-pair-no' }, String(index + 1)),
+                  selfDriven ? h('span', { key: 'm', className: 'crop-medal', title: '自驱：没人提醒，自己发现的问题' }, '★') : null,
+                ]),
                 h('div', { key: 'p', className: 'crop-pair-problem' }, [
                   h('div', { key: 'h', className: 'crop-pair-label' }, [
                     urgent && !needsIdea ? h('span', { key: 't', className: 'crop-iv-tag crop-iv-tag--urgent' }, '要改') : null,
