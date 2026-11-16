@@ -969,7 +969,10 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             if (!event.shiftKey) return;
             event.preventDefault();
             const width = event.currentTarget.getBoundingClientRect().width || 1;
-            const shift = (event.deltaY / width) * span;
+            // Chrome turns Shift+wheel into horizontal scrolling: deltaY is 0
+            // and the movement arrives as deltaX.
+            const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+            const shift = (delta / width) * span;
             setWindow(windowStart + shift, viewEnd + shift);
           },
         }, laneRows.length ? laneRows : h('div', { className: 'crop-muted' }, '这次会话还没有完成一个时间块。'),
