@@ -669,6 +669,13 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-tl-detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(160, 180, 230, .12); display: flex; gap: 10px; align-items: baseline; font-size: 11.5px; }
 .crop-tl-range { color: #f0a9a9; font-variant-numeric: tabular-nums; }
 .crop-work-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid rgba(160, 180, 230, .08); font-size: 12px; }
+.crop-day-work { display: grid; grid-template-columns: 8px minmax(0, 1fr) minmax(60px, 1.1fr) 48px; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid rgba(160, 180, 230, .08); font-size: 12px; }
+.crop-day-work:first-child { border-top: 0; }
+.crop-day-work-dot { width: 7px; height: 7px; border-radius: 50%; background: #5b8cff; }
+.crop-day-work-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crop-day-work-bar { height: 6px; border-radius: 999px; background: rgba(120, 140, 190, .14); overflow: hidden; }
+.crop-day-work-bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #4f7cf0, #6ea0ff); }
+.crop-day-work-min { text-align: right; color: #b9c6e2; font-variant-numeric: tabular-nums; }
 .crop-work-row:first-child { border-top: 0; }
 .crop-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
 .crop-tl-cap { margin-bottom: 6px; }
@@ -1409,9 +1416,18 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                     h('span', { className: 'crop-muted crop-day-label' }, '工作'),
                     h('div', { className: 'crop-day-body' },
                       h('div', { className: 'crop-work-rows' },
-                        (detail.works || []).slice(0, showAll ? undefined : 5).map((item) => h('div', { key: item.work_id, className: 'crop-work-row' },
-                          h('span', { className: 'crop-work-name', title: item.goal_full || item.goal || item.work_id }, item.goal || item.work_id),
-                          h('span', { className: 'crop-work-min' }, fmtMinutes(item.minutes))))),
+                        (() => {
+                          const rows = detail.works || [];
+                          const maxMinutes = Math.max(1, ...rows.map((row) => Number(row.minutes) || 0));
+                          return rows.slice(0, showAll ? undefined : 5).map((item) => h('div', { key: item.work_id, className: 'crop-day-work' }, [
+                            h('i', { key: 'd', className: 'crop-day-work-dot' }),
+                            h('span', { key: 'n', className: 'crop-day-work-name', title: item.goal_full || item.goal || item.work_id },
+                              item.goal || item.work_id),
+                            h('div', { key: 'b', className: 'crop-day-work-bar' },
+                              h('i', { style: { width: `${Math.max(3, Math.round(((Number(item.minutes) || 0) / maxMinutes) * 100))}%` } })),
+                            h('span', { key: 'm', className: 'crop-day-work-min' }, fmtMinutes(item.minutes)),
+                          ]));
+                        })()),
                       !showAll && (detail.works || []).length > 5
                         ? h('button', { type: 'button', className: 'crop-more', onClick: () => setShowAll(true) }, `+${(detail.works || []).length - 5} 个工作`)
                         : null)))
