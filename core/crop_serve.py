@@ -94,6 +94,16 @@ tbody.sect-group.closed tr.row{display:none}
 .tile.tone-yellow .dot{background:#eab308}
 .tile.tone-gray .dot{background:#6b7280}
 .tile.tone-red .tile-value{color:#ff9b9b}
+.compose-row{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.donut{width:148px;height:148px;border-radius:50%;position:relative;flex:none;background:conic-gradient(#23262d 0 100%)}
+.donut-hole{position:absolute;inset:24px;background:#161920;border-radius:50%;display:grid;place-items:center;text-align:center;line-height:1.2}
+.donut-hole b{font-size:24px;font-variant-numeric:tabular-nums}
+.donut-hole span{color:#8b93a1;font-size:11px}
+.compose-legend{display:grid;gap:8px;font-size:13px}
+.legend-item{display:flex;align-items:center;gap:10px}
+.legend-item b{font-variant-numeric:tabular-nums;min-width:28px;text-align:right}
+.compose-note{color:#8b93a1;font-size:12px;margin-left:auto;max-width:360px;text-align:right;line-height:1.6}
+.diag-actions{display:flex;justify-content:flex-end;margin-top:10px}
 select.host{background:#161920;border:1px solid #2a2f39;color:#aeb6c4;border-radius:7px;padding:4px 8px;font-size:12px}
 .chart{display:flex;align-items:flex-end;gap:6px;height:180px;padding-top:6px}
 .slot{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;cursor:pointer;min-width:8px}
@@ -113,6 +123,7 @@ footer{color:#6f7887;font-size:11px;padding:0 28px 24px}
   <button class="tab on" data-view="overview">总览</button>
   <button class="tab" data-view="health">健康度</button>
   <select class="host" id="host" title="只看某个宿主"><option value="">全部宿主</option></select>
+  <label class="sub" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="only-issues"> 只看异常</label>
   <span class="sub" id="asof" style="margin-left:auto"></span>
 </header>
 <main>
@@ -129,31 +140,29 @@ footer{color:#6f7887;font-size:11px;padding:0 28px 24px}
   </div>
   <div id="view-health" class="view" hidden>
     <div class="cards" id="health-cards"></div>
-    <div class="health-switch">
-      <button class="mode on" data-health-mode="cockpit">驾驶舱</button>
-      <button class="mode" data-health-mode="fix">修复模式</button>
-      <span class="sub" id="health-mode-note"></span>
-      <button class="copy" id="copy-diagnosis" title="复制成一段话，可直接丢给 AI 去修">复制修复指令</button>
-    </div>
-    <div id="health-cockpit">
-      <div class="strip" id="cockpit-strip"></div>
-      <div class="cockpit" id="cockpit-grid"></div>
-    </div>
-    <div id="health-fix" hidden>
-      <div class="headline" id="health-headline"><span id="headline-text"></span></div>
-      <section><h2>先修这些</h2>
-        <div class="hint">诊断按指标自动生成，每条都指到对应看板卡；没有问题的工具收在下面的分区里。</div>
-        <div id="health-diags"></div>
-      </section>
-      <section><h2>采集工具健康度</h2>
-        <div class="hint">覆盖 = 事件在自己锚点上的比例（会话 / 工作 / 收尾；条内写百分比，下面写 n/N）；闭环 = 有开始的工作里已收尾的比例；趋势 = 每天的事件条数，旁边是比上周。</div>
-        <table class="health-table" id="health-table"><thead><tr><th>工具</th><th>覆盖</th><th>完整</th><th>闭环</th><th>趋势（7 天）</th></tr></thead></table>
-      </section>
-    </div>
-  </div>
+    <section>
+      <h2>健康构成</h2>
+      <div class="compose-row">
+        <div class="donut" id="health-donut"><div class="donut-hole"><b id="donut-center">—</b><span>正常</span></div></div>
+        <div class="compose-legend" id="donut-legend"></div>
+        <div class="compose-note" id="compose-note"></div>
+      </div>
+    </section>
+    <section><h2>被动采集</h2>
+      <div class="hint">覆盖 = 该类事件在自己锚点上的比例（会话 / 工作 / 收尾，悬停看 n/N）；趋势 = 每天的事件条数；红底 = 现在就该处理；灰条 = 按需，条件触发不评判。</div>
+      <table class="health-table" id="table-passive"></table>
+    </section>
+    <section><h2>AI 主动上报</h2>
+      <div class="hint">闭环 = 有开始的工作里已收尾的比例；覆盖 = 工作类口径；趋势同左。</div>
+      <table class="health-table" id="table-active"></table>
+    </section>
+    <section><h2>诊断 · 哪些工具在一线是哑的</h2>
+      <div id="health-diags"></div>
+      <div class="diag-actions"><button class="copy" id="copy-diagnosis" title="复制成一段话，可直接丢给 AI 去修">复制修复指令</button></div>
+    </section>
   </div>
 </main>
-<footer>灯色 = 该工作活跃时长 ÷ 同类型同难度基线：&lt; 0.6 绿 · 0.6–1.5 黄 · ≥ 1.5 红。数字由事件机械生成，归因只引用 AI 自述。<br>健康度：驾驶舱用磁贴展示全量工具（颜色 = 状态，正常也展示，红黄排前面）；修复模式只留要处理的问题与证据，分区标题可点开/收起。红条所在行加红底；「复制修复指令」会把问题和对应卡片拼成一段话，可直接丢给 AI。指标全部从事件派生，不新增采集。</footer>
+<footer>灯色 = 该工作活跃时长 ÷ 同类型同难度基线：&lt; 0.6 绿 · 0.6–1.5 黄 · ≥ 1.5 红。数字由事件机械生成，归因只引用 AI 自述。<br>健康度：环形图 = 正常 / 偏低 / 要处理 / 按需+未上线 的构成；表格按必采、按需、未上线分组，覆盖条颜色 = 状态，红条所在行加红底。「只看异常」收掉正常行；「复制修复指令」把问题、证据、卡片拼成一段话，可直接丢给 AI。指标全部从事件派生，不新增采集。</footer>
 <script>
 let rangeDays = 7;
 const LAMP = {green:'#4ade80', yellow:'#eab308', red:'#ef4444'};
@@ -234,24 +243,8 @@ function renderWorkList(rows){
 }
 
 let view = 'overview';
+let onlyIssues = false;
 let lastHealth = null;
-const openSections = new Set(['issues']);
-let healthMode = 'cockpit';
-
-function setHealthMode(mode){
-  healthMode = mode;
-  document.querySelectorAll('.mode').forEach(button =>
-    button.classList.toggle('on', button.dataset.healthMode === mode));
-  const cockpit = document.getElementById('health-cockpit');
-  const fix = document.getElementById('health-fix');
-  if (cockpit) cockpit.hidden = mode !== 'cockpit';
-  if (fix) fix.hidden = mode !== 'fix';
-  const note = document.getElementById('health-mode-note');
-  if (note) note.textContent = mode === 'cockpit' ? '全量工具一眼看，红黄优先排前面' : '只留要修的问题和证据';
-}
-document.querySelectorAll('.mode').forEach(button =>
-  button.addEventListener('click', () => setHealthMode(button.dataset.healthMode)));
-setHealthMode('cockpit');
 
 function setView(next){
   view = next;
@@ -265,6 +258,11 @@ document.querySelectorAll('button.tab').forEach(button =>
 
 const hostSelect = document.getElementById('host');
 if (hostSelect) hostSelect.addEventListener('change', () => load());
+const issueToggle = document.getElementById('only-issues');
+if (issueToggle) issueToggle.addEventListener('change', () => {
+  onlyIssues = issueToggle.checked;
+  if (lastHealth) renderHealth(lastHealth);
+});
 
 function pct(value){ return value == null ? '—' : Math.round(value * 100) + '%'; }
 
@@ -286,14 +284,13 @@ function meterCell(options){
 
 function coverageCell(row){
   if (row.status === 'not-shipped') return '<td><span class="muted">未上线</span></td>';
-  if (row['class'] === 'on_demand') return '<td><span class="muted">' + row.events + ' 次</span></td>';
+  if (row['class'] === 'on_demand') return '<td><span class="muted">—</span></td>';
   const thresholds = {session: 0.8, work: 0.7, ended: 0.8, call: 0.9};
   const value = row.session_coverage;
   const threshold = thresholds[row['class']] || 0.8;
   const color = value == null ? '#6b7280' : (value >= threshold ? '#4ade80' : (value > 0 ? '#eab308' : '#ef4444'));
   const note = row.coverage_denominator == null ? '' : row.coverage_numerator + ' / ' + row.coverage_denominator;
-  const title = note ? note + '（' + row.scope + '口径）' : '';
-  return meterCell({value: value, color: color, note: note, title: title, empty: '—'});
+  return meterCell({value: value, color: color, note: note, title: note});
 }
 
 function completenessCell(row){
@@ -319,59 +316,93 @@ function sparkline(rows){
     'px" title="' + esc(row.date + '：' + row.count + ' 条') + '"></i>').join('') + '</div>';
 }
 
-function deltaText(row, hasPrevious){
-  if (!hasPrevious) return '';
+function deltaText(row){
   const delta = row.delta_vs_previous;
-  if (delta == null) return row.events ? '<span class="muted">无上周</span>' : '';
-  if (delta === 0) return '<span class="delta">持平</span>';
+  if (delta == null) return row.events ? '<span class="muted">无上周</span>' : '—';
+  if (delta === 0) return '持平';
   const up = delta > 0;
   const color = up ? '#4ade80' : '#ef4444';
-  return '<span class="delta" style="color:' + color + '">' + (up ? '↑' : '↓') + Math.abs(Math.round(delta * 100)) + '%</span>';
+  return '<span style="color:' + color + '">' + (up ? '↑' : '↓') + Math.abs(Math.round(delta * 100)) + '%</span>';
 }
 
-function sparkCell(row, hasPrevious){
-  return '<td><div class="spark-row">' + sparkline(row.trend) + deltaText(row, hasPrevious) + '</div></td>';
+function redRow(row){
+  return row.lamp === 'red' || (row.events > 0 && row.session_coverage === 0);
 }
 
-function sectionOf(row){
-  if (row.status === 'not-shipped') return 'not-shipped';
-  if (row['class'] === 'on_demand') return 'on-demand';
-  if (row.lamp === 'red' || row.lamp === 'yellow') return 'issues';
-  return 'normal';
-}
-
-function rowHtml(row, works, hasPrevious){
-  const zeroCoverage = row.events > 0 && row.session_coverage === 0;
-  const red = row.lamp === 'red' || zeroCoverage;
-  return '<tr class="row' + (red ? ' row-red' : '') + '">' +
-    '<td>' + esc(row.label) + '<span class="muted" style="margin-left:6px">' + esc(row.tool) + '</span>' +
-    '<span class="tag">' + esc(row.scope) + '</span></td>' +
+function rowHtml(row, showClosure, hasPrevious, works){
+  return '<tr class="row' + (redRow(row) ? ' row-red' : '') + '">' +
+    '<td>' + esc(row.label) + '<span class="muted" style="margin-left:6px">' + esc(row.tool) + '</span></td>' +
+    '<td class="muted">' + esc(row.scope || '') + '</td>' +
+    '<td class="num">' + row.events + '</td>' +
     coverageCell(row) +
     completenessCell(row) +
-    closureCell(row, works) +
-    sparkCell(row, hasPrevious) + '</tr>';
+    (showClosure ? closureCell(row, works) : '') +
+    '<td>' + sparkline(row.trend) + '</td>' +
+    (hasPrevious ? '<td class="num">' + deltaText(row) + '</td>' : '') + '</tr>';
 }
 
-function renderTable(rows, works, hasPrevious){
-  const table = document.getElementById('health-table');
+function groupOf(row){
+  if (row.status === 'not-shipped') return 'not-shipped';
+  if (row['class'] === 'on_demand') return 'on-demand';
+  return 'required';
+}
+
+function renderTable(tableId, rows, showClosure, hasPrevious, works){
   const definitions = [
-    {id: 'issues', title: '要处理'},
-    {id: 'normal', title: '正常'},
-    {id: 'on-demand', title: '按需 · 条件触发，不评判'},
+    {id: 'required', title: '必采 · 直接决定数据能不能用'},
+    {id: 'on-demand', title: '按需 · 条件触发，只看有没有在采'},
     {id: 'not-shipped', title: '未上线'},
   ];
-  let html = '<thead><tr><th>工具</th><th>覆盖</th><th>完整</th><th>闭环</th><th>趋势（7 天）</th></tr></thead>';
+  const visible = onlyIssues ? rows.filter(row => row.lamp === 'red' || row.lamp === 'yellow') : rows;
+  let head = '<thead><tr><th>工具</th><th>口径</th><th class="num">事件</th><th>覆盖</th><th>完整</th>' +
+    (showClosure ? '<th>闭环</th>' : '') + '<th>趋势（7 天）</th>' + (hasPrevious ? '<th class="num">比上周</th>' : '') +
+    '</tr></thead>';
+  let body = '';
   definitions.forEach(definition => {
-    const items = rows.filter(row => sectionOf(row) === definition.id);
+    const items = visible.filter(row => groupOf(row) === definition.id);
     if (!items.length) return;
-    const closed = !openSections.has(definition.id);
-    html += '<tbody class="sect-group' + (closed ? ' closed' : '') + '" data-section="' + definition.id + '">';
-    html += '<tr class="sect"><td colspan="5">' + (closed ? '▸' : '▾') + ' ' + definition.title +
+    body += '<tr class="sect"><td colspan="' + (showClosure ? 8 : 7) + '">' + definition.title +
       '<span class="n">' + items.length + '</span></td></tr>';
-    html += items.map(row => rowHtml(row, works, hasPrevious)).join('');
-    html += '</tbody>';
+    body += items.map(row => rowHtml(row, showClosure, hasPrevious, works)).join('');
   });
-  table.innerHTML = html;
+  const span = showClosure ? 8 : 7;
+  document.getElementById(tableId).innerHTML = head + '<tbody>' +
+    (body || '<tr><td colspan="' + span + '" class="muted">没有异常。</td></tr>') + '</tbody>';
+}
+
+function renderDonut(data){
+  const rows = (data.passive || []).concat(data.active || []);
+  const thresholds = {session: 0.8, work: 0.7, ended: 0.8, call: 0.9};
+  const counts = {green: 0, yellow: 0, red: 0, gray: 0};
+  rows.forEach(row => {
+    if (row.status === 'not-shipped' || row['class'] === 'on_demand') { counts.gray += 1; return; }
+    if (redRow(row)) counts.red += 1;
+    else if (row.lamp === 'yellow') counts.yellow += 1;
+    else counts.green += 1;
+  });
+  const total = rows.length || 1;
+  const order = [['green', '#4ade80'], ['yellow', '#eab308'], ['red', '#ef4444'], ['gray', '#3a3f4a']];
+  let cursor = 0;
+  const stops = [];
+  order.forEach(([key, color]) => {
+    const share = counts[key] / total * 100;
+    if (!counts[key]) return;
+    stops.push(color + ' ' + cursor + '% ' + (cursor + share) + '%');
+    cursor += share;
+  });
+  document.getElementById('health-donut').style.background =
+    'conic-gradient(' + (stops.length ? stops.join(',') : '#23262d 0 100%') + ')';
+  document.getElementById('donut-center').textContent = counts.green + ' / ' + rows.length;
+  const legend = [
+    ['#4ade80', '正常', counts.green],
+    ['#eab308', '偏低', counts.yellow],
+    ['#ef4444', '要处理', counts.red],
+    ['#3a3f4a', '按需 / 未上线', counts.gray],
+  ];
+  document.getElementById('donut-legend').innerHTML = legend.map(([color, label, count]) =>
+    '<div class="legend-item"><span class="dot" style="background:' + color + '"></span>' +
+    '<b>' + count + '</b><span class="muted">' + label + '</span></div>').join('');
+  document.getElementById('compose-note').textContent = (data.summary || {}).headline || '';
 }
 
 function syncHostOptions(hosts){
@@ -426,90 +457,18 @@ function fallbackCopy(text, done){
   area.value = text;
   document.body.appendChild(area);
   area.select();
-  try { document.execCommand('copy'); done(); } catch (error) { /* 复制失败就不提示 */ }
+  try { document.execCommand('copy'); done(); } catch (error) { /* ignore */ }
   document.body.removeChild(area);
 }
 
 document.getElementById('copy-diagnosis').addEventListener('click', copyRepairBriefing);
-document.getElementById('health-table').addEventListener('click', event => {
-  const header = event.target.closest('tr.sect');
-  if (!header || !lastHealth) return;
-  const id = header.parentElement.dataset.section;
-  if (openSections.has(id)) openSections.delete(id); else openSections.add(id);
-  renderTable((lastHealth.passive || []).concat(lastHealth.active || []), lastHealth.works || {},
-    Boolean((lastHealth.summary || {}).has_previous));
-});
-
-function toneOf(row){
-  if (row.status === 'not-shipped' || row['class'] === 'on_demand') return 'gray';
-  if (row.lamp === 'red') return 'red';
-  if (row.lamp === 'yellow') return 'yellow';
-  return 'green';
-}
-
-function tileValue(row){
-  if (row.status === 'not-shipped') return '未上线';
-  if (row['class'] === 'on_demand') return row.events + ' 次';
-  return row.session_coverage == null ? '—' : pct(row.session_coverage);
-}
-
-function tileFoot(row){
-  if (row.status === 'not-shipped') return '设计已存在，代码未实现';
-  if (row['class'] === 'on_demand') return '条件触发，只看有没有在采';
-  const parts = [];
-  if (row.coverage_denominator != null) parts.push(row.coverage_numerator + ' / ' + row.coverage_denominator);
-  if (row.events) parts.push('完整 ' + pct(row.field_completeness));
-  if (row.stage_closure != null) parts.push('闭环 ' + pct(row.stage_closure));
-  const missing = Object.entries(row.missing_fields || {});
-  if (missing.length) parts.push('缺 ' + missing.map(([key, value]) => key + '×' + value).join('、'));
-  return parts.join(' · ');
-}
-
-function tileHtml(row){
-  const tone = toneOf(row);
-  const value = tileValue(row);
-  const thresholds = {session: 0.8, work: 0.7, ended: 0.8, call: 0.9};
-  let color = '#6b7280';
-  if (row.status !== 'not-shipped' && row['class'] !== 'on_demand' && row.session_coverage != null) {
-    const threshold = thresholds[row['class']] || 0.8;
-    color = row.session_coverage >= threshold ? '#4ade80'
-      : (row.session_coverage > 0 ? '#eab308' : '#ef4444');
-  }
-  const width = row.session_coverage == null ? 0 : Math.round(row.session_coverage * 100);
-  const bar = tone === 'gray' ? '' : '<div class="tile-bar"><i style="width:' + width + '%;background:' + color + '"></i></div>';
-  return '<div class="tile tone-' + tone + '" title="' + esc(row.tool + ' · ' + row.scope + '口径') + '">' +
-    '<div class="tile-head"><span class="dot"></span><b>' + esc(row.label) + '</b><span class="tag">' + esc(row.scope) + '</span></div>' +
-    '<div class="tile-value">' + esc(value) + '</div>' + bar +
-    '<div class="tile-foot">' + esc(tileFoot(row)) + '</div></div>';
-}
-
-function renderCockpit(data){
-  const rows = (data.passive || []).concat(data.active || []);
-  const order = {red: 0, yellow: 1, green: 2, gray: 3};
-  const sorted = rows.slice().sort((a, b) => order[toneOf(a)] - order[toneOf(b)]);
-  document.getElementById('cockpit-grid').innerHTML = sorted.map(row => tileHtml(row)).join('');
-  const counts = {red: 0, yellow: 0, green: 0, gray: 0};
-  rows.forEach(row => { counts[toneOf(row)] += 1; });
-  const segments = rows.map(row => {
-    const tone = toneOf(row);
-    const color = tone === 'red' ? '#ef4444' : (tone === 'yellow' ? '#eab308' : (tone === 'green' ? '#4ade80' : '#3a3f4a'));
-    return '<i style="background:' + color + '" title="' + esc(row.label) + '"></i>';
-  }).join('');
-  const headline = (data.summary || {}).headline || '';
-  document.getElementById('cockpit-strip').innerHTML =
-    '<div class="strip-bar">' + segments + '</div>' +
-    '<div class="strip-legend"><span><b>' + counts.green + '</b> 正常</span>' +
-    '<span><b>' + (counts.red + counts.yellow) + '</b> 要处理</span>' +
-    '<span><b>' + counts.gray + '</b> 按需 / 未上线</span>' +
-    '<span style="margin-left:auto" class="sub">' + esc(headline) + '</span></div>';
-}
 
 function renderHealth(data){
   lastHealth = data;
   const s = data.summary || {};
   const sessions = data.sessions || {};
   const works = data.works || {};
-  document.getElementById('headline-text').textContent = s.headline || '';
+  const hasPrevious = Boolean(s.has_previous);
   const cards = [
     ['有效会话', sessions.eligible || 0, '共 ' + (sessions.total || 0) + ' 个，短会话不计'],
     ['工作', (works.ended || 0) + ' / ' + (works.started || 0), '已收尾 / 已开始'],
@@ -519,11 +478,11 @@ function renderHealth(data){
   document.getElementById('health-cards').innerHTML = cards.map(([k, v, note]) =>
     '<div class="card"><div class="k">' + k + '</div><div class="v">' + (v == null ? '—' : v) + '</div>' +
     '<div class="n">' + note + '</div></div>').join('');
-  renderCockpit(data);
-  renderTable((data.passive || []).concat(data.active || []), works, Boolean(s.has_previous));
+  renderDonut(data);
+  renderTable('table-passive', data.passive || [], false, hasPrevious, works);
+  renderTable('table-active', data.active || [], true, hasPrevious, works);
   renderDiags(data);
   syncHostOptions(data.hosts || []);
-  setHealthMode(healthMode);
 }
 
 async function loadHealth(){
