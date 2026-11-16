@@ -71,6 +71,7 @@ window.__ModuleLoader__.load({
       difficulty: { s: '小', m: '中', l: '大' },
       rework: { redo: '重做', major: '大改', minor: '小修', none: '不需要' },
       sentiment: { pos: '积极', neu: '中性', neg: '消极' },
+      level: { green: '正常', yellow: '偏低', red: '要处理', gray: '按需' },
     };
 
     const enumLabel = (kind, value) => (ENUM_LABELS[kind] && ENUM_LABELS[kind][value]) || value || '';
@@ -1272,7 +1273,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                   h('tbody', { key: 'tb' },
                     rows.map((row) => h('tr', { key: row.work_id },
                       h('td', { style: S.td },
-                        h('i', { style: S.lamp(LAMP[row.level] || '#6b7280') }), row.level || '—'),
+                        h('i', { style: S.lamp(LAMP[row.level] || '#6b7280') }), row.level ? enumLabel('level', row.level) : '—'),
                       h('td', { style: S.td },
                         h('div', { className: 'crop-work-title' }, row.goal || row.work_id)),
                       h('td', { style: S.td }, row.type ? enumLabel('type', row.type) : '—'),
