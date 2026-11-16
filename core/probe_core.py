@@ -2199,37 +2199,47 @@ def format_pending_retire(limit: int = 5) -> str:
 # ---------------------------------------------------------------------------
 # Health: 采集工具在一线到底有没有在干活
 #
-# 这个视图回答的不是「AI 用了哪个工具」，而是「工具本身是不是哑了」：
-# 被动采集看覆盖率与字段完整率，主动上报看依从率与阶段闭环。
-# 指标全部从原始事件派生，不新增采集、不落第二套真相。
+# 回答的不是「AI 用了哪个工具」，而是「工具本身是不是哑了」。三条口径纪律：
+# 1. 事件分四类（会话 / 工作 / 调用 / 按需），每类用各自的锚点算覆盖，不能混着比；
+# 2. 按需事件（提醒、离开、枝节）不亮灯，只报计数——否则全是假警报；
+# 3. 指标全部从原始事件派生，不新增采集、不落第二套真相。
 # ---------------------------------------------------------------------------
 
-# (事件名, 显示名, 必需字段, 缺字段时关联的看板卡)
+# (事件, 显示名, 类别, 必需字段, 缺字段时关联的看板卡)
+# 类别: session=每会话一次 / work=每工作一次 / call=每次调用 / on_demand=按需触发
 _HEALTH_PASSIVE = (
-    ("session_start", "会话开始", ("sid",), ""),
-    ("session_end", "会话结束", ("sid",), ""),
-    ("prompt", "回合开始", ("sid",), ""),
-    ("stop", "回合结束", ("sid", "minutes"), ""),
-    ("tool", "工具调用", ("sid", "name", "work_id"), "c9cb276b"),
-    ("reminder", "超时提醒", ("sid", "minutes"), ""),
-    ("user_wait", "等人时长", ("sid", "waiting_ms"), ""),
-    ("idle_gap", "离开间隔", ("sid", "gap_ms"), ""),
-    ("task_link", "归属链接", ("task_id", "block_start"), ""),
-    ("work_claim", "工作认领", ("work_id", "sid"), ""),
-    ("work_archive", "工作归档", ("work_id",), ""),
+    ("session_start", "会话开始", "session", ("sid",), ""),
+    ("session_end", "会话结束", "session", ("sid",), ""),
+    ("prompt", "回合开始", "session", ("sid",), ""),
+    ("stop", "回合结束", "session", ("sid", "minutes"), ""),
+    ("task_link", "归属链接", "work", ("task_id", "block_start"), ""),
+    ("work_claim", "工作认领", "work", ("work_id", "sid"), ""),
+    ("tool", "工具调用", "call", ("sid", "name", "work_id"), "c9cb276b"),
+    ("reminder", "超时提醒", "on_demand", ("sid", "minutes"), ""),
+    ("user_wait", "等人时长", "on_demand", ("sid", "waiting_ms"), ""),
+    ("idle_gap", "离开间隔", "on_demand", ("sid", "gap_ms"), ""),
+    ("work_archive", "工作归档", "on_demand", ("work_id",), ""),
 )
 
-# (事件名, 显示名, 必需字段, 缺字段时关联的看板卡, 是否已上线)
+# (事件, 显示名, 类别, 必需字段, 缺字段时关联的看板卡, 是否已上线)
 _HEALTH_ACTIVE = (
-    ("probe_report", "工作上报", ("phase", "task_id", "summary"), "", True),
-    ("work_summary", "收尾小结", ("what", "cost", "next_time"), "42ae110d", True),
-    ("side_issue", "枝节记录", ("work_id", "note"), "", True),
-    ("work_close", "工作关闭", ("work_id",), "", True),
-    ("adjustment", "改进记录", ("metric", "before", "after"), "fd0acdc3", False),
+    ("probe_report", "工作上报", "work", ("phase", "task_id", "summary"), "", True),
+    ("work_close", "工作关闭", "work", ("work_id",), "", True),
+    ("work_summary", "收尾小结", "ended", ("what", "cost", "next_time"), "42ae110d", True),
+    ("side_issue", "枝节记录", "on_demand", ("work_id", "note"), "", True),
+    ("adjustment", "改进记录", "work", ("metric", "before", "after"), "fd0acdc3", False),
 )
 
-HEALTH_MISSING_FIELDS = 0.95
-HEALTH_COVERAGE_OK = 0.80
+HEALTH_SCOPE_LABEL = {
+    "session": "会话",
+    "work": "工作",
+    "call": "调用",
+    "ended": "收尾",
+    "on_demand": "按需",
+}
+
+HEALTH_COMPLETE_OK = 0.95
+HEALTH_COVERAGE_OK = {"session": 0.80, "work": 0.70, "ended": 0.80, "call": 0.90}
 HEALTH_CLOSURE_OK = 0.70
 
 
@@ -2243,10 +2253,9 @@ def _health_field_ok(event: dict, field: str) -> bool:
 
 
 def _health_completeness(events: list[dict], fields: tuple[str, ...]) -> tuple[float, dict[str, int]]:
-    """字段完整率，以及每个字段各缺了多少条。"""
     if not events:
         return 1.0, {}
-    missing: dict[str, int] = {field: 0 for field in fields}
+    missing = {field: 0 for field in fields}
     for event in events:
         for field in fields:
             if not _health_field_ok(event, field):
@@ -2255,15 +2264,23 @@ def _health_completeness(events: list[dict], fields: tuple[str, ...]) -> tuple[f
     return 1.0 - (sum(missing.values()) / total), missing
 
 
-def _health_lamp(count: int, coverage: float, completeness: float) -> str:
-    if count == 0:
-        return "red"
-    if coverage >= HEALTH_COVERAGE_OK and completeness >= HEALTH_MISSING_FIELDS:
+def _health_lamp(
+    klass: str, events: int, coverage: float | None, completeness: float, denominator: int
+) -> str:
+    """灯语义按类别分开：按需事件永远不亮红黄。"""
+    if klass == "on_demand":
+        return "gray"
+    if events == 0:
+        return "red" if denominator else "gray"
+    if completeness < HEALTH_COMPLETE_OK:
+        return "yellow"
+    if coverage is None:
         return "green"
-    return "yellow"
+    threshold = HEALTH_COVERAGE_OK.get(klass, 0.80)
+    return "green" if coverage >= threshold else "yellow"
 
 
-def _health_trend(events: list[dict], days: int) -> list[dict]:
+def _health_trend(events: list[dict], start: int, end: int, days: int) -> list[dict]:
     counts: dict[str, int] = {}
     for event in events:
         stamp = int(event.get("t") or 0)
@@ -2271,17 +2288,22 @@ def _health_trend(events: list[dict], days: int) -> list[dict]:
             continue
         day = datetime.fromtimestamp(stamp / 1000).strftime("%Y-%m-%d")
         counts[day] = counts.get(day, 0) + 1
-    today_stamp = now_ms()
     rows = []
     for offset in range(days - 1, -1, -1):
-        stamp = today_stamp - offset * 86400000
+        stamp = end - offset * 86400000
         day = datetime.fromtimestamp(stamp / 1000).strftime("%Y-%m-%d")
         rows.append({"date": day, "count": counts.get(day, 0)})
     return rows
 
 
+def _health_delta(current: int, previous: int) -> float | None:
+    if not previous:
+        return None
+    return round((current - previous) / previous, 3)
+
+
 def _eligible_sessions(events: list[dict]) -> set[str]:
-    """太短的会话会把覆盖率系统性拉低，先排除：至少 2 次提问，或至少 1 个有分钟的回合。"""
+    """太短的会话会把覆盖率系统性拉低：至少 2 次提问，或至少 1 个有分钟的回合。"""
     prompts: dict[str, int] = {}
     blocks: dict[str, int] = {}
     for event in events:
@@ -2296,52 +2318,106 @@ def _eligible_sessions(events: list[dict]) -> set[str]:
             if prompts.get(sid, 0) >= 2 or blocks.get(sid, 0) >= 1}
 
 
+def _work_keys(event: dict) -> tuple[str, str]:
+    return (
+        str(event.get("sid") or ""),
+        str(event.get("work_id") or event.get("task_id") or ""),
+    )
+
+
 def health_summary(
     days: float = 7.0, now: int | None = None, start: int | None = None,
     host_filter: str | None = None,
 ) -> dict:
-    """按工具汇总采集健康度，供面板「健康度」tab 使用。
-
-    口径：能派生就不新增采集。被动工具看覆盖会话比例 + 字段完整率；
-    主动上报额外看「开始→结束」闭环率与提醒后的跟进率。
-    """
+    """按工具汇总采集健康度，供面板「健康度」tab 使用。"""
     end = now if now is not None else now_ms()
     window_days = max(1, int(round(float(days))))
-    start = int(start) if start is not None else end - int(max(float(days), 1.0) * 86400000)
-    events = [event for event in _events_between(start, end)
-              if not host_filter or event.get("host") == host_filter]
+    span = max(int(float(days) * 86400000), 86400000)
+    start = int(start) if start is not None else end - span
+    previous_start = start - span
+
+    raw_events = _events_between(previous_start, end)
+    if host_filter:
+        raw_events = [event for event in raw_events if event.get("host") == host_filter]
+    events = [event for event in raw_events if start <= int(event.get("t") or 0) <= end]
+    previous = [event for event in raw_events if previous_start <= int(event.get("t") or 0) < start]
+
     eligible = _eligible_sessions(events)
     all_sessions = {str(event.get("sid")) for event in events if event.get("sid")}
     by_kind: dict[str, list[dict]] = {}
     for event in events:
         by_kind.setdefault(str(event.get("ev") or ""), []).append(event)
+    prev_by_kind: dict[str, int] = {}
+    for event in previous:
+        kind = str(event.get("ev") or "")
+        prev_by_kind[kind] = prev_by_kind.get(kind, 0) + 1
 
-    passive = []
-    for kind, label, fields, card in _HEALTH_PASSIVE:
+    works_started = {_work_keys(row) for row in by_kind.get("probe_report", [])
+                     if row.get("phase") == "start" and _work_keys(row)[1]}
+    works_ended = {_work_keys(row) for row in by_kind.get("probe_report", [])
+                   if row.get("phase") == "end" and _work_keys(row)[1]}
+    denominators = {
+        "session": len(eligible),
+        "work": len(works_started),
+        "ended": len(works_ended),
+        "call": len(eligible),
+        "on_demand": 0,
+    }
+
+    def coverage_counts(klass: str, rows: list[dict]) -> tuple[int, int] | None:
+        if klass == "on_demand" or not rows:
+            return None
+        if klass == "call":
+            # 调用的「覆盖」= 有多少次调用归属到了工作
+            attributed = sum(1 for row in rows if _health_field_ok(row, "work_id"))
+            return attributed, len(rows)
+        if klass == "session":
+            if not eligible:
+                return None
+            seen = {str(row.get("sid")) for row in rows if row.get("sid")}
+            return len(seen & eligible), len(eligible)
+        anchor = works_ended if klass == "ended" else works_started
+        if not anchor:
+            return None
+        seen = {_work_keys(row) for row in rows if _work_keys(row)[1]}
+        return len(seen & anchor), len(anchor)
+
+    def build_row(spec: tuple) -> dict:
+        kind, label, klass, fields, card = spec[:5]
+        shipped = spec[5] if len(spec) > 5 else True
         rows = by_kind.get(kind, [])
-        sids = {str(row.get("sid")) for row in rows if row.get("sid")}
-        coverage = len(sids & eligible) / len(eligible) if eligible else 0.0
+        counts = coverage_counts(klass, rows)
+        coverage = (counts[0] / counts[1]) if counts and counts[1] else None
         completeness, missing = _health_completeness(rows, fields)
-        passive.append({
+        entry = {
             "tool": kind,
             "label": label,
+            "class": klass,
+            "scope": HEALTH_SCOPE_LABEL[klass],
             "events": len(rows),
-            "session_coverage": round(coverage, 3),
+            "session_coverage": None if coverage is None else round(coverage, 3),
+            "coverage_numerator": None if counts is None else counts[0],
+            "coverage_denominator": None if counts is None else counts[1],
             "field_completeness": round(completeness, 3),
             "missing_fields": {k: v for k, v in missing.items() if v},
-            "trend": _health_trend(rows, min(window_days, 30)),
-            "lamp": _health_lamp(len(rows), coverage, completeness),
+            "trend": _health_trend(rows, start, end, min(window_days, 30)),
+            "delta_vs_previous": _health_delta(len(rows), prev_by_kind.get(kind, 0)),
             "card": card,
-        })
+            "lamp": _health_lamp(klass, len(rows), coverage, completeness,
+                                 denominators.get(klass, 0)),
+        }
+        if not shipped:
+            entry["status"] = "not-shipped"
+            entry["lamp"] = "gray"
+        return entry
 
-    # 按「会话 × 工作」配对：同一个 work_id 在多个会话里各开各收，不能只看 id。
-    starts = {(str(row.get("sid")), str(row.get("task_id")))
-              for row in by_kind.get("probe_report", [])
-              if row.get("phase") == "start" and row.get("task_id")}
-    ends = {(str(row.get("sid")), str(row.get("task_id")))
-            for row in by_kind.get("probe_report", [])
-            if row.get("phase") == "end" and row.get("task_id")}
+    passive = [build_row(spec) for spec in _HEALTH_PASSIVE]
+    active = [build_row(spec) for spec in _HEALTH_ACTIVE]
+
+    starts = works_started
+    ends = works_ended
     closure = (len(ends & starts) / len(starts)) if starts else None
+    unclosed = sorted(starts - ends)  # 有 start 没有 end
 
     reminders = by_kind.get("reminder", [])
     reports = by_kind.get("probe_report", [])
@@ -2354,40 +2430,31 @@ def health_summary(
             followed += 1
     adherence = (followed / len(reminders)) if reminders else None
 
-    active = []
-    for kind, label, fields, card, shipped in _HEALTH_ACTIVE:
-        rows = by_kind.get(kind, [])
-        sids = {str(row.get("sid")) for row in rows if row.get("sid")}
-        coverage = len(sids & eligible) / len(eligible) if eligible else 0.0
-        completeness, missing = _health_completeness(rows, fields)
-        entry = {
-            "tool": kind,
-            "label": label,
-            "events": len(rows),
-            "session_coverage": round(coverage, 3),
-            "field_completeness": round(completeness, 3),
-            "missing_fields": {k: v for k, v in missing.items() if v},
-            "trend": _health_trend(rows, min(window_days, 30)),
-            "card": card,
-            "status": "shipped" if shipped else "not-shipped",
-        }
-        if not shipped:
-            entry["lamp"] = "gray"
-        elif kind == "probe_report":
-            entry["stage_closure"] = None if closure is None else round(closure, 3)
-            entry["adherence"] = None if adherence is None else round(adherence, 3)
-            if not rows:
-                entry["lamp"] = "red"
-            elif closure is not None and closure >= HEALTH_CLOSURE_OK and completeness >= 0.9:
-                entry["lamp"] = "green"
+    report_row = next((row for row in active if row["tool"] == "probe_report"), None)
+    if report_row is not None:
+        report_row["stage_closure"] = None if closure is None else round(closure, 3)
+        report_row["adherence"] = None if adherence is None else round(adherence, 3)
+        if report_row["events"]:
+            if closure is not None and closure >= HEALTH_CLOSURE_OK and \
+                    report_row["field_completeness"] >= 0.9:
+                report_row["lamp"] = "green"
             else:
-                entry["lamp"] = "yellow"
-        elif kind == "work_summary" and ends:
-            entry["coverage_of_ended"] = round(min(1.0, len(rows) / len(ends)), 3) if ends else 0.0
-            entry["lamp"] = "red" if not rows else _health_lamp(len(rows), coverage, completeness)
+                report_row["lamp"] = "yellow"
+
+    summary_row = next((row for row in active if row["tool"] == "work_summary"), None)
+    if summary_row is not None:
+        summarized = {_work_keys(row) for row in by_kind.get("work_summary", [])
+                      if _work_keys(row)[1]}
+        hits = len(summarized & works_ended)
+        coverage = (hits / len(works_ended)) if works_ended else None
+        summary_row["session_coverage"] = None if coverage is None else round(coverage, 3)
+        summary_row["coverage_numerator"] = hits if works_ended else None
+        summary_row["coverage_denominator"] = len(works_ended) if works_ended else None
+        if summary_row["events"]:
+            summary_row["lamp"] = _health_lamp("ended", summary_row["events"], coverage,
+                                               summary_row["field_completeness"], len(works_ended))
         else:
-            entry["lamp"] = _health_lamp(len(rows), coverage, completeness)
-        active.append(entry)
+            summary_row["lamp"] = "red" if works_ended else "gray"
 
     diagnostics: list[dict] = []
 
@@ -2397,56 +2464,74 @@ def health_summary(
             "evidence": evidence, "cause": cause, "card": card,
         })
 
-    tool_row = next((row for row in passive if row["tool"] == "tool"), None)
-    if tool_row and tool_row["events"]:
+    tool_row = next(row for row in passive if row["tool"] == "tool")
+    if tool_row["events"]:
         missing_work = tool_row["missing_fields"].get("work_id")
         if missing_work:
-            diag("warn", "tool", "工具事件没有归属到工作",
-                 f"{missing_work}/{tool_row['events']} 条 tool 事件缺 work_id",
-                 "record_tool 只写 sid/name/is_error，没解析当前绑定", tool_row["card"])
-    summary_row = next((row for row in active if row["tool"] == "work_summary"), None)
-    if summary_row and ends and not summary_row["events"]:
+            diag("warn", "tool", "工具调用没有归属到工作",
+                 f"{missing_work}/{tool_row['events']} 条 tool 事件缺 work_id，时间会算到错误的账上",
+                 "record_tool 只写 sid/name/is_error，没有解析当前绑定", tool_row["card"])
+    if report_row is not None and closure is not None and closure < HEALTH_CLOSURE_OK:
+        ids = sorted({work for _, work in unclosed})
+        sample = "、".join(ids[:5])
+        more = " 等" if len(ids) > 5 else ""
+        diag("warn", "probe_report", "有开始、没收尾",
+             f"未收尾 {len(unclosed)} 个（{len(ids)} 个 id）：{sample}{more}",
+             "收尾提示弱，或 end 时没有可写的字段", "24a45ce8")
+    if summary_row is not None and works_ended and summary_row["events"] == 0:
         diag("warn", "work_summary", "收尾一条小结都没有",
-             f"有 {len(ends)} 个收尾工作，0 条 work_summary",
+             f"{len(works_ended)} 个工作收尾，0 条 work_summary",
              "DSH 侧三句字段没进工具 schema，模型永远传不上来", "42ae110d")
-    report_row = next((row for row in active if row["tool"] == "probe_report"), None)
-    if report_row and report_row.get("stage_closure") is not None:
-        if report_row["stage_closure"] < HEALTH_CLOSURE_OK:
-            diag("warn", "probe_report", "有开始、没收尾",
-                 f"start {len(starts)} 个，已收尾 {len(ends & starts)} 个，闭环率 {report_row['stage_closure']:.0%}",
-                 "收尾提示弱，或 end 后没有可写的字段", "24a45ce8")
-    if report_row and report_row.get("adherence") is not None and report_row["adherence"] < 0.5:
+    if report_row is not None and adherence is not None and adherence < 0.5:
         diag("warn", "probe_report", "提醒之后不跟进",
              f"{len(reminders)} 次提醒，10 分钟内上报 {followed} 次",
              "提醒的措辞或位置没被模型接住", "")
     for entry in passive:
-        if entry["events"] == 0 and eligible:
-            diag("warn", entry["tool"], f"{entry['label']}这段时间完全没采到",
-                 f"{entry['tool']}：0 条事件，覆盖 {len(eligible)} 个有效会话",
+        if entry["class"] in ("session", "work", "call") and entry["events"] == 0 \
+                and denominators.get(entry["class"]):
+            diag("warn", entry["tool"], f"{entry['label']}完全没有事件",
+                 f"{entry['tool']}：0 条，但这类事件本应有 {denominators[entry['class']]} 个锚点",
                  "采集没上线，或这个宿主没有对应 hook", entry["card"])
     adjustment_row = next((row for row in active if row["tool"] == "adjustment"), None)
-    if adjustment_row and adjustment_row["status"] == "not-shipped":
+    if adjustment_row is not None and adjustment_row.get("status") == "not-shipped":
         diag("info", "adjustment", "改进记录还没上线",
              "事件已设计（work_id/metric/before/after/evidence），代码未实现",
              "改进点目前只能靠对话里的口头决定", adjustment_row["card"])
     if len(eligible) < 3:
         diag("info", "all", "样本太少，先别下结论",
              f"有效会话只有 {len(eligible)} 个",
-             "覆盖率在会话数少时波动很大，等数据攒够再看", "")
+             "覆盖率在会话数少时波动很大", "")
 
-    passive_cov = [row["session_coverage"] for row in passive]
-    active_use = [row["session_coverage"] for row in active if row["status"] == "shipped"]
+    covered = [row["session_coverage"] for row in passive + active
+               if row["session_coverage"] is not None and row.get("status") != "not-shipped"]
+    required = [row for row in passive + active
+                if row["class"] != "on_demand" and row.get("status") != "not-shipped"]
+    required_ok = sum(1 for row in required if row["lamp"] == "green")
     abnormal = sum(1 for row in passive + active if row["lamp"] in ("red", "yellow"))
+    hosts = sorted({str(event.get("host")) for event in events if event.get("host")})
+    warns = [diag for diag in diagnostics if diag["severity"] in ("warn", "error")]
+    if not eligible:
+        headline = "这段时间没有有效会话，先攒点数据再判断"
+    elif warns:
+        headline = f"{len(warns)} 个问题，最该先修：{warns[0]['title']}"
+    else:
+        headline = "采集健康，没有发现异常"
     return {
         "generated_at": now_ms(),
         "window": {"days": window_days, "start": start, "end": end},
         "sessions": {"total": len(all_sessions), "eligible": len(eligible)},
+        "works": {"started": len(works_started), "ended": len(works_ended)},
+        "hosts": hosts,
         "passive": passive,
         "active": active,
         "diagnostics": diagnostics,
         "summary": {
-            "passive_coverage_median": round(_median(passive_cov), 3) if passive_cov else 0.0,
-            "active_usage_median": round(_median(active_use), 3) if active_use else 0.0,
+            "has_previous": bool(prev_by_kind),
+            "headline": headline,
+            "coverage_median": round(_median(covered), 3) if covered else 0.0,
+            "min_coverage": round(min(covered), 3) if covered else 0.0,
+            "required_ok": required_ok,
+            "required_total": len(required),
             "abnormal_tools": abnormal,
         },
     }
