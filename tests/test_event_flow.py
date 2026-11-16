@@ -87,6 +87,7 @@ class EventFlowTest(unittest.TestCase):
         self.assertIn("work_open", kinds)
 
     def test_session_summary_exposes_timeline(self):
+        self.report(phase="start")
         self.core.record_prompt(self.sid, "hi", "/tmp/ws")
         self.core.record_stop(self.sid)
         data = self.core.session_summary(self.sid)
