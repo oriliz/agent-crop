@@ -11,9 +11,11 @@ import { apply, PROTOCOL_TEXT } from '../lib/index.js';
 function fakeCtx() {
   const handlers = new Map();
   const registered = [];
+  const skillDefinitions = [];
   return {
     handlers,
     registered,
+    skillDefinitions,
     on(event, handler) { handlers.set(event, handler); },
     effect(fn) { fn(); },
     // 宿主侧 ctx.inject 是能力接缝：测试里直接以「没有 webServer」回调，
@@ -21,6 +23,9 @@ function fakeCtx() {
     inject(_specs, fn) { fn({ webServer: undefined }); },
     tools: {
       register(definition) { registered.push(definition); return () => {}; },
+    },
+    skills: {
+      register(definition) { skillDefinitions.push(definition); return () => {}; },
     },
     logger: { warn() {} },
   };
@@ -62,7 +67,7 @@ test('registers probe_report with the documented schema', async (t) => {
   assert.ok(ctx.registered.some((item) => item.name === 'crop_work'));
   assert.deepEqual(tool.parameters.required, ['phase', 'task_id', 'summary']);
   assert.ok(tool.parameters.properties.phase.enum.includes('blocked'));
-  for (const field of ['what', 'cost', 'next_time', 'artifact', 'expect_min', 'verdict']) {
+  for (const field of ['what', 'cost', 'next_time', 'artifact', 'expect_min', 'verdict', 'sediment']) {
     assert.ok(tool.parameters.properties[field], `${field} should be in the schema`);
   }
   assert.equal(typeof tool.execute, 'function');
@@ -356,4 +361,50 @@ test('first turn shows the bound work even after it fell out of the candidates',
   assert.ok(text.includes('当前工作'), text);
   assert.ok(text.includes('甲目标'), text);
   assert.ok(!text.includes('哪个属于本会话'), text);
+});
+
+test('registers the retro-sediment skill for on-demand loading', () => {
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+
+  const skill = ctx.skillDefinitions.find((item) => item.name === 'crop-retro');
+  assert.ok(skill, 'crop-retro should be registered as a runtime skill');
+  assert.ok(skill.description.includes('复盘沉淀'), 'description must carry the trigger words');
+  assert.ok(skill.content.includes('四件套'), 'skill body must state the four-part rule');
+  assert.ok(skill.content.includes('sediment'), 'skill body must mention the ledger pointer');
+  assert.ok(skill.content.includes('验收判据'), 'skill body must demand an acceptance check');
+});
+
+test('protocol points at sediment without inlining the decision tree', async () => {
+  assert.ok(PROTOCOL_TEXT.includes('sediment'), 'protocol must mention the sediment field');
+  assert.ok(PROTOCOL_TEXT.includes('crop-retro'), 'protocol must point at the skill');
+  assert.ok(!PROTOCOL_TEXT.includes('## 落点决策'), 'decision tree stays out of the always-on protocol');
+});
+
+test('ending without sediment returns the nudge, and a sediment pointer is stored', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
+  const session = fakeSession('s-sed');
+
+  const first = await tool.execute(
+    { phase: 'end', task_id: 'sed-work', summary: '做完了', what: '做完了' },
+    { agent: { session } },
+  );
+  assert.match(first.recorded, /还没写沉淀/, 'missing sediment must be called out in the tool result');
+
+  const second = await tool.execute(
+    { phase: 'end', task_id: 'sed-work', summary: '补沉淀', what: '补沉淀', sediment: 'docs:WORKFLOW.md#复盘沉淀' },
+    { agent: { session } },
+  );
+  assert.doesNotMatch(second.recorded, /还没写沉淀/, 'a provided sediment must not nag');
+
+  const now = new Date();
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const report = await readFile(join(directory, 'reports', `${day}.jsonl`), 'utf8');
+  assert.match(report, /"sediment": "docs:WORKFLOW.md#复盘沉淀"/);
 });
