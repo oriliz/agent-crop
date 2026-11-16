@@ -10,6 +10,17 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
 
 ## [Unreleased]
 
+### Added（新增）
+
+- 全局面板新增「健康度」tab：按工具看**采集器本身有没有在干活**，而不是看这周干了什么。
+  被动采集展示会话覆盖率与字段完整率，AI 主动上报展示使用率与阶段闭环（start→end），
+  底部是按指标自动生成的诊断清单，每条指到对应看板卡（如 tool 缺 work_id、无 work_summary）。
+  - `core.health_summary()` 负责指标计算，`/api/tool-health` 暴露 JSON，面板只负责渲染；
+  - 指标全部从原始事件派生，不新增采集事件；
+  - 统计纪律：排除 < 2 turn 的会话；样本 < 3 个会话时只报「样本太少」，不下结论；
+  - 阈值先按覆盖 ≥ 80%、字段完整 ≥ 95% 拍，后续用真实数据校准。
+- 测试：`tests/test_health.py` 7 条聚合单测 + `/api/tool-health` 端点契约测试。
+
 ### Changed（变更）
 
 - MCP 服务名从 `probe` 改为 `crop`。多个 MCP 同时挂载时，`probe` 和产品名对不上，

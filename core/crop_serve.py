@@ -39,6 +39,15 @@ th.num{text-align:right}
 .muted{color:#8b93a1}
 .range{background:#161920;border:1px solid #2a2f39;color:#aeb6c4;border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer}
 .range.on{background:#233047;border-color:#3b5b8a;color:#dbe7ff}
+.tab{background:#161920;border:1px solid #2a2f39;color:#aeb6c4;border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer}
+.tab.on{background:#233047;border-color:#3b5b8a;color:#dbe7ff}
+.view[hidden]{display:none}
+.diag{display:grid;grid-template-columns:10px 1fr;gap:8px;padding:8px 0;border-bottom:1px solid #1e2128}
+.diag:last-child{border-bottom:0}
+.diag .t{font-size:13px}
+.diag .e{color:#8b93a1;font-size:12px;margin-top:2px}
+.diag .c{color:#6f7887;font-size:11px;margin-top:2px}
+.trend{color:#6f7887;font-size:11px;letter-spacing:.04em}
 .chart{display:flex;align-items:flex-end;gap:6px;height:180px;padding-top:6px}
 .slot{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;cursor:pointer;min-width:8px}
 .slot:hover .bar{filter:brightness(1.25)}
@@ -54,9 +63,12 @@ footer{color:#6f7887;font-size:11px;padding:0 28px 24px}
   <button class="range" data-days="1">今天</button>
   <button class="range on" data-days="7">7 天</button>
   <button class="range" data-days="30">30 天</button>
+  <button class="tab on" data-view="overview">总览</button>
+  <button class="tab" data-view="health">健康度</button>
   <span class="sub" id="asof" style="margin-left:auto"></span>
 </header>
 <main>
+  <div id="view-overview" class="view">
   <div class="cards" id="cards"></div>
   <section><h2>每日活跃时长（分钟，点柱子看当天明细）</h2>
     <div class="chart" id="chart"></div>
@@ -66,8 +78,23 @@ footer{color:#6f7887;font-size:11px;padding:0 28px 24px}
     <table><thead><tr><th>灯</th><th>工作</th><th>类型</th><th>难度</th><th class="num">活跃</th><th class="num">等待</th></tr></thead>
       <tbody id="works"></tbody></table>
   </section>
+  </div>
+  <div id="view-health" class="view" hidden>
+    <div class="cards" id="health-cards"></div>
+    <section><h2>被动采集 · 覆盖率与字段完整率</h2>
+      <table><thead><tr><th>灯</th><th>工具</th><th class="num">事件</th><th class="num">会话覆盖</th><th class="num">字段完整</th><th>7 日</th></tr></thead>
+        <tbody id="health-passive"></tbody></table>
+    </section>
+    <section><h2>AI 主动上报 · 使用率与阶段闭环</h2>
+      <table><thead><tr><th>灯</th><th>工具</th><th class="num">事件</th><th class="num">使用率</th><th class="num">字段完整</th><th class="num">阶段闭环</th><th>7 日</th></tr></thead>
+        <tbody id="health-active"></tbody></table>
+    </section>
+    <section><h2>诊断 · 哪些工具在一线是哑的</h2>
+      <div id="health-diags"></div>
+    </section>
+  </div>
 </main>
-<footer>灯色 = 该工作活跃时长 ÷ 同类型同难度基线：&lt; 0.6 绿 · 0.6–1.5 黄 · ≥ 1.5 红。数字由事件机械生成，归因只引用 AI 自述。</footer>
+<footer>灯色 = 该工作活跃时长 ÷ 同类型同难度基线：&lt; 0.6 绿 · 0.6–1.5 黄 · ≥ 1.5 红。数字由事件机械生成，归因只引用 AI 自述。<br>健康度灯：绿 = 覆盖 ≥ 80% 且字段完整 ≥ 95%；黄 = 有事件但低于阈值；红 = 这段时间一条都没有；灰 = 未上线。指标全部从事件派生，不新增采集。</footer>
 <script>
 let rangeDays = 7;
 const LAMP = {green:'#4ade80', yellow:'#eab308', red:'#ef4444'};
@@ -147,7 +174,75 @@ function renderWorkList(rows){
   }).join('');
 }
 
+let view = 'overview';
+
+function setView(next){
+  view = next;
+  document.querySelectorAll('button.tab').forEach(button => button.classList.toggle('on', button.dataset.view === view));
+  document.getElementById('view-overview').hidden = view !== 'overview';
+  document.getElementById('view-health').hidden = view !== 'health';
+  load();
+}
+document.querySelectorAll('button.tab').forEach(button =>
+  button.addEventListener('click', () => setView(button.dataset.view)));
+
+function lampDot(lamp){
+  const color = LAMP[lamp] || '#6b7280';
+  const label = {green:'绿', yellow:'黄', red:'红', gray:'灰'}[lamp] || '—';
+  return '<span class="dot" style="background:' + color + '"></span>' + label;
+}
+function pct(value){ return value == null ? '—' : Math.round(value * 100) + '%'; }
+function trendText(rows){
+  if (!rows || !rows.length) return '—';
+  return rows.map(row => row.count).join('·');
+}
+
+function renderHealth(data){
+  const s = data.summary || {};
+  const sessions = data.sessions || {};
+  const cards = [
+    ['有效会话', sessions.eligible || 0, '共 ' + (sessions.total || 0) + ' 个，短会话已排除'],
+    ['被动覆盖中位数', pct(s.passive_coverage_median), '各采集器的会话覆盖'],
+    ['主动使用中位数', pct(s.active_usage_median), 'AI 上报类工具'],
+    ['异常工具', s.abnormal_tools || 0, '黄 + 红'],
+  ];
+  document.getElementById('health-cards').innerHTML = cards.map(([k, v, note]) =>
+    '<div class="card"><div class="k">' + k + '</div><div class="v">' + (v == null ? '—' : v) + '</div>' +
+    '<div class="n">' + note + '</div></div>').join('');
+
+  document.getElementById('health-passive').innerHTML = (data.passive || []).map(row =>
+    '<tr><td>' + lampDot(row.lamp) + '</td><td>' + esc(row.label) + ' <span class="muted">' + esc(row.tool) + '</span></td>' +
+    '<td class="num">' + row.events + '</td><td class="num">' + pct(row.session_coverage) + '</td>' +
+    '<td class="num">' + (row.events ? pct(row.field_completeness) : '—') + '</td><td class="trend">' + trendText(row.trend) + '</td></tr>').join('');
+
+  document.getElementById('health-active').innerHTML = (data.active || []).map(row => {
+    const closure = row.status === 'not-shipped' ? '<span class="muted">未上线</span>' : pct(row.stage_closure);
+    return '<tr><td>' + lampDot(row.lamp) + '</td><td>' + esc(row.label) + ' <span class="muted">' + esc(row.tool) + '</span></td>' +
+      '<td class="num">' + row.events + '</td><td class="num">' + pct(row.session_coverage) + '</td>' +
+      '<td class="num">' + (row.events ? pct(row.field_completeness) : '—') + '</td><td class="num">' + closure + '</td>' +
+      '<td class="trend">' + trendText(row.trend) + '</td></tr>';
+  }).join('');
+
+  const diags = data.diagnostics || [];
+  document.getElementById('health-diags').innerHTML = diags.length ? diags.map(d => {
+    const color = d.severity === 'info' ? '#6b7280' : '#eab308';
+    const card = d.card ? ' · 卡 ' + esc(d.card) : '';
+    return '<div class="diag"><span class="dot" style="background:' + color + '"></span><div>' +
+      '<div class="t">' + esc(d.title) + '</div>' +
+      '<div class="e">' + esc(d.evidence) + '</div>' +
+      '<div class="c">' + esc(d.cause) + card + '</div></div></div>';
+  }).join('') : '<div class="muted">没有发现异常。</div>';
+}
+
+async function loadHealth(){
+  const response = await fetch('/api/tool-health?days=' + rangeDays);
+  const data = await response.json();
+  document.getElementById('asof').textContent = 'updated ' + new Date().toLocaleTimeString();
+  renderHealth(data);
+}
+
 async function load(){
+  if (view === 'health') { await loadHealth(); return; }
   const response = await fetch('/api/summary?days=' + rangeDays);
   const data = await response.json();
   const p = data.period || {};
@@ -261,6 +356,24 @@ class Handler(BaseHTTPRequestHandler):
             if "sid=" in self.path:
                 sid = self.path.split("sid=", 1)[1].split("&", 1)[0]
             payload = core.session_summary(sid)
+            body = json.dumps(payload, ensure_ascii=False).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            for name, value in _cors_headers(self):
+                self.send_header(name, value)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.startswith("/api/tool-health"):
+            days = 7.0
+            if "days=" in self.path:
+                try:
+                    days = float(self.path.split("days=", 1)[1].split("&", 1)[0])
+                except ValueError:
+                    days = 7.0
+            days = max(1.0, days)
+            payload = core.health_summary(days, start=_range_start(days))
             body = json.dumps(payload, ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")

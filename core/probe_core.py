@@ -2194,3 +2194,269 @@ def format_pending_retire(limit: int = 5) -> str:
         f"[crop] 有长期没动的工作待清退：{names}{more}。"
         "问用户一句：这些还要继续吗？要继续 / 先挂起 / 确认清退。"
     )
+
+
+# ---------------------------------------------------------------------------
+# Health: 采集工具在一线到底有没有在干活
+#
+# 这个视图回答的不是「AI 用了哪个工具」，而是「工具本身是不是哑了」：
+# 被动采集看覆盖率与字段完整率，主动上报看依从率与阶段闭环。
+# 指标全部从原始事件派生，不新增采集、不落第二套真相。
+# ---------------------------------------------------------------------------
+
+# (事件名, 显示名, 必需字段, 缺字段时关联的看板卡)
+_HEALTH_PASSIVE = (
+    ("session_start", "会话开始", ("sid",), ""),
+    ("session_end", "会话结束", ("sid",), ""),
+    ("prompt", "回合开始", ("sid",), ""),
+    ("stop", "回合结束", ("sid", "minutes"), ""),
+    ("tool", "工具调用", ("sid", "name", "work_id"), "c9cb276b"),
+    ("reminder", "超时提醒", ("sid", "minutes"), ""),
+    ("user_wait", "等人时长", ("sid", "waiting_ms"), ""),
+    ("idle_gap", "离开间隔", ("sid", "gap_ms"), ""),
+    ("task_link", "归属链接", ("task_id", "block_start"), ""),
+    ("work_claim", "工作认领", ("work_id", "sid"), ""),
+    ("work_archive", "工作归档", ("work_id",), ""),
+)
+
+# (事件名, 显示名, 必需字段, 缺字段时关联的看板卡, 是否已上线)
+_HEALTH_ACTIVE = (
+    ("probe_report", "工作上报", ("phase", "task_id", "summary"), "", True),
+    ("work_summary", "收尾小结", ("what", "cost", "next_time"), "42ae110d", True),
+    ("side_issue", "枝节记录", ("work_id", "note"), "", True),
+    ("work_close", "工作关闭", ("work_id",), "", True),
+    ("adjustment", "改进记录", ("metric", "before", "after"), "fd0acdc3", False),
+)
+
+HEALTH_MISSING_FIELDS = 0.95
+HEALTH_COVERAGE_OK = 0.80
+HEALTH_CLOSURE_OK = 0.70
+
+
+def _health_field_ok(event: dict, field: str) -> bool:
+    value = event.get(field)
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
+def _health_completeness(events: list[dict], fields: tuple[str, ...]) -> tuple[float, dict[str, int]]:
+    """字段完整率，以及每个字段各缺了多少条。"""
+    if not events:
+        return 1.0, {}
+    missing: dict[str, int] = {field: 0 for field in fields}
+    for event in events:
+        for field in fields:
+            if not _health_field_ok(event, field):
+                missing[field] += 1
+    total = len(events) * len(fields)
+    return 1.0 - (sum(missing.values()) / total), missing
+
+
+def _health_lamp(count: int, coverage: float, completeness: float) -> str:
+    if count == 0:
+        return "red"
+    if coverage >= HEALTH_COVERAGE_OK and completeness >= HEALTH_MISSING_FIELDS:
+        return "green"
+    return "yellow"
+
+
+def _health_trend(events: list[dict], days: int) -> list[dict]:
+    counts: dict[str, int] = {}
+    for event in events:
+        stamp = int(event.get("t") or 0)
+        if not stamp:
+            continue
+        day = datetime.fromtimestamp(stamp / 1000).strftime("%Y-%m-%d")
+        counts[day] = counts.get(day, 0) + 1
+    today_stamp = now_ms()
+    rows = []
+    for offset in range(days - 1, -1, -1):
+        stamp = today_stamp - offset * 86400000
+        day = datetime.fromtimestamp(stamp / 1000).strftime("%Y-%m-%d")
+        rows.append({"date": day, "count": counts.get(day, 0)})
+    return rows
+
+
+def _eligible_sessions(events: list[dict]) -> set[str]:
+    """太短的会话会把覆盖率系统性拉低，先排除：至少 2 次提问，或至少 1 个有分钟的回合。"""
+    prompts: dict[str, int] = {}
+    blocks: dict[str, int] = {}
+    for event in events:
+        sid = str(event.get("sid") or "")
+        if not sid:
+            continue
+        if event.get("ev") == "prompt":
+            prompts[sid] = prompts.get(sid, 0) + 1
+        elif event.get("ev") == "stop" and float(event.get("minutes") or 0) > 0:
+            blocks[sid] = blocks.get(sid, 0) + 1
+    return {sid for sid in set(prompts) | set(blocks)
+            if prompts.get(sid, 0) >= 2 or blocks.get(sid, 0) >= 1}
+
+
+def health_summary(
+    days: float = 7.0, now: int | None = None, start: int | None = None,
+    host_filter: str | None = None,
+) -> dict:
+    """按工具汇总采集健康度，供面板「健康度」tab 使用。
+
+    口径：能派生就不新增采集。被动工具看覆盖会话比例 + 字段完整率；
+    主动上报额外看「开始→结束」闭环率与提醒后的跟进率。
+    """
+    end = now if now is not None else now_ms()
+    window_days = max(1, int(round(float(days))))
+    start = int(start) if start is not None else end - int(max(float(days), 1.0) * 86400000)
+    events = [event for event in _events_between(start, end)
+              if not host_filter or event.get("host") == host_filter]
+    eligible = _eligible_sessions(events)
+    all_sessions = {str(event.get("sid")) for event in events if event.get("sid")}
+    by_kind: dict[str, list[dict]] = {}
+    for event in events:
+        by_kind.setdefault(str(event.get("ev") or ""), []).append(event)
+
+    passive = []
+    for kind, label, fields, card in _HEALTH_PASSIVE:
+        rows = by_kind.get(kind, [])
+        sids = {str(row.get("sid")) for row in rows if row.get("sid")}
+        coverage = len(sids & eligible) / len(eligible) if eligible else 0.0
+        completeness, missing = _health_completeness(rows, fields)
+        passive.append({
+            "tool": kind,
+            "label": label,
+            "events": len(rows),
+            "session_coverage": round(coverage, 3),
+            "field_completeness": round(completeness, 3),
+            "missing_fields": {k: v for k, v in missing.items() if v},
+            "trend": _health_trend(rows, min(window_days, 30)),
+            "lamp": _health_lamp(len(rows), coverage, completeness),
+            "card": card,
+        })
+
+    # 按「会话 × 工作」配对：同一个 work_id 在多个会话里各开各收，不能只看 id。
+    starts = {(str(row.get("sid")), str(row.get("task_id")))
+              for row in by_kind.get("probe_report", [])
+              if row.get("phase") == "start" and row.get("task_id")}
+    ends = {(str(row.get("sid")), str(row.get("task_id")))
+            for row in by_kind.get("probe_report", [])
+            if row.get("phase") == "end" and row.get("task_id")}
+    closure = (len(ends & starts) / len(starts)) if starts else None
+
+    reminders = by_kind.get("reminder", [])
+    reports = by_kind.get("probe_report", [])
+    followed = 0
+    for reminder in reminders:
+        rsid = reminder.get("sid")
+        rt = int(reminder.get("t") or 0)
+        if any(row.get("sid") == rsid and rt <= int(row.get("t") or 0) <= rt + 10 * 60000
+               for row in reports):
+            followed += 1
+    adherence = (followed / len(reminders)) if reminders else None
+
+    active = []
+    for kind, label, fields, card, shipped in _HEALTH_ACTIVE:
+        rows = by_kind.get(kind, [])
+        sids = {str(row.get("sid")) for row in rows if row.get("sid")}
+        coverage = len(sids & eligible) / len(eligible) if eligible else 0.0
+        completeness, missing = _health_completeness(rows, fields)
+        entry = {
+            "tool": kind,
+            "label": label,
+            "events": len(rows),
+            "session_coverage": round(coverage, 3),
+            "field_completeness": round(completeness, 3),
+            "missing_fields": {k: v for k, v in missing.items() if v},
+            "trend": _health_trend(rows, min(window_days, 30)),
+            "card": card,
+            "status": "shipped" if shipped else "not-shipped",
+        }
+        if not shipped:
+            entry["lamp"] = "gray"
+        elif kind == "probe_report":
+            entry["stage_closure"] = None if closure is None else round(closure, 3)
+            entry["adherence"] = None if adherence is None else round(adherence, 3)
+            if not rows:
+                entry["lamp"] = "red"
+            elif closure is not None and closure >= HEALTH_CLOSURE_OK and completeness >= 0.9:
+                entry["lamp"] = "green"
+            else:
+                entry["lamp"] = "yellow"
+        elif kind == "work_summary" and ends:
+            entry["coverage_of_ended"] = round(min(1.0, len(rows) / len(ends)), 3) if ends else 0.0
+            entry["lamp"] = "red" if not rows else _health_lamp(len(rows), coverage, completeness)
+        else:
+            entry["lamp"] = _health_lamp(len(rows), coverage, completeness)
+        active.append(entry)
+
+    diagnostics: list[dict] = []
+
+    def diag(severity: str, tool: str, title: str, evidence: str, cause: str, card: str = "") -> None:
+        diagnostics.append({
+            "severity": severity, "tool": tool, "title": title,
+            "evidence": evidence, "cause": cause, "card": card,
+        })
+
+    tool_row = next((row for row in passive if row["tool"] == "tool"), None)
+    if tool_row and tool_row["events"]:
+        missing_work = tool_row["missing_fields"].get("work_id")
+        if missing_work:
+            diag("warn", "tool", "工具事件没有归属到工作",
+                 f"{missing_work}/{tool_row['events']} 条 tool 事件缺 work_id",
+                 "record_tool 只写 sid/name/is_error，没解析当前绑定", tool_row["card"])
+    summary_row = next((row for row in active if row["tool"] == "work_summary"), None)
+    if summary_row and ends and not summary_row["events"]:
+        diag("warn", "work_summary", "收尾一条小结都没有",
+             f"有 {len(ends)} 个收尾工作，0 条 work_summary",
+             "DSH 侧三句字段没进工具 schema，模型永远传不上来", "42ae110d")
+    report_row = next((row for row in active if row["tool"] == "probe_report"), None)
+    if report_row and report_row.get("stage_closure") is not None:
+        if report_row["stage_closure"] < HEALTH_CLOSURE_OK:
+            diag("warn", "probe_report", "有开始、没收尾",
+                 f"start {len(starts)} 个，已收尾 {len(ends & starts)} 个，闭环率 {report_row['stage_closure']:.0%}",
+                 "收尾提示弱，或 end 后没有可写的字段", "24a45ce8")
+    if report_row and report_row.get("adherence") is not None and report_row["adherence"] < 0.5:
+        diag("warn", "probe_report", "提醒之后不跟进",
+             f"{len(reminders)} 次提醒，10 分钟内上报 {followed} 次",
+             "提醒的措辞或位置没被模型接住", "")
+    for entry in passive:
+        if entry["events"] == 0 and eligible:
+            diag("warn", entry["tool"], f"{entry['label']}这段时间完全没采到",
+                 f"{entry['tool']}：0 条事件，覆盖 {len(eligible)} 个有效会话",
+                 "采集没上线，或这个宿主没有对应 hook", entry["card"])
+    adjustment_row = next((row for row in active if row["tool"] == "adjustment"), None)
+    if adjustment_row and adjustment_row["status"] == "not-shipped":
+        diag("info", "adjustment", "改进记录还没上线",
+             "事件已设计（work_id/metric/before/after/evidence），代码未实现",
+             "改进点目前只能靠对话里的口头决定", adjustment_row["card"])
+    if len(eligible) < 3:
+        diag("info", "all", "样本太少，先别下结论",
+             f"有效会话只有 {len(eligible)} 个",
+             "覆盖率在会话数少时波动很大，等数据攒够再看", "")
+
+    passive_cov = [row["session_coverage"] for row in passive]
+    active_use = [row["session_coverage"] for row in active if row["status"] == "shipped"]
+    abnormal = sum(1 for row in passive + active if row["lamp"] in ("red", "yellow"))
+    return {
+        "generated_at": now_ms(),
+        "window": {"days": window_days, "start": start, "end": end},
+        "sessions": {"total": len(all_sessions), "eligible": len(eligible)},
+        "passive": passive,
+        "active": active,
+        "diagnostics": diagnostics,
+        "summary": {
+            "passive_coverage_median": round(_median(passive_cov), 3) if passive_cov else 0.0,
+            "active_usage_median": round(_median(active_use), 3) if active_use else 0.0,
+            "abnormal_tools": abnormal,
+        },
+    }
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        return 0.0
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return float(ordered[mid])
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
