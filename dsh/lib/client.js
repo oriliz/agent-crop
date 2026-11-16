@@ -92,7 +92,7 @@ window.__ModuleLoader__.load({
   gap: 14px;
   align-content: start;
   width: 100%;
-  max-width: 1120px;
+  max-width: none;
   box-sizing: border-box;
   font-size: 13px;
 }
