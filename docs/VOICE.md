@@ -25,7 +25,7 @@
 | `warm` | `0.8E ≤ t < E` | 鞭子举起来了，但还没落；可以现在改口 |
 | `yellow` | `E ≤ t < 1.5E` | 「啪！」：要么顶回去讲理由，要么认账写 cause + verdict |
 | `red` | `1.5E ≤ t < 2.5E` | 工头翻账本：报价 vs 实际，要阶段性交付 |
-| `overdue` | `t ≥ 2.5E` | 奴隶主焦躁了（文案里会掺「烧心」这类热词），先保命 |
+| `overdue` | `t ≥ 2.5E` | 奴隶主焦躁了（文案里会掺「烧心」这类热词），先问「再给 N 分钟能交付什么」，再保命 |
 
 比例在 `DEFAULT_CONFIG` 的 `warm_ratio` / `red_ratio` / `overdue_ratio`，
 可以在 `$KIT_DATA_DIR/config.json` 里覆盖。
@@ -43,8 +43,9 @@ crop_update(phase="progress", task_id="做A", summary="…", cause="数据层要
 
 - `start` 时带 `expect_min` 就写进任务（`expect_min` / `expect_why` / `expect_set_at`）；
 - 之后任何一次上报带不同的数字，就算一次改口：落 `estimate_revised` 事件，
-  追加进 `expect_history`（from / to / reason / at），提醒文案从第 2 次起会点名；
-- 不阻断、不设上限：报预期是义务，报多少是 AI 的判断；改口要理由，账本记着。
+  追加进 `expect_history`（from / to / reason / at）；从第 2 次起提醒会写明这是第几次，
+  次数进估准率——不改口本身不是错，连续改口先看是不是任务拆得太大、开工前没摸清；
+- 不阻断、不设上限：报预期是义务，报多少是 AI 的判断；改口要理由，次数进估准率。
 
 ## 文案池与轮换
 

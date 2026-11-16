@@ -33,6 +33,13 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 所有事件公共字段：`ev`（类型）、`t`（毫秒时间戳）、`host`（dsh / claude-code / …）、`sid`。
 `user_wait` / `idle_gap` 自 v1 起带 `work_id`（等待归属到它前面那个 block 的工作）。
 
+> **活跃时长口径（Issue #18 起）**：`stop.minutes` 与 `blocks/*.jsonl` 的 `minutes`
+> 是**观测到的活跃时长**，不是墙钟。相邻事件间隔超过 `IDLE_MIN`（默认 15 分钟）的
+> 静默段不计；`user_wait` / `idle_gap` / `human_wait` 覆盖的时段也会扣掉。
+> `wall_minutes` 字段保留原始墙钟供诊断。没有 `turn_end` 收尾的 block 会在
+> `session_start` / `session_end` 时关闭，事件带 `abandoned: true`，按最后一条
+> 实际事件截断，不会把重启后的整段墙钟接着算。
+
 ### 1.2 新增（v1，按 grillme 决策）
 
 | 事件 | 何时产生 | 关键字段 | 对应决策 |
