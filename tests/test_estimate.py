@@ -141,6 +141,12 @@ class EstimateLadderTest(unittest.TestCase):
         line = self.core.work_status_line("/tmp/ws", self.sid)
         self.assertIn("还没报预期", line)
 
+    # -- the tone travels with the first turn -------------------------------
+    def test_first_turn_hint_carries_the_tone(self):
+        text = self.core.format_start_hint([], 0, self.sid)
+        self.assertIn("同事吐槽", text)
+        self.assertIn("梗是包装", text)
+
     # -- miss nudge keeps its copy in the pool ------------------------------
     def test_miss_nudge_comes_from_the_pool(self):
         first = self.core.miss_nudge(1)

@@ -908,6 +908,12 @@ def ago(ms: int) -> str:
     return f"{minutes // 60} 小时前"
 
 
+TONE_HINT = (
+    "说话方式：跟用户像同事吐槽，短句 + 自嘲，别客服腔；卡住或超时先自嘲一句，"
+    "再说真实原因和下一步。梗是包装，技术结论、代码、风险提示照常严谨。"
+)
+
+
 ESTIMATE_HINT = (
     "绑定后先报预期（不阻断，但必须报）：crop_update 带 expect_min=多少分钟 + expect_why=一句为什么。"
     "提醒按你报的数字算——在你报的时长内不会有人抽鞭子；觉得报少了，就带着理由改。"
@@ -951,7 +957,14 @@ def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | No
 
 
 def format_start_hint(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
-    return format_open_tasks(tasks, total, sid)
+    """First turn of a session: binding list + the tone it should talk in.
+
+    The tone lives in the system prompt too, but that section only exists after
+    the host reloads the plugin; this line makes a fresh session talk right even
+    when the plugin load happened before the copy changed.
+    """
+    text = format_open_tasks(tasks, total, sid)
+    return f"{text}\n{TONE_HINT}" if text else TONE_HINT
 
 
 def format_reminder(minutes: float, config: dict) -> str:
