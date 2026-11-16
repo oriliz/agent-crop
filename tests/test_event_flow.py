@@ -86,6 +86,20 @@ class EventFlowTest(unittest.TestCase):
         self.assertIn("work_claim", kinds)
         self.assertIn("work_open", kinds)
 
+    def test_stop_does_not_borrow_another_sessions_work(self):
+        self.report(phase="start")  # this session owns flow-work now
+        self.core.record_prompt("other-session", "hi", "/tmp/ws")
+        self.core.record_stop("other-session")
+        stops = [e for e in self.core.load_events(sid="other-session") if e["ev"] == "stop"]
+        self.assertEqual(stops[-1]["work_id"], "")
+
+    def test_end_report_persists_artifact(self):
+        self.report(phase="start")
+        self.report(phase="end", what="做完", cost="查资料", next_time="先画图",
+                    artifact="docs/plan.md")
+        summaries = [e for e in self.events() if e["ev"] == "work_summary"]
+        self.assertEqual(summaries[-1]["artifact"], "docs/plan.md")
+
     def test_report_keeps_possible_improvements(self):
         self.report(phase="blocked", cause="文档顺序错", category="tool-misuse",
                     improve="先读文档再选工具", verdict="not-justified")
