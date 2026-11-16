@@ -1438,16 +1438,22 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const improvements = improves.length
         ? h('div', { key: 'improve', className: 'crop-card' },
             h('div', { className: 'crop-muted', style: S.caption }, 'AI 自述的改进（下次可以少走一步）'),
-            h('ul', { className: 'crop-list' },
-              improves.slice(0, 4).map((item, index) => h('li', { key: index },
-                h('div', null, `「${item.improve}」`),
-                h('div', { className: 'crop-imp-ctx' }, [
-                  item.goal || item.work_id || '',
-                  item.phase === 'blocked' ? '卡点' : item.phase === 'end' ? '收尾' : '',
-                  item.category ? enumLabel('category', item.category) : '',
-                  item.cause ? `当时：${item.cause}` : item.summary ? `当时：${item.summary}` : '',
-                  item.t ? new Date(item.t).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '',
-                ].filter(Boolean).join(' · '))))))
+            h('div', { className: 'crop-improve-list' },
+              improves.slice(0, 4).map((item, index) => h('div', { key: index, className: 'crop-improve-row' }, [
+                h('i', { key: 'd', className: 'crop-improve-dot' }),
+                h('div', { key: 'b', className: 'crop-improve-body' }, [
+                  h('div', { key: 'q', className: 'crop-improve-quote' }, `「${item.improve}」`),
+                  h('div', { key: 'm', className: 'crop-improve-tags' }, [
+                    item.goal ? h('span', { key: 'w', className: 'crop-chip-sm', title: item.work_id || '' }, item.goal) : null,
+                    item.phase === 'blocked' ? h('span', { key: 'p', className: 'crop-chip-sm' }, '卡点') : null,
+                    item.phase === 'end' ? h('span', { key: 'p', className: 'crop-chip-sm' }, '收尾') : null,
+                    item.category ? h('span', { key: 'c', className: 'crop-chip-sm' }, enumLabel('category', item.category)) : null,
+                    item.t ? h('span', { key: 't', className: 'crop-improve-time' },
+                      new Date(item.t).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })) : null,
+                  ]),
+                  item.cause || item.summary ? h('div', { key: 'c', className: 'crop-improve-why' }, `当时：${item.cause || item.summary}`) : null,
+                ]),
+              ]))))
         : null;
 
       const categories = (data && data.categories) || [];
