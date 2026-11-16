@@ -6,6 +6,7 @@
  * the returned notes at the next model step.  Zero runtime dependencies.
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import z from '@deepseek-ai/schemastery';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -16,6 +17,7 @@ export const inject = ['tools'];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CORE_CLI = join(HERE, '..', '..', 'core', 'probe_core_cli.py');
+const WHIP_ICON = join(HERE, '..', 'assets', 'whip-run.png');
 
 const PHASES = ['start', 'progress', 'blocked', 'end'];
 const CATEGORIES = [
@@ -199,6 +201,20 @@ export function apply(ctx, config = {}) {
           kind: 'exact',
           path: '/api/agent-crop/session',
           handler: relay((url) => ({ op: 'session', args: { sid: url.searchParams.get('sid') ?? '' } })),
+        }),
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/whip-icon',
+          handler: (req, res) => {
+            try {
+              const body = readFileSync(WHIP_ICON);
+              res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
+              res.end(body);
+            } catch {
+              res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+              res.end('missing whip icon');
+            }
+          },
         }),
         webServer.register({
           kind: 'exact',

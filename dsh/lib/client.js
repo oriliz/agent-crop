@@ -583,6 +583,53 @@ body[data-ds-dark-theme] .crop-donut-hole {
   background: rgba(96, 128, 200, .55);
   min-height: 2px;
 }
+
+/* --- session timeline ------------------------------------------------ */
+.crop-sess-head { display: flex; align-items: center; gap: 14px; padding: 12px 16px; flex-wrap: wrap; }
+.crop-sess-title { font-size: 15px; font-weight: 600; }
+.crop-sess-clock { display: flex; align-items: baseline; gap: 8px; font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.crop-sess-clock .crop-muted { font-size: 11px; font-weight: 400; }
+.crop-sess-split { display: flex; width: 180px; height: 5px; border-radius: 999px; overflow: hidden; background: rgba(150, 165, 205, .14); }
+.crop-sess-split i { height: 100%; }
+.crop-sess-split i.work { background: #5b8cff; }
+.crop-sess-split i.wait { background: rgba(150, 165, 205, .42); }
+.crop-sess-turn { margin-left: auto; font-size: 12px; color: #b9c6e2; }
+.crop-small { font-size: 11.5px; }
+.crop-sess-current { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
+.crop-sess-label { width: 56px; flex: none; font-size: 11.5px; color: #8f9dbe; }
+.crop-sess-name { font-size: 13px; font-weight: 600; max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crop-sess-bar { flex: 1; height: 8px; border-radius: 999px; background: rgba(150, 165, 205, .16); overflow: hidden; }
+.crop-sess-bar i { display: block; height: 100%; background: linear-gradient(90deg, #4f7cf0, #6ea0ff); }
+.crop-tl-card { padding: 12px 16px 10px; }
+.crop-tl-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.crop-tl-legend { display: flex; align-items: center; gap: 12px; font-size: 11px; color: #98a6c6; }
+.crop-swatch { display: inline-block; width: 12px; height: 6px; border-radius: 2px; background: #5b8cff; margin-right: 5px; }
+.crop-legend-whip { width: 16px; height: 16px; object-fit: contain; vertical-align: middle; margin-right: 4px; }
+.crop-dot-red { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f08484; margin-right: 5px; }
+.crop-tl-body { display: grid; gap: 12px; }
+.crop-tl-row { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: end; }
+.crop-tl-label { font-size: 12px; padding-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crop-tl-label--current { color: #cfe0ff; }
+.crop-tl-track { position: relative; height: 30px; border-radius: 6px; background: rgba(120, 140, 190, .07); margin-top: 46px; }
+.crop-tl-grid { position: absolute; inset: 0; background-image: repeating-linear-gradient(90deg, rgba(160, 180, 230, .10) 0 1px, transparent 1px 10%); }
+.crop-seg { position: absolute; top: 8px; height: 14px; border-radius: 3px; background: linear-gradient(180deg, #5b8cff, #4a77e0); cursor: pointer; }
+.crop-seg--picked { outline: 1.5px solid rgba(240, 212, 138, .9); }
+.crop-whip { position: absolute; bottom: 8px; height: 48px; width: auto; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .4)); }
+.crop-whip-count { position: absolute; bottom: 52px; transform: translateX(4px); font-size: 9px; line-height: 13px; padding: 0 4px; border-radius: 999px; background: #e8c46a; color: #1a1608; }
+.crop-blocked-dot { position: absolute; bottom: 9px; width: 9px; height: 9px; border-radius: 50%; background: #f08484; border: 1px solid rgba(255, 255, 255, .45); transform: translateX(-50%); }
+.crop-tl-detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(160, 180, 230, .12); display: flex; gap: 10px; align-items: baseline; font-size: 11.5px; }
+.crop-tl-range { color: #f0a9a9; font-variant-numeric: tabular-nums; }
+.crop-work-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid rgba(160, 180, 230, .08); font-size: 12px; }
+.crop-work-row:first-child { border-top: 0; }
+.crop-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
+.crop-tl-cap { margin-bottom: 6px; }
+.crop-reflect { display: grid; grid-template-columns: 1fr 1.3fr; gap: 18px; padding: 12px 16px; font-size: 12px; }
+.crop-badge { margin-left: 6px; border: 1px solid rgba(160, 180, 230, .22); border-radius: 999px; padding: 0 6px; font-size: 9.5px; color: #93a1c2; }
+.crop-reflect-verdict { margin: 6px 0 4px; }
+.crop-reflect-cause { line-height: 1.6; color: #b9c6e2; }
+.crop-imp-row { display: flex; gap: 6px; padding: 4px 0; line-height: 1.5; color: #c6d2ea; }
+.crop-imp-no { width: 14px; flex: none; color: #7f9fe0; }
+.crop-imp-tag { flex: none; height: 15px; line-height: 14px; padding: 0 5px; border: 1px solid rgba(160, 180, 230, .16); border-radius: 999px; font-size: 9.5px; color: #8fa0c4; }
 `;
 
     const S = {
@@ -645,84 +692,171 @@ body[data-ds-dark-theme] .crop-donut-hole {
       return state;
     }
 
+    function fmtSpan(ms) {
+      const minutes = Math.max(0, Math.round(ms / 60000));
+      if (minutes < 60) return `${minutes}m`;
+      return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+    }
+
     function View({ sessionId }) {
       const { data, error } = useSession(sessionId);
+      const [picked, setPicked] = React.useState(null);
       if (error || !data) {
         return h('div', { className: 'crop-page' },
           h('div', { className: 'crop-card' },
             h('div', { className: 'crop-muted', style: S.quiet }, '数据读不到：检查 dsh 日志里的 crop 报错。')));
       }
+      if (!data.timeline) {
+        return h('div', { className: 'crop-page' },
+          h('div', { className: 'crop-card' },
+            h('div', { className: 'crop-muted', style: S.quiet }, '后端还没升级到带时间轴的版本：重启 DSH 后再看。')));
+      }
 
-      const work = data.active_work || null;
-      const blocks = data.recent_blocks || [];
-      const tools = data.tool_rank || [];
-      const verdict = VERDICT[data.latest_verdict] || VERDICT.unknown;
-      const color = work ? lampColor(work.ratio) : 'hsl(140 72% 52%)';
-      const total = blocks.reduce((sum, row) => sum + (row.minutes || 0), 0) || 1;
+      const timeline = data.timeline || {};
+      const blocks = timeline.blocks || [];
+      const whips = timeline.whips || [];
+      const waits = timeline.waits || [];
+      const reports = timeline.reports || [];
+      const started = data.session_started_at || (blocks.length ? blocks[0].start : Date.now());
+      const end = Date.now();
+      const span = Math.max(60 * 1000, end - started);
+      const pos = (t) => Math.min(100, Math.max(0, ((t - started) / span) * 100));
+      const pct = (v) => `${v}%`;
 
-      const header = h('div', { key: 'head', className: 'crop-card' },
-        h('div', { style: S.head },
-          h('div', { style: S.headMain },
-            h('div', { style: S.goal }, work ? work.goal || work.work_id : '本会话还没有工作'),
-            h('div', { className: 'crop-muted', style: S.sub }, work ? `${work.work_id} · 进行中` : '')),
-          h('div', { style: { textAlign: 'right', flex: 'none' } },
-            h('div', { style: S.timer },
-              work ? h('i', { style: { ...S.lamp(color), verticalAlign: 'middle', marginRight: '8px' } }) : null,
-              work ? mmss(work.minutes) : '--:--'))));
+      const laneMap = new Map();
+      for (const block of blocks) {
+        const key = block.work_id || '';
+        if (!laneMap.has(key)) laneMap.set(key, { key, blocks: [], whips: [], blocked: [] });
+        laneMap.get(key).blocks.push(block);
+      }
+      for (const whip of whips) {
+        const lane = laneMap.get(whip.work_id || '');
+        if (lane) lane.whips.push(whip);
+      }
+      for (const report of reports) {
+        if (report.phase !== 'blocked') continue;
+        const lane = laneMap.get(report.work_id || '');
+        if (lane) lane.blocked.push(report);
+      }
+      const activeId = data.active_work ? data.active_work.work_id : '';
+      const lanes = [...laneMap.values()].sort((a, b) => {
+        if (a.key === activeId) return -1;
+        if (b.key === activeId) return 1;
+        return (a.blocks[0]?.start || 0) - (b.blocks[0]?.start || 0);
+      });
 
-      const verdictCard = h('div', {
-        key: 'verdict',
-        className: 'crop-card crop-card--verdict',
-        style: { borderLeftColor: verdict.color },
-      },
-        h('div', null,
-          h('span', { style: { color: verdict.color, fontWeight: 600 } }, verdict.label),
-          h('span', { className: 'crop-muted', style: S.meta }, ` · AI 判断 · ${data.latest_cause ? ago(data.latest_at) : '还没有记录'}`)),
-        h('q', { style: { ...S.quote, marginTop: '6px', display: 'block' } },
-          data.latest_cause || '被红线提醒或卡住时，AI 会在这里写一句为什么'));
+      const laneRows = lanes.map((lane) => {
+        const segments = lane.blocks.map((block, index) => {
+          const width = Math.max(0.8, pos(block.t) - pos(block.start));
+          return h('div', {
+            key: `s${index}`,
+            className: `crop-seg${picked && picked.block === block ? ' crop-seg--picked' : ''}`,
+            style: { left: pct(pos(block.start)), width: pct(width) },
+            title: `${block.minutes}m`,
+            onClick: () => setPicked({ block, lane: lane.key }),
+          });
+        });
+        // whip markers cluster per 5 minutes so the panel stays quiet
+        const whipMarks = [];
+        let cluster = null;
+        for (const whip of lane.whips) {
+          if (cluster && whip.t - cluster.last < 5 * 60000) {
+            cluster.count += 1;
+            cluster.last = whip.t;
+            continue;
+          }
+          cluster = { at: whip.t, last: whip.t, count: 1 };
+          whipMarks.push(cluster);
+        }
+        const marks = whipMarks.map((mark, index) => h('img', {
+          key: `w${index}`,
+          className: 'crop-whip',
+          src: '/api/agent-crop/whip-icon',
+          style: { left: pct(pos(mark.at)) },
+          title: `鞭策 ${mark.count} 次`,
+        }));
+        if (whipMarks.length) {
+          marks.push(...whipMarks.map((mark, index) => h('b', {
+            key: `wc${index}`,
+            className: 'crop-whip-count',
+            style: { left: pct(pos(mark.last)) },
+          }, String(mark.count))));
+        }
+        const blocked = lane.blocked.map((report, index) => h('i', {
+          key: `b${index}`,
+          className: 'crop-blocked-dot',
+          style: { left: pct(pos(report.t)) },
+          title: report.cause || report.category || 'blocked',
+        }));
+        return h('div', { key: lane.key || 'none', className: 'crop-tl-row' },
+          h('div', { className: `crop-tl-label${lane.key === activeId ? ' crop-tl-label--current' : ''}` },
+            h('div', null, lane.key === activeId ? '▸ ' : '', lane.key || '未归属'),
+            h('div', { className: 'crop-muted' }, `${lane.blocks.reduce((sum, b) => sum + (b.minutes || 0), 0).toFixed(0)}m`)),
+          h('div', { className: 'crop-tl-track' }, h('div', { className: 'crop-tl-grid' }), segments, marks, blocked));
+      });
 
-      const toolRows = tools.length
-        ? h('div', { key: 'tools', className: 'crop-card' },
-            h('div', { className: 'crop-muted', style: S.caption }, '工具排行（按失败次数）'),
-            h('table', { style: S.table }, h('tbody', null,
-              tools.map((item) => h('tr', { key: item.name },
-                h('td', { style: S.td }, item.name),
-                h('td', { style: { ...S.tdRight, ...(item.failures ? S.fail : {}) } },
-                  `${item.calls} 次 · 失败 ${item.failures}`))))))
-        : null;
+      const wall = Math.max(0, end - started);
+      const activeMs = (data.work_minutes || 0) * 60000;
+      const waitMs = Math.max(0, wall - activeMs);
+      const head = h('div', { key: 'head', className: 'crop-card crop-sess-head' },
+        h('div', { className: 'crop-sess-title' }, 'Crop'),
+        h('div', { className: 'crop-sess-clock' }, `${fmtSpan(wall)}`, h('span', { className: 'crop-muted' }, '本次会话')),
+        h('div', { className: 'crop-sess-split', title: `活跃 ${fmtSpan(activeMs)} · 等待 ${fmtSpan(waitMs)}` },
+          h('i', { className: 'work', style: { width: pct(wall ? (activeMs / wall) * 100 : 0) } }),
+          h('i', { className: 'wait', style: { width: pct(wall ? (waitMs / wall) * 100 : 0) } })),
+        h('div', { className: 'crop-muted crop-small' }, `活跃 ${fmtSpan(activeMs)} · 等待 ${fmtSpan(waitMs)}`),
+        h('div', { className: 'crop-sess-turn' }, `本回合 ${fmtSpan((data.current_minutes || 0) * 60000)}`));
 
-      const timeline = blocks.length
-        ? h('div', { key: 'timeline', className: 'crop-card' },
-            h('div', { className: 'crop-muted', style: S.caption }, '最近几轮的形状（宽度 = 用时，红点 = 有失败）'),
-            h('div', { style: S.tl }, blocks.slice().reverse().map((row, index) => h('div', {
-              key: index,
-              title: `${mmss(row.minutes)} · 工具 ${row.tools} · 失败 ${row.failed}`,
-              style: {
-                width: `${Math.max(3, (row.minutes / total) * 100)}%`,
-                background: '#3b82f6',
-                opacity: index === blocks.length - 1 ? 1 : 0.55,
-                borderRadius: '3px',
-                position: 'relative',
-              },
-            }, row.failed ? h('i', {
-              style: { position: 'absolute', right: '2px', top: '2px', width: '6px', height: '6px', borderRadius: '3px', background: '#e5484d' },
-            }) : null))),
-            h('div', { className: 'crop-muted', style: S.axis },
-              h('span', null, '早'),
-              h('span', null, '现在')))
-        : null;
+      const active = data.active_work;
+      const expect = active && active.expect_min ? active.expect_min : null;
+      const current = h('div', { key: 'current', className: 'crop-card crop-sess-current' },
+        h('span', { className: 'crop-sess-label' }, '当前工作'),
+        h('span', { className: 'crop-sess-name' }, active ? (active.title || active.goal || active.work_id) : '本会话还没有绑定工作'),
+        expect ? h('div', { className: 'crop-sess-bar' },
+          h('i', { style: { width: pct(Math.min(100, ((active.minutes || 0) / expect) * 100)) } })) : null,
+        h('span', { className: 'crop-muted crop-small' },
+          expect ? `估 ${Math.round(expect)}m / 已 ${Math.round(active.minutes || 0)}m` : ''));
+
+      const frame = h('div', { key: 'frame', className: 'crop-card crop-tl-card' },
+        h('div', { className: 'crop-tl-head' },
+          h('span', { className: 'crop-muted crop-small' }, '会话运行过程'),
+          h('span', { className: 'crop-tl-legend' },
+            h('span', null, h('i', { className: 'crop-swatch' }), '活跃'),
+            h('span', null, h('img', { className: 'crop-legend-whip', src: '/api/agent-crop/whip-icon', alt: '' }), '鞭策'),
+            h('span', null, h('i', { className: 'crop-dot-red' }), '卡点'))),
+        h('div', { className: 'crop-tl-body' }, laneRows.length ? laneRows : h('div', { className: 'crop-muted' }, '这次会话还没有完成一个时间块。')),
+        picked ? h('div', { className: 'crop-tl-detail' },
+          h('span', { className: 'crop-tl-range' }, `${picked.block.minutes}m`),
+          h('span', null, `${picked.lane || '未归属'} · 这一段做了 ${picked.block.minutes} 分钟`)) : null);
 
       const works = (data.session_works || []).length
         ? h('div', { key: 'works', className: 'crop-card' },
-            h('div', { className: 'crop-muted', style: S.caption }, '本会话的工作'),
-            h('table', { style: S.table }, h('tbody', null,
-              data.session_works.map((item) => h('tr', { key: item.work_id },
-                h('td', { style: S.td },
-                  h('i', { style: S.lamp(lampColor(item.ratio)) }), item.work_id),
-                h('td', { style: S.tdRight }, mmss(item.minutes)))))))
+            h('div', { className: 'crop-muted crop-small crop-tl-cap' }, '本会话碰过的工作'),
+            h('div', null, data.session_works.map((item) => h('div', { key: item.work_id, className: 'crop-work-row' },
+              h('i', { className: 'crop-dot', style: { background: lampColor(item.ratio) } }),
+              h('span', null, item.work_id),
+              h('span', { className: 'crop-muted crop-small', style: { marginLeft: 'auto' } },
+                `${Math.round(item.minutes || 0)}m`)))))
         : null;
 
-      return h('div', { className: 'crop-page' }, [header, verdictCard, toolRows, timeline, works]);
+      const reflection = data.reflection || {};
+      const improvements = data.improvements || [];
+      const reflect = h('div', { key: 'reflect', className: 'crop-card crop-reflect' },
+        h('div', null,
+          h('div', { className: 'crop-muted crop-small' }, '本会话反思 ', h('span', { className: 'crop-badge' }, '自评 · 待复核')),
+          reflection.verdict ? h('div', { className: 'crop-reflect-verdict' },
+            h('b', null, reflection.verdict),
+            h('span', { className: 'crop-muted crop-small' },
+              ` ${reflection.work_id || ''}${reflection.revisions ? ` · 改口 ${reflection.revisions} 次` : ''}`)) : null,
+          h('div', { className: 'crop-reflect-cause' }, reflection.cause || '还没有上报过反思。')),
+        h('div', null,
+          h('div', { className: 'crop-muted crop-small' }, 'AI 提出的改进'),
+          improvements.length ? improvements.map((item, index) => h('div', { key: `${item.at}-${index}`, className: 'crop-imp-row' },
+            h('span', { className: 'crop-imp-no' }, String(index + 1)),
+            h('span', { className: 'crop-imp-tag' }, item.work_id || '本会话'),
+            h('span', null, item.text))) : h('div', { className: 'crop-muted' }, '还没有改进建议。')));
+
+      return h('div', { className: 'crop-page' }, [head, current, frame, works, reflect]);
     }
 
     function fixed(value, digits) {

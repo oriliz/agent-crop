@@ -1716,6 +1716,111 @@ def type_breakdown(days: float = 30.0, now: int | None = None) -> list[dict]:
     return sorted(rows, key=lambda row: row["minutes"], reverse=True)
 
 
+def _latest_reflection(events: list[dict]) -> dict:
+    """Latest report that carries a judgement or a cause, for the panel's reflection card."""
+    latest = {}
+    for event in reversed(events):
+        if event.get("ev") != "probe_report":
+            continue
+        verdict = str(event.get("verdict") or "")
+        cause = str(event.get("cause") or "")
+        improve = str(event.get("improve") or "")
+        if not (verdict or cause or improve):
+            continue
+        latest = {
+            "verdict": verdict,
+            "cause": cause,
+            "improve": improve,
+            "at": int(event.get("t") or 0),
+            "work_id": str(event.get("task_id") or event.get("work_id") or ""),
+            "revisions": _expect_revisions(events, str(event.get("task_id") or "")),
+        }
+        break
+    return latest
+
+
+def _expect_revisions(events: list[dict], task_id: str) -> int:
+    values = {
+        event.get("expect_min") for event in events
+        if event.get("ev") == "probe_report"
+        and str(event.get("task_id") or "") == task_id
+        and event.get("expect_min") is not None
+    }
+    return max(0, len(values) - 1)
+
+
+def _session_improvements(events: list[dict]) -> list[dict]:
+    """Improve / next_time lines raised in this session, newest first, de-duplicated."""
+    out, seen = [], set()
+    for event in reversed(events):
+        kind = event.get("ev")
+        work_id = str(event.get("work_id") or event.get("task_id") or "")
+        text = ""
+        source = ""
+        if kind == "probe_report" and event.get("improve"):
+            text, source = str(event.get("improve") or ""), "improve"
+        elif kind == "work_summary" and event.get("next_time"):
+            text, source = str(event.get("next_time") or ""), "next_time"
+        text = text.strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append({
+            "text": text[:200], "work_id": work_id,
+            "at": int(event.get("t") or 0), "source": source,
+        })
+        if len(out) >= 5:
+            break
+    return out
+
+
+def _session_timeline(events: list[dict]) -> dict:
+    """Render-ready slices for the session panel: runs, waits, whips and reports."""
+    blocks, waits, whips, reports = [], [], [], []
+    for event in events:
+        kind = event.get("ev")
+        try:
+            at = int(event.get("t") or 0)
+        except Exception:
+            at = 0
+        if not at:
+            continue
+        if kind == "stop":
+            minutes = float(event.get("minutes") or 0)
+            blocks.append({
+                "kind": "block", "t": at,
+                "start": at - int(minutes * 60000),
+                "minutes": round(minutes, 1),
+                "work_id": str(event.get("work_id") or ""),
+            })
+        elif kind == "user_wait":
+            waits.append({
+                "kind": "wait", "t": at,
+                "ms": int(event.get("waiting_ms") or 0),
+                "work_id": str(event.get("work_id") or ""),
+            })
+        elif kind == "reminder":
+            whips.append({
+                "kind": "whip", "t": at,
+                "work_id": str(event.get("work_id") or ""),
+                "tier": str(event.get("tier") or ""),
+                "minutes": event.get("minutes"),
+                "expect_min": event.get("expect_min"),
+            })
+        elif kind == "probe_report":
+            reports.append({
+                "kind": "report", "t": at,
+                "phase": str(event.get("phase") or ""),
+                "work_id": str(event.get("task_id") or event.get("work_id") or ""),
+                "cause": str(event.get("cause") or ""),
+                "category": str(event.get("category") or ""),
+                "verdict": str(event.get("verdict") or ""),
+                "improve": str(event.get("improve") or ""),
+                "summary": str(event.get("summary") or ""),
+            })
+    return {"blocks": blocks, "waits": waits, "whips": whips, "reports": reports}
+
+
 def session_summary(sid: str, now: int | None = None) -> dict:
     """Everything a session-scoped panel needs: where the time went and what is off."""
     sid = str(sid)
@@ -1833,6 +1938,10 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         "active_work": active,
         "session_works": session_works,
         "recent_blocks": recent[-5:][::-1],
+        "session_started_at": int(events[0].get("t") or 0) if events else 0,
+        "timeline": _session_timeline(events),
+        "reflection": _latest_reflection(events),
+        "improvements": _session_improvements(events),
         "current_minutes": round(current, 1),
         "blocks": len(blocks),
         "minutes": round(block_minutes, 1),

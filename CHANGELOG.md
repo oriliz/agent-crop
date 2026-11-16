@@ -10,6 +10,14 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
 
 ## [Unreleased]
 
+### Added（新增）
+
+- 会话页 Crop 面板改为时间轴：会话时钟（活跃/等待）、按工作分 lane 的运行条、
+  鞭策标记（鲸鱼娘贴纸 + 次数）、卡点红点、点击色块看这一段详情；
+  下方新增「本会话碰巧的工作」和「反思与改进」卡（verdict / cause / improve / next_time）。
+
+
+
 ### Fixed（修复）
 
 - `tool` 事件现在带 `work_id`（按本会话绑定；没有绑定就不写），`tool_churn` 同样带上

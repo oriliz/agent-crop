@@ -86,6 +86,15 @@ class EventFlowTest(unittest.TestCase):
         self.assertIn("work_claim", kinds)
         self.assertIn("work_open", kinds)
 
+    def test_session_summary_exposes_timeline(self):
+        self.core.record_prompt(self.sid, "hi", "/tmp/ws")
+        self.core.record_stop(self.sid)
+        data = self.core.session_summary(self.sid)
+        self.assertGreater(data["session_started_at"], 0)
+        self.assertTrue(data["timeline"]["blocks"])
+        self.assertIn("reflection", data)
+        self.assertIn("improvements", data)
+
     def test_stop_does_not_borrow_another_sessions_work(self):
         self.report(phase="start")  # this session owns flow-work now
         self.core.record_prompt("other-session", "hi", "/tmp/ws")
