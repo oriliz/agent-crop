@@ -203,23 +203,41 @@ def append_event(event: dict) -> None:
         pass
 
 
+_EVENT_CACHE: dict = {"key": None, "events": []}
+
+
 def load_events(limit: int = MAX_EVENTS_READ, sid: str | None = None) -> list[dict]:
-    events: list[dict] = []
+    """Read the event log once per file version.
+
+    Global summaries call this dozens of times (per work, per window); without
+    the cache every call re-parsed the whole JSONL and the dashboard crawled.
+    """
+    path = paths()["events"]
     try:
-        with open(paths()["events"], encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    event = json.loads(line)
-                except Exception:
-                    continue
-                if sid is not None and event.get("sid") != sid:
-                    continue
-                events.append(event)
+        stat = os.stat(path)
+        key = (path, stat.st_mtime_ns, stat.st_size)
     except Exception:
-        return []
+        key = None
+    if key != _EVENT_CACHE["key"]:
+        events: list[dict] = []
+        try:
+            with open(path, encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except Exception:
+                        continue
+                    events.append(event)
+        except Exception:
+            events = []
+        _EVENT_CACHE["key"] = key
+        _EVENT_CACHE["events"] = events
+    events = _EVENT_CACHE["events"]
+    if sid is not None:
+        events = [event for event in events if event.get("sid") == sid]
     return events[-limit:]
 
 
@@ -2107,7 +2125,22 @@ DIFFICULTY_DEFAULT_MINUTES = {"s": 10.0, "m": 30.0, "l": 90.0}
 RETIRE_DAYS = float(os.environ.get("KIT_RETIRE_DAYS", "14"))
 
 
+_BLOCK_CACHE: dict = {"key": None, "table": {}}
+
+
 def _block_minutes(days: int = 5) -> dict[int, float]:
+    day_list = [(datetime.now() - timedelta(days=offset)).strftime("%Y-%m-%d") for offset in range(days)]
+    key = []
+    for day in day_list:
+        path = os.path.join(paths()["blocks_dir"], f"{day}.jsonl")
+        try:
+            stat = os.stat(path)
+            key.append((path, stat.st_mtime_ns, stat.st_size))
+        except Exception:
+            key.append((path, 0, 0))
+    key = tuple(key)
+    if key == _BLOCK_CACHE["key"]:
+        return _BLOCK_CACHE["table"]
     table: dict[int, float] = {}
     for offset in range(days):
         day = (datetime.now() - timedelta(days=offset)).strftime("%Y-%m-%d")
@@ -2124,6 +2157,8 @@ def _block_minutes(days: int = 5) -> dict[int, float]:
                         table[start] = float(row.get("minutes") or 0)
         except Exception:
             continue
+    _BLOCK_CACHE["key"] = key
+    _BLOCK_CACHE["table"] = table
     return table
 
 
@@ -2139,17 +2174,23 @@ def work_minutes(work_id: str) -> float:
             if abs(stamp - start) < 5000:
                 return sid
         return None
+    ordered = sorted(table)
+    from bisect import bisect_left
+
     def canonical(start: int) -> int:
         # DSH 的 JS block start 与 Python prompt 时间戳会差几毫秒：按 5 秒容差对齐。
         if start in table:
             return start
+        pos = bisect_left(ordered, start)
         best = start
         gap_best = 5000
-        for key in table:
-            gap = abs(key - start)
+        for candidate in (ordered[pos - 1] if pos else None, ordered[pos] if pos < len(ordered) else None):
+            if candidate is None:
+                continue
+            gap = abs(candidate - start)
             if gap <= gap_best:
                 gap_best = gap
-                best = key
+                best = candidate
         return best
 
     total = 0.0
