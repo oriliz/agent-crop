@@ -71,6 +71,7 @@ TOOL = {
                 ],
                 "description": "Failure category (required for blocked).",
             },
+            "goal": {"type": "string", "description": "One-line goal of this work (keep it short, <= 20 chars)."},
             "goal": {"type": "string", "description": "One-line goal of this work."},
             "type": {
                 "type": "string",

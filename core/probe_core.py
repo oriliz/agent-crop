@@ -207,29 +207,49 @@ def append_event(event: dict) -> None:
         pass
 
 
+_EVENT_CACHE: dict = {"key": None, "events": []}
+
+
 def load_events(limit: int = MAX_EVENTS_READ, sid: str | None = None) -> list[dict]:
-    events: list[dict] = []
+    """Read the event log once per file version.
+
+    Global summaries call this dozens of times (per work, per window); without
+    the cache every call re-parsed the whole JSONL and the dashboard crawled.
+    """
+    path = paths()["events"]
     try:
-        with open(paths()["events"], encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    event = json.loads(line)
-                except Exception:
-                    continue
-                if sid is not None and event.get("sid") != sid:
-                    continue
-                events.append(event)
+        stat = os.stat(path)
+        key = (path, stat.st_mtime_ns, stat.st_size)
     except Exception:
-        return []
+        key = None
+    if key != _EVENT_CACHE["key"]:
+        events: list[dict] = []
+        try:
+            with open(path, encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except Exception:
+                        continue
+                    events.append(event)
+        except Exception:
+            events = []
+        _EVENT_CACHE["key"] = key
+        _EVENT_CACHE["events"] = events
+    events = _EVENT_CACHE["events"]
+    if sid is not None:
+        events = [event for event in events if event.get("sid") == sid]
     return events[-limit:]
 
 
 # ---------------------------------------------------------------------------
 # Config
 
+
+PERSONAS = ("owner", "senior", "colleague", "free")
 
 DEFAULT_CONFIG = {
     "yellow_min": 10.0,
@@ -241,6 +261,8 @@ DEFAULT_CONFIG = {
     "warm_ratio": 0.8,
     "red_ratio": 1.5,
     "overdue_ratio": 2.5,
+    # 鞭策风格：owner 奴隶主 / senior 和蔼的前辈 / colleague 经验丰富的同事 / free 放任自由的家长
+    "persona": "owner",
 }
 
 
@@ -250,7 +272,9 @@ def load_config() -> dict:
         stored = read_json(paths()["config"], {})
         if isinstance(stored, dict):
             for key, value in stored.items():
-                if key in config and isinstance(value, (int, float, bool)):
+                if key == "persona" and isinstance(value, str) and value in PERSONAS:
+                    config[key] = value
+                elif key in config and isinstance(value, (int, float, bool)):
                     config[key] = value
     except Exception:
         pass
@@ -258,6 +282,7 @@ def load_config() -> dict:
         ("KIT_TASK_YELLOW_MIN", "yellow_min", float),
         ("KIT_TASK_RED_MIN", "red_min", float),
         ("KIT_TASK_REMIND_MIN", "remind_min", float),
+        ("KIT_TASK_PERSONA", "persona", str),
     ):
         try:
             raw = os.environ.get(env)
@@ -754,6 +779,22 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         write_runtime(sid, workspace, block_start)
         return {**record, "side_issue": True}
 
+    # Link this report to the reminder it is answering, when there is one.
+    # Reminders and reports used to be unrelated events, which forced the panel
+    # to guess by timestamp; this makes new data map exactly.
+    try:
+        report_at = int(record.get("t") or 0)
+        for prior in reversed(load_events(sid=sid)):
+            if prior.get("ev") == "reminder":
+                if report_at - int(prior.get("t") or 0) <= 2 * 60 * 60 * 1000:
+                    record["reply_to"] = int(prior.get("t") or 0)
+                break
+            if prior.get("ev") in ("prompt", "stop"):
+                break
+    except Exception:
+        pass
+    record["origin"] = "reminder" if record.get("reply_to") else "self"
+
     append_jsonl(os.path.join(paths()["reports_dir"], f"{today()}.jsonl"), record)
     write_runtime(sid, workspace, block_start)
     append_event({**record, "ev": "probe_report"})
@@ -964,8 +1005,36 @@ def _latest_work_for_session(sid: str) -> str | None:
     return None
 
 
+def _persona_nudge(tier: str, meta: dict, persona: str) -> str:
+    """Neutral guidance for the non-slave-owner personas."""
+    minutes = float(meta.get("m") or 0)
+    expect = meta.get("e")
+    header = f"[crop] 已经 {fmt_minutes(minutes)}"
+    if expect:
+        header += f"，你报的是 {fmt_minutes(float(expect))}"
+    action = "顺手 crop_update 写一行：在做什么 / 卡在哪 / 下一步。"
+    if persona == "senior":
+        return (
+            f"{header}。\n"
+            "别一个人硬扛：卡住的地方随时可以问我，也可以先说说你打算怎么试，我们一起看。\n"
+            + action
+        )
+    if persona == "colleague":
+        return (
+            f"{header}。\n"
+            "要不要先拆一下？先把最小可验证的一步做出来，再回头补剩下的。\n"
+            + action
+        )
+    return "" if persona == "free" else ""
+
+
 def _nudge(tier: str, meta: dict) -> str:
     """Draw one nudge; plain wording is the fallback if the copy pools are gone."""
+    persona = str(load_config().get("persona") or "owner")
+    if persona == "free":
+        return ""
+    if persona in ("senior", "colleague"):
+        return _persona_nudge(tier, meta, persona)
     if voice is not None:
         try:
             return voice.reminder(tier, meta, paths().get("voice"))
@@ -1052,10 +1121,14 @@ def maybe_work_reminder(sid: str) -> str:
         return ""
     if _cooldown_active(sid, float(config["remind_min"]), tier, work_id=task_id):
         return ""
+    persona = str(config.get("persona") or "owner")
+    if persona == "free":
+        return ""
     append_event({
         "ev": "reminder", "sid": sid, "work_id": task_id, "tier": tier,
         "minutes": round(float(health.get("minutes") or 0), 1),
         "expect_min": health.get("expect_min"),
+        "persona": persona,
         "kind": "work",
     })
     return _nudge(tier, _nudge_meta(health, config))
@@ -1074,9 +1147,12 @@ def maybe_reminder(sid: str) -> str:
         minutes = active_minutes(sid, start, now_ms())
         red = float(config["red_min"])
         if minutes >= red and not _cooldown_active(sid, float(config["remind_min"]), "red"):
+            persona = str(config.get("persona") or "owner")
+            if persona == "free":
+                return ""
             append_event({
                 "ev": "reminder", "sid": sid, "block_start": start, "tier": "red",
-                "minutes": round(minutes, 1), "kind": "block",
+                "minutes": round(minutes, 1), "persona": persona, "kind": "block",
             })
             return _nudge("red", {
                 "m": minutes, "e": None, "goal": "",
@@ -1753,6 +1829,10 @@ def improvement_summary(days: float = 7.0) -> dict:
                 "goal": report.get("goal") or "",
                 "improve": text,
                 "t": report.get("t"),
+                "phase": report.get("phase") or "",
+                "cause": str(report.get("cause") or "")[:160],
+                "category": report.get("category") or "",
+                "summary": str(report.get("summary") or "")[:160],
             })
     categories: dict[str, int] = {}
     for report in reports:
@@ -1868,8 +1948,11 @@ def day_detail(date: str, now: int | None = None) -> dict:
                 item = works.setdefault(work_id, {"work_id": work_id, "goal": "", "minutes": 0.0, "updates": 0})
                 item["updates"] += 1
                 item["minutes"] = round(item["minutes"] + float(event.get("minutes") or 0), 1)
-                if event.get("goal"):
-                    item["goal"] = event["goal"]
+                label = str(event.get("goal") or event.get("summary") or "").strip()
+                if label:
+                    item["goal_full"] = label[:200]
+                    if event.get("goal") or not item["goal"]:
+                        item["goal"] = label[:24] + ("…" if len(label) > 24 else "")
     return {
         "date": date,
         "events": len(events),
@@ -1910,6 +1993,193 @@ def type_breakdown(days: float = 30.0, now: int | None = None) -> list[dict]:
     return sorted(rows, key=lambda row: row["minutes"], reverse=True)
 
 
+def _work_titles_full(events: list[dict]) -> dict:
+    titles: dict[str, str] = {}
+    for event in events:
+        if event.get("ev") != "probe_report":
+            continue
+        work_id = str(event.get("task_id") or event.get("work_id") or "")
+        if not work_id:
+            continue
+        label = str(event.get("goal") or event.get("summary") or "").strip()
+        if label:
+            titles[work_id] = label[:200]
+    return titles
+
+
+def _work_titles(events: list[dict]) -> dict:
+    """Friendly labels for AI-generated work ids (goal > summary), per work."""
+    titles: dict[str, str] = {}
+    for event in events:
+        if event.get("ev") != "probe_report":
+            continue
+        work_id = str(event.get("task_id") or event.get("work_id") or "")
+        if not work_id:
+            continue
+        label = str(event.get("goal") or event.get("summary") or "").strip()
+        if label:
+            short = label.strip()
+            titles[work_id] = short[:20] + ('…' if len(short) > 20 else '')
+    return titles
+
+
+def _latest_reflection(events: list[dict]) -> dict:
+    """Latest report that carries a judgement or a cause, for the panel's reflection card."""
+    latest = {}
+    for event in reversed(events):
+        if event.get("ev") != "probe_report":
+            continue
+        verdict = str(event.get("verdict") or "")
+        cause = str(event.get("cause") or "")
+        improve = str(event.get("improve") or "")
+        if not (verdict or cause or improve):
+            continue
+        latest = {
+            "verdict": verdict,
+            "cause": cause,
+            "improve": improve,
+            "at": int(event.get("t") or 0),
+            "work_id": str(event.get("task_id") or event.get("work_id") or ""),
+            "revisions": _expect_revisions(events, str(event.get("task_id") or "")),
+        }
+        break
+    return latest
+
+
+def _expect_revisions(events: list[dict], task_id: str) -> int:
+    values = {
+        event.get("expect_min") for event in events
+        if event.get("ev") == "probe_report"
+        and str(event.get("task_id") or "") == task_id
+        and event.get("expect_min") is not None
+    }
+    return max(0, len(values) - 1)
+
+
+def _session_stats(events: list[dict]) -> dict:
+    reminders = [e for e in events if e.get("ev") == "reminder"]
+    reports = [e for e in events if e.get("ev") == "probe_report"]
+    tools = [e for e in events if e.get("ev") == "tool"]
+    blocked = [e for e in reports if e.get("phase") == "blocked"]
+    needs_fix = [e for e in reports if e.get("verdict") == "not-justified" and e.get("improve")]
+    needs_idea = [e for e in reports if e.get("verdict") == "not-justified" and not e.get("improve")]
+    return {
+        "reminders": len(reminders),
+        "overdue": sum(1 for e in reminders if e.get("tier") == "overdue"),
+        "blocked": len(blocked),
+        "rework": sum(1 for e in events if e.get("ev") in ("tool_churn", "rework_signal")),
+        "failed_tools": sum(1 for e in tools if e.get("is_error")),
+        "needs_fix": len(needs_fix),
+        "needs_idea": len(needs_idea),
+        "self_driven": sum(1 for e in reports if (e.get("origin") or "self") == "self" and e.get("cause")),
+    }
+
+
+def _session_interventions(events: list[dict]) -> list[dict]:
+    """Every report that names a problem, newest first — the panel pairs these
+    with whip markers so the timeline and the reflection list line up."""
+    out = []
+    for event in reversed(events):
+        if event.get("ev") != "probe_report":
+            continue
+        cause = str(event.get("cause") or "")
+        improve = str(event.get("improve") or "")
+        verdict = str(event.get("verdict") or "")
+        if not (cause or improve or verdict):
+            continue
+        out.append({
+            "at": int(event.get("t") or 0),
+            "work_id": str(event.get("task_id") or event.get("work_id") or ""),
+            "phase": str(event.get("phase") or ""),
+            "cause": cause[:200],
+            "improve": improve[:200],
+            "verdict": verdict,
+            "category": str(event.get("category") or ""),
+            "reply_to": event.get("reply_to"),
+            "origin": event.get("origin") or ("reminder" if event.get("reply_to") else "self"),
+        })
+        if len(out) >= 8:
+            break
+    return out
+
+
+def _session_improvements(events: list[dict]) -> list[dict]:
+    """Improve / next_time lines raised in this session, newest first, de-duplicated."""
+    out, seen = [], set()
+    for event in reversed(events):
+        kind = event.get("ev")
+        work_id = str(event.get("work_id") or event.get("task_id") or "")
+        text = ""
+        source = ""
+        if kind == "probe_report" and event.get("improve"):
+            text, source = str(event.get("improve") or ""), "improve"
+        elif kind == "work_summary" and event.get("next_time"):
+            text, source = str(event.get("next_time") or ""), "next_time"
+        text = text.strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append({
+            "text": text[:200], "work_id": work_id,
+            "at": int(event.get("t") or 0), "source": source,
+            "phase": str(event.get("phase") or ("end" if source == "next_time" else ""))[:20],
+            "cause": str(event.get("cause") or "")[:160],
+            "category": str(event.get("category") or "")[:40],
+            "summary": str(event.get("summary") or event.get("what") or "")[:160],
+        })
+        if len(out) >= 5:
+            break
+    return out
+
+
+def _session_timeline(events: list[dict]) -> dict:
+    """Render-ready slices for the session panel: runs, waits, whips and reports."""
+    blocks, waits, whips, reports = [], [], [], []
+    for event in events:
+        kind = event.get("ev")
+        try:
+            at = int(event.get("t") or 0)
+        except Exception:
+            at = 0
+        if not at:
+            continue
+        if kind == "stop":
+            minutes = float(event.get("minutes") or 0)
+            blocks.append({
+                "kind": "block", "t": at,
+                "start": at - int(minutes * 60000),
+                "minutes": round(minutes, 1),
+                "work_id": str(event.get("work_id") or ""),
+            })
+        elif kind == "user_wait":
+            waits.append({
+                "kind": "wait", "t": at,
+                "ms": int(event.get("waiting_ms") or 0),
+                "work_id": str(event.get("work_id") or ""),
+            })
+        elif kind == "reminder":
+            whips.append({
+                "kind": "whip", "t": at,
+                "work_id": str(event.get("work_id") or ""),
+                "persona": str(event.get("persona") or "owner"),
+                "tier": str(event.get("tier") or ""),
+                "minutes": event.get("minutes"),
+                "expect_min": event.get("expect_min"),
+            })
+        elif kind == "probe_report":
+            reports.append({
+                "kind": "report", "t": at,
+                "phase": str(event.get("phase") or ""),
+                "work_id": str(event.get("task_id") or event.get("work_id") or ""),
+                "cause": str(event.get("cause") or ""),
+                "category": str(event.get("category") or ""),
+                "verdict": str(event.get("verdict") or ""),
+                "improve": str(event.get("improve") or ""),
+                "summary": str(event.get("summary") or ""),
+            })
+    return {"blocks": blocks, "waits": waits, "whips": whips, "reports": reports}
+
+
 def session_summary(sid: str, now: int | None = None) -> dict:
     """Everything a session-scoped panel needs: where the time went and what is off."""
     sid = str(sid)
@@ -1943,6 +2213,13 @@ def session_summary(sid: str, now: int | None = None) -> dict:
             current = max(0.0, (now_ms() - int(runtime["block_start"])) / 60000.0)
         except Exception:
             current = 0.0
+
+    if current <= 0 and events:
+        last_kind = events[-1].get("ev")
+        if last_kind in ("prompt", "tool", "reminder", "user_wait"):
+            last_prompt = next((e for e in reversed(events) if e.get("ev") == "prompt"), None)
+            if last_prompt:
+                current = max(0.0, (now_ms() - int(last_prompt.get("t") or 0)) / 60000.0)
 
     total = work_minutes + wait_ms / 60000.0
     share = {
@@ -2027,6 +2304,15 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         "active_work": active,
         "session_works": session_works,
         "recent_blocks": recent[-5:][::-1],
+        "session_started_at": int(events[0].get("t") or 0) if events else 0,
+        "persona": str(load_config().get("persona") or "owner"),
+        "interventions": _session_interventions(events),
+        "stats": _session_stats(events),
+        "work_titles": _work_titles(events),
+        "work_titles_full": _work_titles_full(events),
+        "timeline": _session_timeline(events),
+        "reflection": _latest_reflection(events),
+        "improvements": _session_improvements(events),
         "current_minutes": round(current, 1),
         "blocks": len(blocks),
         "minutes": round(block_minutes, 1),
@@ -2051,7 +2337,22 @@ DIFFICULTY_DEFAULT_MINUTES = {"s": 10.0, "m": 30.0, "l": 90.0}
 RETIRE_DAYS = float(os.environ.get("KIT_RETIRE_DAYS", "14"))
 
 
+_BLOCK_CACHE: dict = {"key": None, "table": {}}
+
+
 def _block_minutes(days: int = 5) -> dict[int, float]:
+    day_list = [(datetime.now() - timedelta(days=offset)).strftime("%Y-%m-%d") for offset in range(days)]
+    key = []
+    for day in day_list:
+        path = os.path.join(paths()["blocks_dir"], f"{day}.jsonl")
+        try:
+            stat = os.stat(path)
+            key.append((path, stat.st_mtime_ns, stat.st_size))
+        except Exception:
+            key.append((path, 0, 0))
+    key = tuple(key)
+    if key == _BLOCK_CACHE["key"]:
+        return _BLOCK_CACHE["table"]
     table: dict[int, float] = {}
     for offset in range(days):
         day = (datetime.now() - timedelta(days=offset)).strftime("%Y-%m-%d")
@@ -2068,6 +2369,8 @@ def _block_minutes(days: int = 5) -> dict[int, float]:
                         table[start] = float(row.get("minutes") or 0)
         except Exception:
             continue
+    _BLOCK_CACHE["key"] = key
+    _BLOCK_CACHE["table"] = table
     return table
 
 
@@ -2083,17 +2386,23 @@ def work_minutes(work_id: str) -> float:
             if abs(stamp - start) < 5000:
                 return sid
         return None
+    ordered = sorted(table)
+    from bisect import bisect_left
+
     def canonical(start: int) -> int:
         # DSH 的 JS block start 与 Python prompt 时间戳会差几毫秒：按 5 秒容差对齐。
         if start in table:
             return start
+        pos = bisect_left(ordered, start)
         best = start
         gap_best = 5000
-        for key in table:
-            gap = abs(key - start)
+        for candidate in (ordered[pos - 1] if pos else None, ordered[pos] if pos < len(ordered) else None):
+            if candidate is None:
+                continue
+            gap = abs(candidate - start)
             if gap <= gap_best:
                 gap_best = gap
-                best = key
+                best = candidate
         return best
 
     total = 0.0

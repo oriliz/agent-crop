@@ -86,6 +86,31 @@ class EventFlowTest(unittest.TestCase):
         self.assertIn("work_claim", kinds)
         self.assertIn("work_open", kinds)
 
+    def test_persona_switches_nudge_voice(self):
+        import json, os
+        path = self.core.paths()["config"]
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"persona": "senior"}, handle)
+        senior = self.core._nudge("yellow", {"m": 12, "e": 10})
+        self.assertIn("问", senior)
+
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"persona": "free"}, handle)
+        self.assertEqual(self.core._nudge("yellow", {"m": 12, "e": 10}), "")
+
+    def test_session_summary_exposes_timeline(self):
+        self.report(phase="start")
+        self.core.record_prompt(self.sid, "hi", "/tmp/ws")
+        self.core.record_stop(self.sid)
+        data = self.core.session_summary(self.sid)
+        self.assertGreater(data["session_started_at"], 0)
+        self.assertTrue(data["timeline"]["blocks"])
+        self.assertTrue(data["work_titles"])
+        self.assertIn("reflection", data)
+        self.assertIn("improvements", data)
+
     def test_stop_does_not_borrow_another_sessions_work(self):
         self.report(phase="start")  # this session owns flow-work now
         self.core.record_prompt("other-session", "hi", "/tmp/ws")
