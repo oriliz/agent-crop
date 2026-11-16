@@ -114,6 +114,19 @@ class ActiveTimeTest(unittest.TestCase):
         last = self.events("stop", sid="acct-other")[-1]
         self.assertAlmostEqual(last["minutes"], 1.0, delta=0.2)
 
+    def test_a_new_prompt_closes_the_previous_dangling_block(self):
+        self.core.record_prompt(self.sid, "旧回合", self.ws)
+        self.tick(1)
+        self.core.record_tool(self.sid, "Read", False)
+        self.tick(20)
+        self.core.record_prompt(self.sid, "新回合", self.ws)
+
+        stops = self.events("stop")
+        self.assertTrue(stops and stops[-1].get("abandoned"))
+        self.assertAlmostEqual(stops[-1]["minutes"], 1.0, delta=0.2)
+        self.assertGreater(self.core.current_block_start(self.sid),
+                           self.now - 1000)
+
     # -- 2. a block is capped at the last observed interaction --------------
     def test_stop_does_not_charge_idle_wall_time(self):
         self.core.record_prompt(self.sid, "开工", self.ws)

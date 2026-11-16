@@ -843,6 +843,14 @@ def _last_kind(sid: str, kinds: tuple[str, ...]) -> dict | None:
 
 
 def record_prompt(sid: str, prompt: str, workspace: str) -> None:
+    # A new prompt ends any previous turn that never got its turn_end (host
+    # without session_start, interrupted turn).  Close it at the last observed
+    # event before the new block starts, so its minutes are not lost and its
+    # start time cannot leak into this turn.
+    try:
+        _close_dangling(sid, now_ms())
+    except Exception:
+        pass
     last_stop = _last_kind(sid, ("stop",))
     if last_stop:
         try:
