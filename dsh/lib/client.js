@@ -686,7 +686,7 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-iv-tag--urgent { color: #fff; background: #e5484d; font-weight: 700; }
 .crop-session-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr); gap: 14px; align-items: start; }
 .crop-session-main { display: grid; gap: 14px; min-width: 0; }
-.crop-reflect { position: sticky; top: 8px; max-height: calc(100vh - 240px); overflow-y: auto; }
+.crop-reflect { position: sticky; top: 8px; scroll-behavior: smooth; max-height: calc(100vh - 240px); overflow-y: auto; }
 @media (max-width: 900px) {
   .crop-session-grid { grid-template-columns: 1fr; }
   .crop-reflect { position: static; max-height: none; }
@@ -1047,7 +1047,19 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const improvements = data.improvements || [];
       const focusIv = (index) => {
         if (index < 0) return;
-        document.getElementById(`crop-iv-${index}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        const node = document.getElementById(`crop-iv-${index}`);
+        const box = node?.closest('.crop-reflect');
+        if (node && box) {
+          // Scroll the reflection card itself, not the whole conversation:
+          // the card is a sticky, independently scrollable column.
+          const boxRect = box.getBoundingClientRect();
+          const nodeRect = node.getBoundingClientRect();
+          const target = box.scrollTop + (nodeRect.top - boxRect.top)
+            - (box.clientHeight - nodeRect.height) / 2;
+          box.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+        } else {
+          node?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
         setFlashIv(index);
         window.setTimeout(() => setFlashIv(null), 1600);
       };
