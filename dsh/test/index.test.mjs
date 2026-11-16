@@ -41,9 +41,11 @@ test('registers probe_report with the documented schema', async (t) => {
   const ctx = fakeCtx();
   apply(ctx, { python: 'python3' });
 
-  const tool = ctx.registered.find((item) => item.name === 'crop_report');
-  assert.ok(tool, 'crop_report should be registered');
-  assert.ok(ctx.registered.some((item) => item.name === 'probe_report'), 'alias stays for old prompts');
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
+  assert.ok(tool, 'crop_update should be registered');
+  assert.ok(ctx.registered.some((item) => item.name === 'probe_report'), 'probe_report alias stays for old prompts');
+  assert.ok(ctx.registered.some((item) => item.name === 'crop_report'), 'crop_report alias stays for older prompts');
+  assert.ok(ctx.registered.some((item) => item.name === 'crop_health'), 'crop_health is registered');
   assert.ok(ctx.registered.some((item) => item.name === 'crop_works'));
   assert.ok(ctx.registered.some((item) => item.name === 'crop_review'));
   assert.ok(ctx.registered.some((item) => item.name === 'crop_work'));
@@ -59,7 +61,7 @@ test('tool execute records a report through the Python core', async (t) => {
 
   const ctx = fakeCtx();
   apply(ctx, { python: 'python3' });
-  const tool = ctx.registered.find((item) => item.name === 'crop_report');
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
   const session = fakeSession('s-report');
   const result = await tool.execute(
     { phase: 'blocked', task_id: 'Design Doc!', summary: '查资料中', cause: '资料太散', next: '先定目录', category: 'tool-misuse' },
@@ -118,7 +120,7 @@ test('registers the crop protocol as a system prompt section', () => {
   assert.equal(sections.length, 1);
   assert.equal(sections[0].name, 'crop:protocol');
   assert.equal(typeof sections[0].order, 'number');
-  assert.ok(sections[0].text.includes('crop_report'));
+  assert.ok(sections[0].text.includes('crop_update'));
 });
 
 test('injects the work status line at turn start', async (t) => {
@@ -136,7 +138,7 @@ test('injects the work status line at turn start', async (t) => {
     data: { source: { kind: 'user' }, content: [{ type: 'text', text: '开始' }] },
   });
 
-  const tool = ctx.registered.find((item) => item.name === 'crop_report');
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
   await tool.execute(
     { phase: 'start', task_id: 'open-crop', summary: '把探针开源', goal: '把探针开源', type: 'design', difficulty: 'm' },
     { agent: { session } },
@@ -237,7 +239,7 @@ test('stays quiet when the session is really bound', async (t) => {
   apply(ctx, { python: 'python3' });
   const session = fakeSession('s-bound');
   const event = ctx.handlers.get('session/event');
-  const tool = ctx.registered.find((item) => item.name === 'crop_report');
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
 
   event(session, { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '干活' }] } });
   await tool.execute(
@@ -259,7 +261,7 @@ test('first turn honors an existing binding instead of listing candidates', asyn
   const ctx = fakeCtx();
   apply(ctx, { python: 'python3' });
   const session = fakeSession('s-first');
-  const tool = ctx.registered.find((item) => item.name === 'crop_report');
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
   await tool.execute(
     { phase: 'start', task_id: 'first-work', summary: '干活', goal: '把活干完' },
     { agent: { session } },
@@ -285,7 +287,7 @@ test('first turn shows the bound work even after it fell out of the candidates',
 
   const ctx = fakeCtx();
   apply(ctx, { python: 'python3' });
-  const tool = ctx.registered.find((item) => item.name === 'crop_report');
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
   await tool.execute(
     { phase: 'start', task_id: 'mine', summary: '主线', goal: '甲目标' },
     { agent: { session: fakeSession('s-mine') } },

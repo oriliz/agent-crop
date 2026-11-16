@@ -49,6 +49,11 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("--days", type=float, default=7.0)
     report.add_argument("--json", action="store_true")
 
+    health = sub.add_parser("health", help="按采集工具看健康度（覆盖/完整/闭环/诊断）")
+    health.add_argument("--days", type=float, default=7.0)
+    health.add_argument("--host", default=None, help="只看某个宿主，如 dsh / claude-code")
+    health.add_argument("--json", action="store_true", help="输出 JSON（给 AI / 脚本）")
+
     serve = sub.add_parser("serve", help="本地 dashboard")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
@@ -85,6 +90,14 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(summary, ensure_ascii=False, indent=2))
         else:
             print(core.format_report(summary))
+        return 0
+
+    if args.command == "health":
+        summary = core.health_summary(args.days, host_filter=args.host)
+        if getattr(args, "json", False):
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            print(core.format_health(summary))
         return 0
 
     if args.command == "serve":

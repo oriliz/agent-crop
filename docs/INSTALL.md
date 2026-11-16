@@ -30,7 +30,7 @@ dsh plugin --profile <profile> add ~/agent-crop
 
 装完即生效：
 
-- 原生工具 `crop_report`（`probe_report` 仍作兼容别名）
+- 原生工具 `crop_update`（`crop_report` / `probe_report` 仍作兼容别名）
 - 系统提示里常驻 `crop:protocol` 段落（不用改 AGENTS.md）
 - 每回合首步注入一行工作状态；超红线注入提醒
 - 右栏新增 **Crop** 标签页（实时数字）
@@ -57,7 +57,7 @@ claude plugin install agent-crop@agent-crop -s user
 claude plugin list
 ```
 
-Claude 侧通过 `.mcp.json` 暴露 `probe_report`，hooks 负责注入未完成任务与红线提醒。
+Claude 侧通过 `.mcp.json` 暴露 `crop` 工具，hooks 负责注入未完成任务与红线提醒。
 装完需要新开会话。
 
 ## 卸载

@@ -10,7 +10,7 @@
 v0.4 改成：
 
 - **探针确定性触发**：每次工具调用后检查时长，超线注入一行提醒。不依赖 AI 记忆。
-- **AI 调用工具上报**：`probe_report` 直接记录结构化字段。
+- **AI 调用工具上报**：`crop_update` 直接记录结构化字段。
 - **用户可见文本只负责体验**：一句“不好意思，这个做得有点久”，分析数据走工具。
 
 ## 两层时间
@@ -63,7 +63,7 @@ config.json                  # red_min / remind_min / user_facing
 | `SessionEnd` | 记录 session 结束 |
 
 工具通过 `.mcp.json` 暴露；模型侧名字形如
-`mcp__plugin_agent-crop_probe__probe_report`。
+`mcp__plugin_agent-crop_crop__crop_update`。
 
 ## DSH 映射
 
@@ -73,7 +73,7 @@ config.json                  # red_min / remind_min / user_facing
 | `session/event tool/result` | 记录工具结果 |
 | `session/event turn/end` | 关闭 block |
 | `agent/pre-step` | 首次注入 open tasks；队列里的提醒/完成提示追加到当前 step |
-| 原生工具 `probe_report` | 写入 reports/events/tasks，返回确认文本 |
+| 原生工具 `crop_update` | 写入 reports/events/tasks，返回确认文本 |
 
 DSH 插件零运行时依赖：工具定义和消息对象都是本地构造，核心逻辑通过 `spawnSync` 调
 `core/probe_core_cli.py`。
@@ -95,7 +95,7 @@ claude plugin list   # 应显示 agent-crop@agent-crop，enabled
 ```
 
 安装后需要重启 Claude Code（或新开会话）才会加载插件；当前已运行的会话不会热加载。
-验证：上下文出现 `[crop]`，调用 `probe_report` 后 `~/.agentcrop/data/events.jsonl` 有 `host:"claude-code"`。
+验证：上下文出现 `[crop]`，调用 `crop_update` 后 `~/.agentcrop/data/events.jsonl` 有 `host:"claude-code"`。
 
 卸载：
 
@@ -113,7 +113,7 @@ dsh plugin --profile coding add ~/agent-crop
 dsh --profile coding --port 3081 --no-open
 ```
 
-验证：`~/.agentcrop/data/events.jsonl` 出现 `host:"dsh"`；模型能调用 `probe_report`。
+验证：`~/.agentcrop/data/events.jsonl` 出现 `host:"dsh"`；模型能调用 `crop_update`。
 
 卸载：
 
@@ -125,8 +125,8 @@ rm -rf ~/.dsh/profiles/coding     # 如果整个 profile 都不要了
 
 ## 已验证
 
-- Claude Code 插件：`claude plugin validate` 通过；`--plugin-dir` 端到端能注入 `[crop]`、调用 `probe_report`、写入 events/reports/blocks。
-- DSH：`coding` profile 启动无错误；headless 端到端能注入 `[crop]`、调用原生 `probe_report`、写入 `turn/step`。
+- Claude Code 插件：`claude plugin validate` 通过；`--plugin-dir` 端到端能注入 `[crop]`、调用 `crop_update`、写入 events/reports/blocks。
+- DSH：`coding` profile 启动无错误；headless 端到端能注入 `[crop]`、调用原生 `crop_update`、写入 `turn/step`。
 - 跨宿主：同一 `KIT_DATA_DIR` 下同时出现 `host:"claude-code"` 与 `host:"dsh"`；DSH 能看到 Claude 写入的 open task。
 
 ## 已知边界

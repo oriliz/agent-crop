@@ -79,19 +79,19 @@ ACTIONS = {
     "warm": "不用上报。让用户看见进度：该说话说话，该收尾收尾。",
     "yellow": (
         "两件事：① 先对用户说一句人话（这个比预想久，我在处理）；"
-        "② 调 crop_report 写一行：cause=为什么慢；verdict=justified（活本来就难，顶回去）"
+        "② 调 crop_update 写一行：cause=为什么慢；verdict=justified（活本来就难，顶回去）"
         "或 not-justified（自己走错路）。真要改预期，就在这次上报里带上新的 expect_min，并说清理由。"
     ),
     "red": (
-        "先判断路对不对，能阶段交付就先交付；然后对用户说一句人话，再调 crop_report 写 cause + verdict。"
+        "先判断路对不对，能阶段交付就先交付；然后对用户说一句人话，再调 crop_update 写 cause + verdict。"
         "改预期也要在这次上报里带上新的 expect_min + 理由。"
     ),
     "overdue": (
-        "别硬撑：先把能看的半成品交给用户，再调 crop_report 写清楚这次为什么炸（cause + verdict）。"
+        "别硬撑：先把能看的半成品交给用户，再调 crop_update 写清楚这次为什么炸（cause + verdict）。"
         "要改预期就现在改，别等下一鞭。"
     ),
-    "miss": "补一行 crop_report：在做什么 / 卡在哪 / 下一步。",
-    "miss_streak": "现在补一行 crop_report：在做什么 / 卡在哪 / 下一步。",
+    "miss": "补一行 crop_update：在做什么 / 卡在哪 / 下一步。",
+    "miss_streak": "现在补一行 crop_update：在做什么 / 卡在哪 / 下一步。",
 }
 
 NO_EXPECT_NOTE = "（开工时没报预期，先按默认{line}算：{default}。报个数字，鞭子就按你的数字来。）"
