@@ -671,6 +671,8 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-verdict-tag--not-justified { color: #fff; background: #e5484d; border-color: #e5484d; font-weight: 700; box-shadow: 0 1px 6px rgba(229, 72, 77, .35); }
 .crop-verdict-tag--unknown { color: #a9b6d4; }
 .crop-pair--urgent { border-left: 3px solid #e5484d; background: rgba(239, 68, 68, .06); }
+.crop-pair--think { border-left: 3px solid #e8c46a; background: rgba(232, 196, 106, .06); }
+.crop-iv-tag--think { color: #1a1608; background: #e8c46a; font-weight: 700; }
 .crop-pair--hl { background: rgba(120, 160, 255, .10); }
 .crop-pair--flash { animation: cropFlash 1.4s ease; }
 @keyframes cropFlash { 0% { background: rgba(240, 212, 138, 0); } 25% { background: rgba(240, 212, 138, .22); } 100% { background: rgba(240, 212, 138, 0); } }
@@ -1011,6 +1013,8 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         window.setTimeout(() => setFlashIv(null), 1600);
       };
       const needsFix = reflection.verdict === 'not-justified';
+      const fixCount = interventions.filter((item) => item.verdict === 'not-justified' && item.improve).length;
+      const thinkCount = interventions.filter((item) => item.verdict === 'not-justified' && !item.improve).length;
       const verdictLine = reflection.verdict === 'justified' ? '这次慢得有道理，不用改'
         : reflection.verdict === 'not-justified' ? '这次慢得没道理，要改'
           : '';
@@ -1019,23 +1023,27 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('span', { key: 'cap', className: 'crop-muted crop-small' }, '本会话反思'),
           h('span', { key: 'badge', className: 'crop-badge' }, '自评 · 待复核'),
           h('span', { key: 'counts', className: 'crop-muted crop-small' },
-            `提醒 ${whips.length} 次 · 问题 ${interventions.length} 条 · 改进 ${improvements.length} 条`),
+            `提醒 ${whips.length} 次 · 问题 ${interventions.length} 条`,
+            fixCount ? ` · 要改 ${fixCount}` : '',
+            thinkCount ? ` · 要想办法 ${thinkCount}` : ''),
         ]),
         interventions.length
           ? interventions.map((item, index) => {
               const urgent = item.verdict === 'not-justified';
+              const needsIdea = urgent && !item.improve;
               const when = item.at && started ? `第 ${Math.max(1, Math.round((item.at - started) / 60000))} 分钟` : '';
               const state = item.phase === 'blocked' ? '卡点' : item.phase === 'end' ? '收尾' : item.phase ? '进行中' : '';
               const meta = [when, state, item.category ? enumLabel('category', item.category) : ''].filter(Boolean).join(' · ');
               return h('div', {
                 key: `iv${index}`,
                 id: `crop-iv-${index}`,
-                className: `crop-pair${urgent ? ' crop-pair--urgent' : ''}${hoverIv === index ? ' crop-pair--hl' : ''}${flashIv === index ? ' crop-pair--flash' : ''}`,
+                className: `crop-pair${urgent && !needsIdea ? ' crop-pair--urgent' : ''}${needsIdea ? ' crop-pair--think' : ''}${hoverIv === index ? ' crop-pair--hl' : ''}${flashIv === index ? ' crop-pair--flash' : ''}`,
               }, [
                 h('span', { key: 'n', className: 'crop-pair-no' }, String(index + 1)),
                 h('div', { key: 'p', className: 'crop-pair-problem' }, [
                   h('div', { key: 'h', className: 'crop-pair-label' }, [
-                    urgent ? h('span', { key: 't', className: 'crop-iv-tag crop-iv-tag--urgent' }, '要改') : null,
+                    urgent && !needsIdea ? h('span', { key: 't', className: 'crop-iv-tag crop-iv-tag--urgent' }, '要改') : null,
+                    needsIdea ? h('span', { key: 't', className: 'crop-iv-tag crop-iv-tag--think' }, '要想办法') : null,
                     h('span', { key: 'l', className: 'crop-muted' }, '当时的问题'),
                   ]),
                   h('div', { key: 't', className: 'crop-pair-text' }, item.cause || '未记录'),
@@ -1045,7 +1053,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                 h('div', { key: 'i', className: 'crop-pair-improve' }, [
                   h('div', { key: 'l', className: 'crop-pair-label' }, 'AI 的改进'),
                   h('div', { key: 't', className: item.improve ? 'crop-pair-text' : 'crop-pair-text crop-muted' },
-                    item.improve || '未提出改进'),
+                    item.improve || (needsIdea ? '还没想出办法' : '未提出改进')),
                 ]),
               ]);
             })
