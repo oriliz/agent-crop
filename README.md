@@ -231,7 +231,7 @@ dsh plugin --profile <你的 profile> remove agent-crop-dsh
 | `next` | 可选 | 下一步的具体动作 |
 | `category` | `blocked` 必填 | 九选一：`serial-wait` `repeat-pitfall` `design-churn` `decision-batching` `tool-misuse` `no-evidence` `spec-drift` `human-wait` `other` |
 | `goal` | 开工时 | 一句话目标 |
-| `type` | 开工时 | `design` / `implement` / `debug` / `docs` |
+| `type` | 开工时 | `design` / `implement` / `debug` / `docs` / `explore`，或自定义小写短 slug（如 `research`） |
 | `difficulty` | 开工时 | `s` / `m` / `l` |
 
 `category` 是枚举，不是自由文本——填错直接失败。九类词表锁死，不会越记越乱。
