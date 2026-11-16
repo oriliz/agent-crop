@@ -137,7 +137,9 @@ Agent Crop 把这件事记了下来：同一个命令反复翻 help、反复试�
 - 「只看异常」收掉正常行；主机下拉按 dsh / claude-code 分开看。
 - 底部诊断清单按指标生成，每条带看板卡；「复制修复指令」拼成一段话可直接丢给 AI。
 
-![全局面板的健康度 tab：健康构成环形图、被动采集/AI 主动上报两张表、诊断清单](docs/assets/panel-health.jpg)
+![全局面板的健康度 tab：健康构成环形图、被动采集/AI 主动上报两张表](docs/assets/panel-health.jpg)
+
+![健康度下半部分：工具表与诊断清单，每条带看板卡，右下角可复制修复指令](docs/assets/panel-health-diag.jpg)
 
 同一份健康度也给了 AI 和脚本两个入口：
 
