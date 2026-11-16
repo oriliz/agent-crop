@@ -34,8 +34,8 @@ class HealthSummaryTest(unittest.TestCase):
                 os.environ[key] = value
         self._tmp.cleanup()
 
-    def emit(self, ev, sid="s1", minutes_ago=0, **fields):
-        event = {"ev": ev, "t": NOW - minutes_ago * MIN, "host": "test", "sid": sid}
+    def emit(self, ev, sid="s1", minutes_ago=0, host="test", **fields):
+        event = {"ev": ev, "t": NOW - minutes_ago * MIN, "host": host, "sid": sid}
         event.update(fields)
         self.events.append(event)
         core.append_event(event)
@@ -94,6 +94,21 @@ class HealthSummaryTest(unittest.TestCase):
         self.assertAlmostEqual(row["stage_closure"], 2 / 3, places=3)
         self.assertAlmostEqual(row["adherence"], 1 / 2, places=3)
         self.assertIn("有开始、没收尾", [diag["title"] for diag in payload["diagnostics"]])
+
+    def test_session_end_is_host_aware(self):
+        self.seed_normal()
+        payload = core.health_summary(days=7)
+        row = next(item for item in payload["passive"] if item["tool"] == "session_end")
+        self.assertEqual(row["lamp"], "gray", "没有 claude-code 会话时不该判红")
+        self.assertIn("claude-code", row["note"])
+
+        self.emit("session_start", sid="cc", host="claude-code", minutes_ago=10, workspace="/tmp")
+        self.emit("prompt", sid="cc", host="claude-code", minutes_ago=9)
+        self.emit("prompt", sid="cc", host="claude-code", minutes_ago=8)
+        self.emit("stop", sid="cc", host="claude-code", minutes_ago=8, minutes=5)
+        payload = core.health_summary(days=7)
+        row = next(item for item in payload["passive"] if item["tool"] == "session_end")
+        self.assertEqual(row["lamp"], "red", "claude-code 会话缺 session_end 应该报出来")
 
     def test_missing_work_summary_is_flagged(self):
         self.seed_normal()

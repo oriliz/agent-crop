@@ -331,7 +331,8 @@ function redRow(row){
 
 function rowHtml(row, showClosure, hasPrevious, works){
   return '<tr class="row' + (redRow(row) ? ' row-red' : '') + '">' +
-    '<td>' + esc(row.label) + '<span class="muted" style="margin-left:6px">' + esc(row.tool) + '</span></td>' +
+    '<td>' + esc(row.label) + '<span class="muted" style="margin-left:6px">' + esc(row.tool) + '</span>' +
+    (row.note ? '<div class="mini">' + esc(row.note) + '</div>' : '') + '</td>' +
     '<td class="muted">' + esc(row.scope || '') + '</td>' +
     '<td class="num">' + row.events + '</td>' +
     coverageCell(row) +

@@ -598,6 +598,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         _upsert_task(record, workspace)
         bind_session(sid, report["task_id"])
         if report["phase"] == "start":
+            append_event({"ev": "work_claim", "sid": sid, "work_id": report["task_id"]})
             append_event({"ev": "work_open", "sid": sid, "work_id": report["task_id"],
                           "goal": report.get("goal", ""), "type": report.get("type", ""),
                           "difficulty": report.get("difficulty", "")})
@@ -2230,6 +2231,11 @@ _HEALTH_ACTIVE = (
     ("adjustment", "改进记录", "work", ("metric", "before", "after"), "fd0acdc3", False),
 )
 
+# 只有这些宿主会发对应事件；别的宿主的会话不该算进分母，否则永远显示「没采到」。
+_HEALTH_HOST_SUPPORT = {
+    "session_end": {"claude-code"},
+}
+
 HEALTH_SCOPE_LABEL = {
     "session": "会话",
     "work": "工作",
@@ -2344,6 +2350,14 @@ def health_summary(
 
     eligible = _eligible_sessions(events)
     all_sessions = {str(event.get("sid")) for event in events if event.get("sid")}
+    host_of: dict[str, str] = {}
+    for event in events:
+        sid = str(event.get("sid") or "")
+        if sid and event.get("host"):
+            host_of.setdefault(sid, str(event.get("host")))
+    eligible_by_host: dict[str, set[str]] = {}
+    for sid in eligible:
+        eligible_by_host.setdefault(host_of.get(sid, ""), set()).add(sid)
     by_kind: dict[str, list[dict]] = {}
     for event in events:
         by_kind.setdefault(str(event.get("ev") or ""), []).append(event)
@@ -2364,7 +2378,8 @@ def health_summary(
         "on_demand": 0,
     }
 
-    def coverage_counts(klass: str, rows: list[dict]) -> tuple[int, int] | None:
+    def coverage_counts(spec: tuple, rows: list[dict]) -> tuple[int, int] | None:
+        kind, klass = spec[0], spec[2]
         if klass == "on_demand" or not rows:
             return None
         if klass == "call":
@@ -2372,6 +2387,16 @@ def health_summary(
             attributed = sum(1 for row in rows if _health_field_ok(row, "work_id"))
             return attributed, len(rows)
         if klass == "session":
+            support = _HEALTH_HOST_SUPPORT.get(kind)
+            if support:
+                denominator = set()
+                for host_name in support:
+                    denominator |= eligible_by_host.get(host_name, set())
+                if not denominator:
+                    return None
+                seen = {str(row.get("sid")) for row in rows
+                        if row.get("sid") and host_of.get(str(row.get("sid"))) in support}
+                return len(seen & denominator), len(denominator)
             if not eligible:
                 return None
             seen = {str(row.get("sid")) for row in rows if row.get("sid")}
@@ -2386,9 +2411,11 @@ def health_summary(
         kind, label, klass, fields, card = spec[:5]
         shipped = spec[5] if len(spec) > 5 else True
         rows = by_kind.get(kind, [])
-        counts = coverage_counts(klass, rows)
+        counts = coverage_counts(spec, rows)
         coverage = (counts[0] / counts[1]) if counts and counts[1] else None
         completeness, missing = _health_completeness(rows, fields)
+        support = _HEALTH_HOST_SUPPORT.get(kind)
+        lamp_events = counts[0] if (support and counts) else len(rows)
         entry = {
             "tool": kind,
             "label": label,
@@ -2403,9 +2430,15 @@ def health_summary(
             "trend": _health_trend(rows, start, end, min(window_days, 30)),
             "delta_vs_previous": _health_delta(len(rows), prev_by_kind.get(kind, 0)),
             "card": card,
-            "lamp": _health_lamp(klass, len(rows), coverage, completeness,
-                                 denominators.get(klass, 0)),
+            "lamp": _health_lamp(klass, lamp_events, coverage, completeness,
+                                 (counts[1] if counts else denominators.get(klass, 0))),
+            "note": "",
         }
+        support = _HEALTH_HOST_SUPPORT.get(kind)
+        if support:
+            entry["note"] = "仅 " + " / ".join(sorted(support)) + " 有对应钩子"
+            if not counts or not counts[1]:
+                entry["lamp"] = "gray"
         if not shipped:
             entry["status"] = "not-shipped"
             entry["lamp"] = "gray"
@@ -2579,5 +2612,6 @@ def format_health(summary: dict) -> str:
             missing = row.get("missing_fields") or {}
             if missing:
                 detail += " · 缺 " + "、".join(f"{k}×{v}" for k, v in missing.items())
-        lines.append(f"  [{mark}] {row.get('label')} {row.get('tool')}：{detail}")
+        note = f"（{row['note']}）" if row.get("note") else ""
+        lines.append(f"  [{mark}] {row.get('label')} {row.get('tool')}：{detail}{note}")
     return "\n".join(line for line in lines if line)

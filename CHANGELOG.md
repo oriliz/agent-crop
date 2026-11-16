@@ -31,6 +31,13 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
   同一份数据也通过 DSH 工具 `crop_health` 和 MCP 工具 `crop_health` 暴露给 AI。
 - 安装副本更新到本次版本（`~/.agentcrop/current`），本地面板默认跑在 `127.0.0.1:8765`。
 
+### Fixed（修复）
+
+- `work_claim` 现在在 `crop_update(phase="start")` 时写入：之前只有 `crop switch` 会记，
+  健康度里显示「工作认领 1/65」。
+- `session_end` 改为按宿主口径统计：DSH 没有 SessionEnd 钩子，不再拿它算 DSH 会话的分母；
+  只有 claude-code 会话参与覆盖计算，其他宿主的会话不会把它拖红。
+
 ### Changed（变更）
 
 - MCP 服务名从 `probe` 改为 `crop`。多个 MCP 同时挂载时，`probe` 和产品名对不上，
