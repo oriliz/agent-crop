@@ -843,10 +843,10 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const onUp = () => { dragRef.current = null; };
       const pos = (t) => Math.min(100, Math.max(0, ((t - windowStart) / span) * 100));
       const pct = (v) => `${v}%`;
-      const blocks = allBlocks.filter((block) => block.t >= windowStart);
-      const whips = (timeline.whips || []).filter((whip) => whip.t >= windowStart);
-      const waits = (timeline.waits || []).filter((wait) => wait.t >= windowStart);
-      const reports = (timeline.reports || []).filter((report) => report.t >= windowStart);
+      const blocks = allBlocks.filter((block) => block.t >= windowStart && block.t <= viewEnd);
+      const whips = (timeline.whips || []).filter((whip) => whip.t >= windowStart && whip.t <= viewEnd);
+      const waits = (timeline.waits || []).filter((wait) => wait.t >= windowStart && wait.t <= viewEnd);
+      const reports = (timeline.reports || []).filter((report) => report.t >= windowStart && report.t <= viewEnd);
       const interventions = data.interventions || [];
       // The right column follows the timeline window: pan/zoom on the left
       // filters the reflection rows on the right.
