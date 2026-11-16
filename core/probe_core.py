@@ -1810,6 +1810,32 @@ def _expect_revisions(events: list[dict], task_id: str) -> int:
     return max(0, len(values) - 1)
 
 
+def _session_interventions(events: list[dict]) -> list[dict]:
+    """Every report that names a problem, newest first — the panel pairs these
+    with whip markers so the timeline and the reflection list line up."""
+    out = []
+    for event in reversed(events):
+        if event.get("ev") != "probe_report":
+            continue
+        cause = str(event.get("cause") or "")
+        improve = str(event.get("improve") or "")
+        verdict = str(event.get("verdict") or "")
+        if not (cause or improve or verdict):
+            continue
+        out.append({
+            "at": int(event.get("t") or 0),
+            "work_id": str(event.get("task_id") or event.get("work_id") or ""),
+            "phase": str(event.get("phase") or ""),
+            "cause": cause[:200],
+            "improve": improve[:200],
+            "verdict": verdict,
+            "category": str(event.get("category") or ""),
+        })
+        if len(out) >= 8:
+            break
+    return out
+
+
 def _session_improvements(events: list[dict]) -> list[dict]:
     """Improve / next_time lines raised in this session, newest first, de-duplicated."""
     out, seen = [], set()
@@ -2006,6 +2032,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         "recent_blocks": recent[-5:][::-1],
         "session_started_at": int(events[0].get("t") or 0) if events else 0,
         "persona": str(load_config().get("persona") or "owner"),
+        "interventions": _session_interventions(events),
         "work_titles": _work_titles(events),
         "timeline": _session_timeline(events),
         "reflection": _latest_reflection(events),

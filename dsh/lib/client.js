@@ -654,7 +654,8 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-tl-axis span { position: absolute; transform: translateX(-50%); }
 .crop-tl-axis span:first-child { transform: none; }
 .crop-tl-axis span:last-child { transform: translateX(-100%); }
-.crop-whip { position: absolute; bottom: 12px; height: 22px; width: auto; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .45)); }
+.crop-whip { position: absolute; bottom: 12px; height: 22px; cursor: pointer; transition: transform .15s ease; width: auto; transform: translateX(-50%); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .45)); }
+.crop-whip:hover { transform: translateX(-50%) scale(1.3); filter: drop-shadow(0 0 6px rgba(240,212,138,.7)); z-index: 2; }
 .crop-whip-count { position: absolute; bottom: 31px; transform: translateX(4px); font-size: 9px; line-height: 13px; padding: 0 4px; border-radius: 999px; background: #e8c46a; color: #1a1608; }
 .crop-blocked-dot { position: absolute; bottom: 9px; width: 9px; height: 9px; border-radius: 50%; background: #f08484; border: 1px solid rgba(255, 255, 255, .45); transform: translateX(-50%); }
 .crop-tl-detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(160, 180, 230, .12); display: flex; gap: 10px; align-items: baseline; font-size: 11.5px; }
@@ -669,6 +670,12 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-verdict-tag--justified { color: #9fd8a8; border-color: rgba(110, 200, 130, .45); }
 .crop-verdict-tag--not-justified { color: #fff; background: #e5484d; border-color: #e5484d; font-weight: 700; box-shadow: 0 1px 6px rgba(229, 72, 77, .35); }
 .crop-verdict-tag--unknown { color: #a9b6d4; }
+.crop-pair--urgent { border-left: 3px solid #e5484d; background: rgba(239, 68, 68, .06); }
+.crop-pair--hl { background: rgba(120, 160, 255, .10); }
+.crop-pair--flash { animation: cropFlash 1.4s ease; }
+@keyframes cropFlash { 0% { background: rgba(240, 212, 138, 0); } 25% { background: rgba(240, 212, 138, .22); } 100% { background: rgba(240, 212, 138, 0); } }
+.crop-iv-tag { font-size: 9.5px; line-height: 15px; padding: 0 6px; border-radius: 999px; margin-right: 5px; }
+.crop-iv-tag--urgent { color: #fff; background: #e5484d; font-weight: 700; }
 .crop-pair { display: grid; grid-template-columns: 22px minmax(0, 1fr) 18px minmax(0, 1.35fr); gap: 8px; align-items: start; padding: 8px 0; border-top: 1px solid rgba(160, 180, 230, .10); }
 .crop-pair-no { color: #7f9fe0; font-variant-numeric: tabular-nums; padding-top: 14px; }
 .crop-pair-label { display: block; font-size: 9.5px; color: #7785a6; margin-bottom: 2px; }
@@ -764,6 +771,8 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const { data, error } = useSession(sessionId);
       const [picked, setPicked] = React.useState(null);
       const [view, setView] = React.useState(null);
+      const [hoverIv, setHoverIv] = React.useState(null);
+      const [flashIv, setFlashIv] = React.useState(null);
       const dragRef = React.useRef(null);
       if (error || !data) {
         return h('div', { className: 'crop-page' },
@@ -884,7 +893,10 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           className: 'crop-whip',
           src: personaIcon(mark.persona),
           style: { left: pct(pos(mark.at)) },
-          title: `鞭策 ${mark.count} 次`,
+          title: `${mark.persona === 'owner' ? '鞭策' : '提醒'} ${mark.count} 次 · 移上去看对应反思`,
+          onMouseEnter: () => setHoverIv(nearestIv(mark)),
+          onMouseLeave: () => setHoverIv(null),
+          onClick: () => focusIv(nearestIv(mark)),
         }));
         if (whipMarks.length) {
           marks.push(...whipMarks.map((mark, index) => h('b', {
@@ -982,46 +994,62 @@ body[data-ds-dark-theme] .crop-page .crop-card {
 
       const reflection = data.reflection || {};
       const improvements = data.improvements || [];
+      const interventions = data.interventions || [];
+      const nearestIv = (mark) => {
+        let best = -1;
+        let bestGap = Infinity;
+        interventions.forEach((item, index) => {
+          const gap = Math.abs((item.at || 0) - mark.last);
+          if (gap < bestGap) { bestGap = gap; best = index; }
+        });
+        return bestGap <= 6 * 3600 * 1000 ? best : -1;
+      };
+      const focusIv = (index) => {
+        if (index < 0) return;
+        document.getElementById(`crop-iv-${index}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setFlashIv(index);
+        window.setTimeout(() => setFlashIv(null), 1600);
+      };
       const needsFix = reflection.verdict === 'not-justified';
       const verdictLine = reflection.verdict === 'justified' ? '这次慢得有道理，不用改'
         : reflection.verdict === 'not-justified' ? '这次慢得没道理，要改'
-          : reflection.verdict ? '还没判定' : '';
-      const reflect = h('div', { key: 'reflect', className: `crop-card crop-reflect${needsFix ? ' crop-reflect--urgent' : ''}` },
+          : '';
+      const reflect = h('div', { key: 'reflect', className: 'crop-card crop-reflect' },
         h('div', { className: 'crop-reflect-head' }, [
           h('span', { key: 'cap', className: 'crop-muted crop-small' }, '本会话反思'),
           h('span', { key: 'badge', className: 'crop-badge' }, '自评 · 待复核'),
-          reflection.verdict
-            ? h('span', { key: 'v', className: `crop-verdict-tag crop-verdict-tag--${reflection.verdict}` },
-                enumLabel('verdict', reflection.verdict))
-            : null,
-          verdictLine ? h('span', { key: 'line', className: 'crop-muted crop-small' }, verdictLine) : null,
-          h('span', { key: 'meta', className: 'crop-muted crop-small' }, [
-            reflection.work_id ? labelOf(reflection.work_id) : '',
-            reflection.revisions ? `改口 ${reflection.revisions} 次` : '',
-          ].filter(Boolean).join(' · ')),
+          h('span', { key: 'counts', className: 'crop-muted crop-small' },
+            `提醒 ${whips.length} 次 · 问题 ${interventions.length} 条 · 改进 ${improvements.length} 条`),
         ]),
-        improvements.length
-          ? improvements.map((item, index) => {
+        interventions.length
+          ? interventions.map((item, index) => {
+              const urgent = item.verdict === 'not-justified';
               const when = item.at && started ? `第 ${Math.max(1, Math.round((item.at - started) / 60000))} 分钟` : '';
               const state = item.phase === 'blocked' ? '卡点' : item.phase === 'end' ? '收尾' : item.phase ? '进行中' : '';
-              const problem = item.cause || '未记录';
               const meta = [when, state, item.category ? enumLabel('category', item.category) : ''].filter(Boolean).join(' · ');
-              return h('div', { key: `${item.at}-${index}`, className: 'crop-pair' }, [
+              return h('div', {
+                key: `iv${index}`,
+                id: `crop-iv-${index}`,
+                className: `crop-pair${urgent ? ' crop-pair--urgent' : ''}${hoverIv === index ? ' crop-pair--hl' : ''}${flashIv === index ? ' crop-pair--flash' : ''}`,
+              }, [
                 h('span', { key: 'n', className: 'crop-pair-no' }, String(index + 1)),
                 h('div', { key: 'p', className: 'crop-pair-problem' }, [
-                  h('span', { key: 'l', className: 'crop-pair-label' }, '当时的问题'),
-                  h('div', { key: 't', className: 'crop-pair-text' }, problem),
+                  h('div', { key: 'h', className: 'crop-pair-label' }, [
+                    urgent ? h('span', { key: 't', className: 'crop-iv-tag crop-iv-tag--urgent' }, '要改') : null,
+                    h('span', { key: 'l', className: 'crop-muted' }, '当时的问题'),
+                  ]),
+                  h('div', { key: 't', className: 'crop-pair-text' }, item.cause || '未记录'),
                   meta ? h('div', { key: 'm', className: 'crop-pair-meta' }, meta) : null,
                 ]),
                 h('span', { key: 'a', className: 'crop-pair-arrow' }, '→'),
                 h('div', { key: 'i', className: 'crop-pair-improve' }, [
-                  h('span', { key: 'l', className: 'crop-pair-label' }, 'AI 的改进'),
-                  h('div', { key: 't', className: 'crop-pair-text' }, item.text),
+                  h('div', { key: 'l', className: 'crop-pair-label' }, 'AI 的改进'),
+                  h('div', { key: 't', className: item.improve ? 'crop-pair-text' : 'crop-pair-text crop-muted' },
+                    item.improve || '未提出改进'),
                 ]),
               ]);
             })
-          : h('div', { className: 'crop-muted crop-small' },
-              reflection.cause ? `当时的问题：${reflection.cause}` : '还没有上报过反思。'));
+          : h('div', { className: 'crop-muted crop-small' }, '还没有上报过问题。'));
 
       return h('div', { className: 'crop-page' }, [head, current, frame, works, reflect]);
     }
