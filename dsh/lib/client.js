@@ -607,6 +607,11 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-legend-whip { width: 16px; height: 16px; object-fit: contain; vertical-align: middle; margin-right: 4px; }
 .crop-dot-red { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f08484; margin-right: 5px; }
 .crop-tl-body { display: grid; gap: 4px; }
+.crop-tl-drag { cursor: grab; user-select: none; }
+.crop-tl-drag:active { cursor: grabbing; }
+.crop-tl-zoom { display: inline-flex; gap: 4px; }
+.crop-tl-zoom .crop-chip { font-size: 10.5px; padding: 1px 7px; }
+.crop-tl-hint { margin-top: 4px; opacity: .7; }
 .crop-tl-row { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: end; }
 .crop-tl-label { font-size: 12px; padding-bottom: 4px; overflow: hidden; }
 .crop-tl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -722,6 +727,8 @@ body[data-ds-dark-theme] .crop-page .crop-card {
     function View({ sessionId }) {
       const { data, error } = useSession(sessionId);
       const [picked, setPicked] = React.useState(null);
+      const [view, setView] = React.useState(null);
+      const dragRef = React.useRef(null);
       if (error || !data) {
         return h('div', { className: 'crop-page' },
           h('div', { className: 'crop-card' },
@@ -743,9 +750,34 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       // (3h) ending at the last activity, not at "now" while idle.
       const started = data.session_started_at || (allBlocks.length ? allBlocks[0].start : Date.now());
       const idle = lastAt > 0 && Date.now() - lastAt > 30 * 60 * 1000;
-      const end = idle ? lastAt : Date.now();
-      const windowStart = Math.max(started, end - 6 * 60 * 60 * 1000);
-      const span = Math.max(30 * 60 * 1000, end - windowStart);
+      const baseEnd = idle ? lastAt : Date.now();
+      const viewEnd = view ? view.end : baseEnd;
+      const windowStart = view ? view.start : Math.max(started, baseEnd - 6 * 60 * 60 * 1000);
+      const span = Math.max(5 * 60 * 1000, viewEnd - windowStart);
+      const setWindow = (start, end) => {
+        const full = Math.max(30 * 60 * 1000, baseEnd - started);
+        const width = Math.max(5 * 60 * 1000, Math.min(full, end - start));
+        let nextStart = Math.max(started, Math.min(start, baseEnd - width));
+        setView({ start: nextStart, end: nextStart + width });
+      };
+      const zoomTo = (minutes) => {
+        const width = minutes == null ? Math.max(30 * 60 * 1000, baseEnd - started) : minutes * 60000;
+        setWindow(viewEnd - width, viewEnd);
+      };
+      const onDown = (event) => {
+        if (event.button !== 0) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        dragRef.current = { x: event.clientX, start: windowStart, end: viewEnd, width: rect.width };
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+      };
+      const onMove = (event) => {
+        const drag = dragRef.current;
+        if (!drag || !drag.width) return;
+        const shift = ((drag.x - event.clientX) / drag.width) * (drag.end - drag.start);
+        setWindow(drag.start + shift, drag.end + shift);
+      };
+      const onUp = () => { dragRef.current = null; };
       const pos = (t) => Math.min(100, Math.max(0, ((t - windowStart) / span) * 100));
       const pct = (v) => `${v}%`;
       const blocks = allBlocks.filter((block) => block.t >= windowStart);
@@ -865,17 +897,30 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const frame = h('div', { key: 'frame', className: 'crop-card crop-tl-card' },
         h('div', { className: 'crop-tl-head' },
           h('span', { className: 'crop-muted crop-small' }, '会话运行过程'),
+          h('span', { className: 'crop-tl-zoom' },
+            [['30m', 30], ['1h', 60], ['3h', 180], ['6h', 360], ['全部', null]].map(([label, minutes]) => h('button', {
+              key: label, type: 'button', className: 'crop-chip',
+              'data-on': minutes == null ? (view == null ? '' : undefined) : ((view ? Math.round(span / 60000) === minutes : minutes === 360) ? '' : undefined),
+              onClick: () => zoomTo(minutes),
+            }, label))),
           h('span', { className: 'crop-tl-legend' },
             h('span', null, h('i', { className: 'crop-swatch' }), '活跃'),
             h('span', null, h('img', { className: 'crop-legend-whip', src: '/api/agent-crop/whip-icon', alt: '' }), '鞭策'),
             h('span', null, h('i', { className: 'crop-dot-red' }), '卡点'))),
-        h('div', { className: 'crop-tl-body' }, laneRows.length ? laneRows : h('div', { className: 'crop-muted' }, '这次会话还没有完成一个时间块。'),
+        h('div', {
+          className: 'crop-tl-body crop-tl-drag',
+          onPointerDown: onDown,
+          onPointerMove: onMove,
+          onPointerUp: onUp,
+          onPointerCancel: onUp,
+        }, laneRows.length ? laneRows : h('div', { className: 'crop-muted' }, '这次会话还没有完成一个时间块。'),
           moreLanes > 0 ? h('div', { className: 'crop-muted crop-small' }, `还有 ${moreLanes} 个工作未显示`) : null),
         h('div', { className: 'crop-tl-axis' },
           [0, 0.25, 0.5, 0.75, 1].map((share) => h('span', {
             key: share,
             style: { left: pct(share * 100) },
           }, `${Math.round((span * share) / 60000)}m`))),
+        h('div', { className: 'crop-muted crop-small crop-tl-hint' }, '拖动平移 · 滚轮或按钮缩放'),
         picked ? h('div', { className: 'crop-tl-detail' },
           h('span', { className: 'crop-tl-range' }, `${picked.block.minutes}m`),
           h('span', null, `${picked.lane || '未归属'} · 这一段做了 ${picked.block.minutes} 分钟`)) : null);
