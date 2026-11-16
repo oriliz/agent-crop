@@ -122,13 +122,20 @@ class RenderTest(unittest.TestCase):
         self.assertIn("我报的 40 分钟到了", text)
         self.assertIn("现在 48 分钟", text)
 
+    def test_red_and_overdue_ask_for_the_next_deliverable(self):
+        for tier, meta in (("red", {"m": 70, "e": 40}),
+                           ("overdue", {"m": 130, "e": 40})):
+            text = voice.reminder(tier, meta, self.state)
+            self.assertIn("再给 N 分钟能交付什么", text, tier)
+
     def test_red_fallback_names_the_red_line(self):
         text = voice.reminder("red", {"m": 35, "e": None, "default": 30, "line": "红线"}, self.state)
         self.assertIn("默认红线", text)
 
     def test_repeated_revisions_are_called_out(self):
         text = voice.reminder("yellow", {"m": 48, "e": 40, "changes": 2}, self.state)
-        self.assertIn("改口 2 次", text)
+        self.assertIn("第 2 次改口", text)
+        self.assertIn("估准率", text)
 
     def test_miss_render_carries_streak(self):
         text = voice.miss(3, self.state)
