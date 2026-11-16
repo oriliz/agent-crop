@@ -663,7 +663,7 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-work-row:first-child { border-top: 0; }
 .crop-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
 .crop-tl-cap { margin-bottom: 6px; }
-.crop-reflect { display: grid; grid-template-columns: 1fr 1.3fr; gap: 18px; padding: 12px 16px; font-size: 12px; }
+.crop-reflect { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 18px; padding: 12px 16px; font-size: 12px; }
 .crop-badge { margin-left: 6px; border: 1px solid rgba(160, 180, 230, .22); border-radius: 999px; padding: 0 6px; font-size: 9.5px; color: #93a1c2; }
 .crop-reflect-meta { display: flex; align-items: center; gap: 6px; margin: 6px 0 5px; font-size: 11.5px; }
 .crop-verdict-tag { font-size: 12.5px; line-height: 22px; padding: 0 12px; border-radius: 999px; border: 1px solid rgba(160, 180, 230, .28); color: #c6d2ea; font-weight: 600; }
@@ -673,9 +673,11 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-verdict-tag--not-justified { color: #fff; background: #e5484d; border-color: #e5484d; font-weight: 700; box-shadow: 0 1px 6px rgba(229, 72, 77, .35); }
 .crop-verdict-tag--unknown { color: #a9b6d4; }
 .crop-reflect-cause { line-height: 1.6; color: #b9c6e2; }
-.crop-imp-row { display: flex; gap: 6px; padding: 4px 0; line-height: 1.5; color: #c6d2ea; }
-.crop-imp-main { flex: 1; min-width: 0; }
-.crop-imp-ctx { margin-top: 2px; font-size: 10.5px; line-height: 1.55; color: #7785a6; }
+.crop-imp-row { display: flex; gap: 6px; padding: 4px 0; line-height: 1.5; color: #c6d2ea; min-width: 0; }
+.crop-imp-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.crop-imp-text { overflow-wrap: anywhere; }
+.crop-imp-ctx { margin-top: 2px; font-size: 10.5px; line-height: 1.55; color: #7785a6; overflow-wrap: anywhere; }
+.crop-imp-problem { color: #a9b6d4; }
 .crop-imp-no { width: 14px; flex: none; color: #7f9fe0; }
 .crop-imp-tag { flex: none; height: 15px; line-height: 14px; padding: 0 5px; border: 1px solid rgba(160, 180, 230, .16); border-radius: 999px; font-size: 9.5px; color: #8fa0c4; }
 
@@ -994,7 +996,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                 ].filter(Boolean).join(' · ')))
             : null,
           h('div', { className: 'crop-reflect-cause' },
-            reflection.cause ? `当时：${reflection.cause}` : '还没有上报过反思。')),
+            reflection.cause ? `当时的问题：${reflection.cause}` : '还没有上报过反思。')),
         h('div', null,
           h('div', { className: 'crop-muted crop-small' }, 'AI 提出的改进'),
           improvements.length ? improvements.map((item, index) => {
@@ -1002,13 +1004,15 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             const state = item.phase === 'blocked' ? '卡点' : item.phase === 'end' ? '收尾' : item.phase ? '进行中' : '';
             const why = item.cause || item.summary || '';
             const context = [when, state, item.category ? enumLabel('category', item.category) : ''].filter(Boolean).join(' · ');
+            const problem = item.cause || '未记录';
             return h('div', { key: `${item.at}-${index}`, className: 'crop-imp-row' },
               h('span', { className: 'crop-imp-no' }, String(index + 1)),
               h('span', { className: 'crop-imp-tag', title: item.work_id || '' }, labelOf(item.work_id) || '本会话'),
               h('div', { className: 'crop-imp-main' },
-                h('div', null, item.text),
-                context || why ? h('div', { className: 'crop-imp-ctx' },
-                  context, why ? ` · 当时：${why}` : '') : null));
+                h('div', { className: 'crop-imp-text' }, item.text),
+                h('div', { className: 'crop-imp-ctx' },
+                  h('span', { className: 'crop-imp-problem' }, `当时的问题：${problem}`),
+                  context ? ` · ${context}` : '')));
           }) : h('div', { className: 'crop-muted' }, '还没有改进建议。')));
 
       return h('div', { className: 'crop-page' }, [head, current, frame, works, reflect]);
