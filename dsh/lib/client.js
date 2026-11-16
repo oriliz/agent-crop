@@ -695,11 +695,14 @@ body[data-ds-dark-theme] .crop-donut-hole {
   .crop-session-grid { grid-template-columns: 1fr; }
   .crop-reflect { position: static; max-height: none; }
 }
-.crop-pair { display: grid; grid-template-columns: 30px minmax(0, 1fr) 18px minmax(0, 1.25fr); gap: 8px; align-items: start; padding: 8px 0; border-top: 1px solid rgba(160, 180, 230, .10); }
+.crop-pair { display: grid; grid-template-columns: 24px 92px minmax(0, 1fr) minmax(0, 1.2fr); gap: 8px; align-items: start; padding: 8px 0; border-top: 1px solid rgba(160, 180, 230, .10); }
 
-.crop-pair-index { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 12px; }
-.crop-pair-no { color: #7f9fe0; font-variant-numeric: tabular-nums; }
-.crop-medal { width: 26px; height: 26px; object-fit: contain; filter: drop-shadow(0 1px 3px rgba(0,0,0,.35)); }
+
+.crop-pair-no { color: #7f9fe0; font-variant-numeric: tabular-nums; padding-top: 8px; }
+.crop-origin { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 4px; }
+.crop-origin-icon { width: 26px; height: 26px; object-fit: contain; }
+.crop-origin-tag { font-size: 9.5px; line-height: 15px; padding: 0 6px; border-radius: 999px; border: 1px solid rgba(160,180,230,.22); color: #a9b6d4; white-space: nowrap; }
+.crop-origin-tag--self { background: #f0d48a; color: #1a1608; border-color: transparent; font-weight: 700; }
 .crop-pair-label { display: block; font-size: 9.5px; color: #7785a6; margin-bottom: 2px; }
 .crop-pair-text { line-height: 1.55; overflow-wrap: anywhere; word-break: break-word; }
 .crop-pair-problem .crop-pair-text { color: #a9b6d4; }
@@ -1121,9 +1124,13 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                   window.setTimeout(() => setFlashIv(null), 1600);
                 },
               }, [
-                h('div', { key: 'n', className: 'crop-pair-index' }, [
-                  h('span', { key: 'no', className: 'crop-pair-no' }, String(index + 1)),
-                  selfDriven ? h('img', { key: 'm', className: 'crop-medal', src: MEDAL_ICON, alt: '自驱', title: '自驱：没人提醒，自己发现的问题' }) : null,
+                h('span', { key: 'n', className: 'crop-pair-no' }, String(index + 1)),
+                h('div', { key: 'o', className: 'crop-origin' }, [
+                  selfDriven
+                    ? h('img', { key: 'icon', className: 'crop-origin-icon', src: MEDAL_ICON, alt: '主动', title: '没人提醒，自己发现的问题' })
+                    : h('img', { key: 'icon', className: 'crop-origin-icon', src: '/api/agent-crop/whip-icon', alt: '被鞭策', title: '被提醒之后写的' }),
+                  h('span', { key: 'tag', className: `crop-origin-tag${selfDriven ? ' crop-origin-tag--self' : ''}` },
+                    selfDriven ? (item.phase === 'end' ? '主动总结' : '主动提出') : '被鞭策'),
                 ]),
                 h('div', { key: 'p', className: 'crop-pair-problem' }, [
                   h('div', { key: 'h', className: 'crop-pair-label' }, [
@@ -1134,7 +1141,6 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                   h('div', { key: 't', className: 'crop-pair-text' }, item.cause || '未记录'),
                   meta ? h('div', { key: 'm', className: 'crop-pair-meta' }, meta) : null,
                 ]),
-                h('span', { key: 'a', className: 'crop-pair-arrow' }, '→'),
                 h('div', { key: 'i', className: 'crop-pair-improve' }, [
                   h('div', { key: 'l', className: 'crop-pair-label' }, 'AI 的改进'),
                   h('div', { key: 't', className: item.improve ? 'crop-pair-text' : 'crop-pair-text crop-muted' },
