@@ -848,13 +848,16 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const waits = (timeline.waits || []).filter((wait) => wait.t >= windowStart);
       const reports = (timeline.reports || []).filter((report) => report.t >= windowStart);
       const interventions = data.interventions || [];
+      // The right column follows the timeline window: pan/zoom on the left
+      // filters the reflection rows on the right.
+      const windowInterventions = interventions.filter((item) => item.at >= windowStart && item.at <= viewEnd);
       // Greedy one-to-one: each whip marker claims the nearest still-unused
       // intervention. Two markers never point at the same reflection row.
       const whipLink = new Map();
       {
         const used = new Set();
         for (const whip of whips.slice().sort((a, b) => a.t - b.t)) {
-          const pool = interventions
+          const pool = windowInterventions
             .map((item, index) => ({ index, gap: Math.abs((item.at || 0) - whip.t) }))
             .filter((item) => !used.has(item.index))
             .sort((a, b) => a.gap - b.gap);
@@ -1074,12 +1077,12 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('span', { key: 'cap', className: 'crop-muted crop-small' }, '本会话反思'),
           h('span', { key: 'badge', className: 'crop-badge' }, '自评 · 待复核'),
           h('span', { key: 'counts', className: 'crop-muted crop-small' },
-            `提醒 ${whips.length} 次 · 问题 ${interventions.length} 条`,
+            `提醒 ${whips.length} 次 · 窗口内问题 ${windowInterventions.length} 条`,
             fixCount ? ` · 要改 ${fixCount}` : '',
             thinkCount ? ` · 要想办法 ${thinkCount}` : ''),
         ]),
-        interventions.length
-          ? interventions.map((item, index) => {
+        windowInterventions.length
+          ? windowInterventions.map((item, index) => {
               const urgent = item.verdict === 'not-justified';
               const needsIdea = urgent && !item.improve;
               const when = item.at && started ? `第 ${Math.max(1, Math.round((item.at - started) / 60000))} 分钟` : '';
@@ -1121,7 +1124,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                 ]),
               ]);
             })
-          : h('div', { className: 'crop-muted crop-small' }, '还没有上报过问题。'));
+          : h('div', { className: 'crop-muted crop-small' }, '当前时间窗口内没有问题记录，平移时间轴看看。'));
 
       return h('div', { className: 'crop-page' }, [
         head, current,
