@@ -779,6 +779,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const [view, setView] = React.useState(null);
       const [hoverIv, setHoverIv] = React.useState(null);
       const [flashIv, setFlashIv] = React.useState(null);
+      const [hotMarker, setHotMarker] = React.useState(null);
       const dragRef = React.useRef(null);
       if (error || !data) {
         return h('div', { className: 'crop-page' },
@@ -874,6 +875,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         return (a.blocks[0]?.start || 0) - (b.blocks[0]?.start || 0);
       });
 
+      const markerLinks = [];
       const visibleLanes = lanes.slice(0, 5);
       const moreLanes = lanes.length - visibleLanes.length;
       const laneRows = visibleLanes.map((lane) => {
@@ -906,16 +908,18 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         }
         const marks = whipMarks.map((mark, index) => {
           const link = nearestIv(mark);
+          const key = `${lane.key}:${index}`;
+          markerLinks.push({ key, link });
           return h('img', {
             key: `w${index}`,
             id: `crop-whip-${link}`,
-            className: `crop-whip${hoverIv === link || flashIv === link ? ' crop-whip--hl' : ''}`,
+            className: `crop-whip${hotMarker === key ? ' crop-whip--hl' : ''}`,
             src: personaIcon(mark.persona),
             style: { left: pct(pos(mark.at)) },
             title: `${mark.persona === 'owner' ? '鞭策' : '提醒'} · 移上去看对应反思`,
-            onMouseEnter: () => setHoverIv(link),
-            onMouseLeave: () => setHoverIv(null),
-            onClick: () => focusIv(link),
+            onMouseEnter: () => { setHoverIv(link); setHotMarker(key); },
+            onMouseLeave: () => { setHoverIv(null); setHotMarker(null); },
+            onClick: () => { setHotMarker(key); focusIv(link); },
           });
         });
         const blocked = lane.blocked.map((report, index) => h('i', {
@@ -1055,10 +1059,16 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                 key: `iv${index}`,
                 id: `crop-iv-${index}`,
                 className: `crop-pair${urgent && !needsIdea ? ' crop-pair--urgent' : ''}${needsIdea ? ' crop-pair--think' : ''}${hoverIv === index ? ' crop-pair--hl' : ''}${flashIv === index ? ' crop-pair--flash' : ''}`,
-                onMouseEnter: () => setHoverIv(index),
-                onMouseLeave: () => setHoverIv(null),
+                onMouseEnter: () => {
+                  const first = markerLinks.find((item) => item.link === index);
+                  setHoverIv(index);
+                  setHotMarker(first ? first.key : null);
+                },
+                onMouseLeave: () => { setHoverIv(null); setHotMarker(null); },
                 onClick: () => {
                   setFlashIv(index);
+                  const first = markerLinks.find((item) => item.link === index);
+                  setHotMarker(first ? first.key : null);
                   window.setTimeout(() => setFlashIv(null), 1600);
                 },
               }, [
