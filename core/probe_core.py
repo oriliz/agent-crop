@@ -1755,8 +1755,10 @@ def day_detail(date: str, now: int | None = None) -> dict:
                 item["updates"] += 1
                 item["minutes"] = round(item["minutes"] + float(event.get("minutes") or 0), 1)
                 label = str(event.get("goal") or event.get("summary") or "").strip()
-                if label and (event.get("goal") or not item["goal"]):
-                    item["goal"] = label[:24] + ("…" if len(label) > 24 else "")
+                if label:
+                    item["goal_full"] = label[:200]
+                    if event.get("goal") or not item["goal"]:
+                        item["goal"] = label[:24] + ("…" if len(label) > 24 else "")
     return {
         "date": date,
         "events": len(events),
@@ -1795,6 +1797,20 @@ def type_breakdown(days: float = 30.0, now: int | None = None) -> list[dict]:
             "median_minutes": round(median, 1),
         })
     return sorted(rows, key=lambda row: row["minutes"], reverse=True)
+
+
+def _work_titles_full(events: list[dict]) -> dict:
+    titles: dict[str, str] = {}
+    for event in events:
+        if event.get("ev") != "probe_report":
+            continue
+        work_id = str(event.get("task_id") or event.get("work_id") or "")
+        if not work_id:
+            continue
+        label = str(event.get("goal") or event.get("summary") or "").strip()
+        if label:
+            titles[work_id] = label[:200]
+    return titles
 
 
 def _work_titles(events: list[dict]) -> dict:
@@ -2099,6 +2115,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         "interventions": _session_interventions(events),
         "stats": _session_stats(events),
         "work_titles": _work_titles(events),
+        "work_titles_full": _work_titles_full(events),
         "timeline": _session_timeline(events),
         "reflection": _latest_reflection(events),
         "improvements": _session_improvements(events),

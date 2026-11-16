@@ -813,6 +813,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
 
       const timeline = data.timeline || {};
       const titles = data.work_titles || {};
+      const fullTitles = data.work_titles_full || {};
       const persona = data.persona || 'owner';
       const labelOf = (workId) => titles[workId] || workId || '未归属';
       const allBlocks = timeline.blocks || [];
@@ -969,7 +970,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         }));
         return h('div', { key: lane.key || 'none', className: 'crop-tl-row' },
           h('div', { className: `crop-tl-label${lane.key === activeId ? ' crop-tl-label--current' : ''}` },
-            h('div', { className: 'crop-tl-name', title: lane.key || '' },
+            h('div', { className: 'crop-tl-name', title: fullTitles[lane.key] || lane.key || '' },
               lane.key === activeId ? '▸ ' : '', labelOf(lane.key)),
             h('div', { className: 'crop-muted crop-tl-meta' },
               `${lane.blocks.reduce((sum, b) => sum + (b.minutes || 0), 0).toFixed(0)}m`,
@@ -1059,7 +1060,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('div', { className: 'crop-muted crop-small crop-tl-cap' }, '本会话碰过的工作'),
             h('div', null, data.session_works.map((item) => h('div', { key: item.work_id, className: 'crop-work-row' },
               h('i', { className: 'crop-dot', style: { background: lampColor(item.ratio) } }),
-              h('span', { title: item.work_id }, labelOf(item.work_id)),
+              h('span', { title: fullTitles[item.work_id] || item.work_id }, labelOf(item.work_id)),
               h('span', { className: 'crop-muted crop-small', style: { marginLeft: 'auto' } },
                 `${Math.round(item.minutes || 0)}m`)))))
         : null;
@@ -1409,7 +1410,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                     h('div', { className: 'crop-day-body' },
                       h('div', { className: 'crop-work-rows' },
                         (detail.works || []).slice(0, showAll ? undefined : 5).map((item) => h('div', { key: item.work_id, className: 'crop-work-row' },
-                          h('span', { className: 'crop-work-name', title: item.goal || item.work_id }, item.goal || item.work_id),
+                          h('span', { className: 'crop-work-name', title: item.goal_full || item.goal || item.work_id }, item.goal || item.work_id),
                           h('span', { className: 'crop-work-min' }, fmtMinutes(item.minutes))))),
                       !showAll && (detail.works || []).length > 5
                         ? h('button', { type: 'button', className: 'crop-more', onClick: () => setShowAll(true) }, `+${(detail.works || []).length - 5} 个工作`)
