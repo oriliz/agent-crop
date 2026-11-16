@@ -643,7 +643,7 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-tl-zoom { display: inline-flex; gap: 4px; }
 .crop-tl-zoom .crop-chip { font-size: 10.5px; padding: 1px 7px; }
 .crop-tl-hint { margin-top: 4px; opacity: .7; }
-.crop-tl-row { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: end; }
+.crop-tl-row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; align-items: end; }
 .crop-tl-label { font-size: 12px; padding-bottom: 4px; overflow: hidden; }
 .crop-tl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crop-tl-meta { font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -653,12 +653,13 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-seg { position: absolute; top: 8px; height: 14px; border-radius: 3px; background: linear-gradient(180deg, #5b8cff, #4a77e0); cursor: pointer; }
 .crop-seg--picked { outline: 1.5px solid rgba(240, 212, 138, .9); }
 .crop-seg--wait { background: repeating-linear-gradient(135deg, rgba(150, 165, 205, .34) 0 4px, rgba(150, 165, 205, .16) 4px 8px); }
-.crop-tl-axis { position: relative; height: 14px; margin-top: 4px; margin-left: 106px; font-size: 10px; color: #7785a6; }
+.crop-tl-axis { position: relative; height: 14px; margin-top: 4px; margin-left: 170px; font-size: 10px; color: #7785a6; }
 .crop-tl-axis span { position: absolute; transform: translateX(-50%); }
 .crop-tl-axis span:first-child { transform: none; }
 .crop-tl-axis span:last-child { transform: translateX(-100%); }
 .crop-whip { position: absolute; bottom: 12px; height: 22px; cursor: pointer; transition: transform .15s ease; width: auto; transform: translateX(-50%); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .45)); }
-.crop-whip:hover { transform: translateX(-50%) scale(1.3); filter: drop-shadow(0 0 6px rgba(240,212,138,.7)); z-index: 2; }
+.crop-whip:hover, .crop-whip--hl { transform: translateX(-50%) scale(1.35); filter: drop-shadow(0 0 8px rgba(240,212,138,.9)); z-index: 2; }
+.crop-lane-whips { color: #e8c46a; }
 .crop-whip-count { position: absolute; bottom: 31px; transform: translateX(4px); font-size: 9px; line-height: 13px; padding: 0 4px; border-radius: 999px; background: #e8c46a; color: #1a1608; }
 .crop-blocked-dot { position: absolute; bottom: 9px; width: 9px; height: 9px; border-radius: 50%; background: #f08484; border: 1px solid rgba(255, 255, 255, .45); transform: translateX(-50%); }
 .crop-tl-detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(160, 180, 230, .12); display: flex; gap: 10px; align-items: baseline; font-size: 11.5px; }
@@ -835,6 +836,16 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const whips = (timeline.whips || []).filter((whip) => whip.t >= windowStart);
       const waits = (timeline.waits || []).filter((wait) => wait.t >= windowStart);
       const reports = (timeline.reports || []).filter((report) => report.t >= windowStart);
+      const interventions = data.interventions || [];
+      const nearestIv = (mark) => {
+        let best = -1;
+        let bestGap = Infinity;
+        interventions.forEach((item, index) => {
+          const gap = Math.abs((item.at || 0) - mark.last);
+          if (gap < bestGap) { bestGap = gap; best = index; }
+        });
+        return bestGap <= 6 * 3600 * 1000 ? best : -1;
+      };
 
       const laneMap = new Map();
       for (const block of blocks) {
@@ -893,23 +904,20 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           cluster = { at: whip.t, last: whip.t, count: 1, persona: whip.persona || 'owner' };
           whipMarks.push(cluster);
         }
-        const marks = whipMarks.map((mark, index) => h('img', {
-          key: `w${index}`,
-          className: 'crop-whip',
-          src: personaIcon(mark.persona),
-          style: { left: pct(pos(mark.at)) },
-          title: `${mark.persona === 'owner' ? '鞭策' : '提醒'} ${mark.count} 次 · 移上去看对应反思`,
-          onMouseEnter: () => setHoverIv(nearestIv(mark)),
-          onMouseLeave: () => setHoverIv(null),
-          onClick: () => focusIv(nearestIv(mark)),
-        }));
-        if (whipMarks.length) {
-          marks.push(...whipMarks.map((mark, index) => h('b', {
-            key: `wc${index}`,
-            className: 'crop-whip-count',
-            style: { left: pct(pos(mark.last)) },
-          }, String(mark.count))));
-        }
+        const marks = whipMarks.map((mark, index) => {
+          const link = nearestIv(mark);
+          return h('img', {
+            key: `w${index}`,
+            id: `crop-whip-${link}`,
+            className: `crop-whip${hoverIv === link || flashIv === link ? ' crop-whip--hl' : ''}`,
+            src: personaIcon(mark.persona),
+            style: { left: pct(pos(mark.at)) },
+            title: `${mark.persona === 'owner' ? '鞭策' : '提醒'} · 移上去看对应反思`,
+            onMouseEnter: () => setHoverIv(link),
+            onMouseLeave: () => setHoverIv(null),
+            onClick: () => focusIv(link),
+          });
+        });
         const blocked = lane.blocked.map((report, index) => h('i', {
           key: `b${index}`,
           className: 'crop-blocked-dot',
@@ -922,6 +930,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
               lane.key === activeId ? '▸ ' : '', labelOf(lane.key)),
             h('div', { className: 'crop-muted crop-tl-meta' },
               `${lane.blocks.reduce((sum, b) => sum + (b.minutes || 0), 0).toFixed(0)}m`,
+              lane.whips.length ? h('span', { className: 'crop-lane-whips' }, ` · ${lane.whips.length} 次鞭策`) : null,
               lane.key && lane.key !== labelOf(lane.key) ? ` · ${lane.key}` : '')),
           h('div', { className: 'crop-tl-track' }, h('div', { className: 'crop-tl-grid' }), waitSegments, segments, marks, blocked));
       });
@@ -1014,16 +1023,6 @@ body[data-ds-dark-theme] .crop-page .crop-card {
 
       const reflection = data.reflection || {};
       const improvements = data.improvements || [];
-      const interventions = data.interventions || [];
-      const nearestIv = (mark) => {
-        let best = -1;
-        let bestGap = Infinity;
-        interventions.forEach((item, index) => {
-          const gap = Math.abs((item.at || 0) - mark.last);
-          if (gap < bestGap) { bestGap = gap; best = index; }
-        });
-        return bestGap <= 6 * 3600 * 1000 ? best : -1;
-      };
       const focusIv = (index) => {
         if (index < 0) return;
         document.getElementById(`crop-iv-${index}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -1056,6 +1055,12 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                 key: `iv${index}`,
                 id: `crop-iv-${index}`,
                 className: `crop-pair${urgent && !needsIdea ? ' crop-pair--urgent' : ''}${needsIdea ? ' crop-pair--think' : ''}${hoverIv === index ? ' crop-pair--hl' : ''}${flashIv === index ? ' crop-pair--flash' : ''}`,
+                onMouseEnter: () => setHoverIv(index),
+                onMouseLeave: () => setHoverIv(null),
+                onClick: () => {
+                  setFlashIv(index);
+                  window.setTimeout(() => setFlashIv(null), 1600);
+                },
               }, [
                 h('span', { key: 'n', className: 'crop-pair-no' }, String(index + 1)),
                 h('div', { key: 'p', className: 'crop-pair-problem' }, [

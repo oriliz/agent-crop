@@ -1773,7 +1773,8 @@ def _work_titles(events: list[dict]) -> dict:
             continue
         label = str(event.get("goal") or event.get("summary") or "").strip()
         if label:
-            titles[work_id] = label[:60]
+            short = label.strip()
+            titles[work_id] = short[:20] + ('…' if len(short) > 20 else '')
     return titles
 
 

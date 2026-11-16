@@ -71,7 +71,7 @@ TOOL = {
                 ],
                 "description": "Failure category (required for blocked).",
             },
-            "goal": {"type": "string", "description": "One-line goal of this work."},
+            "goal": {"type": "string", "description": "One-line goal of this work (keep it short, <= 20 chars)."},
             "type": {"type": "string", "enum": ["design", "implement", "debug", "docs"]},
             "difficulty": {"type": "string", "enum": ["s", "m", "l"]},
             "verdict": {
