@@ -229,6 +229,11 @@ export function apply(ctx, config = {}) {
     return { turn, step };
   };
 
+  const LEDGER_TOOLS = new Set([
+    'crop_update', 'crop_report', 'probe_report',
+    'crop_work', 'crop_review', 'crop_works', 'crop_health',
+  ]);
+
   const tool = {
     name: 'crop_update',
     description:
@@ -252,6 +257,10 @@ export function apply(ctx, config = {}) {
           enum: ['justified', 'not-justified', 'unknown'],
           description: '你是否认为这次变慢/超时是合理的：任务本身难 = justified；自己走错路 = not-justified',
         },
+        what: { type: 'string', description: 'end 时写：这次做了什么（一句话）' },
+        cost: { type: 'string', description: 'end 时写：时间花在哪（一句话）' },
+        next_time: { type: 'string', description: 'end 时写：下次怎么更好（一句话）' },
+        artifact: { type: 'string', description: '可选：这次产出了什么（路径 / 决定 / 稿子名）' },
         improve: {
           type: 'string',
           description: '可选：下次可以怎么改进（一句话，只是建议，不一定被采纳）',
@@ -517,7 +526,10 @@ export function apply(ctx, config = {}) {
       }
 
       if (event.type === 'tool/result') {
-        state.toolsUsed = true;
+        const callId = event.data?.message?.toolCallId;
+        const toolName = (callId && state.calls.get(String(callId))) || 'tool';
+        if (callId) state.calls.delete(String(callId));
+        if (!LEDGER_TOOLS.has(toolName)) state.toolsUsed = true;
         if (state.askStarted) {
           callCore({
             op: 'record_human_wait',
@@ -530,9 +542,6 @@ export function apply(ctx, config = {}) {
           state.askTool = null;
         }
         const isError = Boolean(event.data?.error || event.data?.message?.isError);
-        const callId = event.data?.message?.toolCallId;
-        const toolName = (callId && state.calls.get(String(callId))) || 'tool';
-        if (callId) state.calls.delete(String(callId));
         callCore({ op: 'record_tool', context: { sid, workspace }, name: toolName, is_error: isError });
         return;
       }

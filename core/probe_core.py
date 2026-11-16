@@ -485,6 +485,7 @@ def validate_report(args: dict) -> dict:
     what = _text(args.get("what"), "what")
     cost = _text(args.get("cost"), "cost")
     next_time = _text(args.get("next_time"), "next_time")
+    artifact = _text(args.get("artifact"), "artifact")
     if phase == "blocked" and (not cause or not category):
         raise ValueError("blocked reports require both cause and category")
     return {
@@ -503,6 +504,7 @@ def validate_report(args: dict) -> dict:
         "expect_why": expect_why,
         "rework": rework,
         "sentiment": sentiment,
+        "artifact": artifact,
         "what": what,
         "cost": cost,
         "next_time": next_time,
@@ -584,11 +586,13 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                 "what": report.get("what", ""),
                 "cost": report.get("cost", ""),
                 "next_time": report.get("next_time", ""),
+                "artifact": report.get("artifact", ""),
             })
             append_jsonl(os.path.join(paths()["reports_dir"], f"{today()}.jsonl"), {
                 "t": now_ms(), "host": host(), "sid": sid, "work_id": report["task_id"],
                 "ev": "work_summary", "what": report.get("what", ""),
                 "cost": report.get("cost", ""), "next_time": report.get("next_time", ""),
+                "artifact": report.get("artifact", ""),
             })
         append_event({"ev": "work_close", "sid": sid, "work_id": report["task_id"],
                       "verdict": report.get("verdict", "")})
@@ -660,7 +664,8 @@ def record_prompt(sid: str, prompt: str, workspace: str) -> None:
         # 等待属于「刚结束的那个 block」的工作：否则看板上的等待列永远空着。
         work_id = str(last_stop.get("work_id") or "")
         if not work_id:
-            work_id = resolve_binding(sid) or str((_claimed_work(sid) or {}).get("task_id") or "")
+            # 时间归属只认本会话自己的绑定；别的会话的工作不能当兜底。
+            work_id = resolve_binding(sid) or ""
         ownership = {"work_id": work_id} if work_id else {}
         if gap_ms > IDLE_MIN * 60000 or not within:
             append_event({
@@ -719,8 +724,8 @@ def record_stop(sid: str) -> None:
     end = now_ms()
     minutes = max(0.0, (end - start) / 60000.0)
     tools = [event for event in load_events(sid=sid) if event.get("ev") == "tool" and event.get("t", 0) >= start]
-    # 机械计时：块结束时按当前认领自动归属，probe_report 只负责补语义。
-    work_id = resolve_binding(sid) or str((_claimed_work(sid) or {}).get("task_id") or "")
+    # 机械计时：块结束时只按本会话自己的绑定归属；没有绑定就是没有归属。
+    work_id = resolve_binding(sid) or ""
     append_event({
         "ev": "stop", "sid": sid, "block_start": start,
         "minutes": round(minutes, 1), "work_id": work_id,
