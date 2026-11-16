@@ -621,6 +621,9 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-sess-split i.work { background: #5b8cff; }
 .crop-sess-split i.wait { background: rgba(150, 165, 205, .42); }
 .crop-sess-turn { margin-left: auto; font-size: 12px; color: #b9c6e2; }
+.crop-sess-stats { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.crop-stat-chip { font-size: 10.5px; border: 1px solid rgba(160,180,230,.18); border-radius: 999px; padding: 1px 8px; color: #98a6c6; }
+.crop-stat-chip b { margin-left: 4px; color: #e8edf8; font-variant-numeric: tabular-nums; }
 .crop-persona-chip { font-size: 11px; border: 1px solid rgba(160,180,230,.22); border-radius: 999px; padding: 1px 8px; color: #a9b6d4; }
 .crop-small { font-size: 11.5px; }
 .crop-sess-current { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
@@ -934,7 +937,19 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('i', { className: 'wait', style: { width: pct(wall ? (waitMs / wall) * 100 : 0) } })),
         h('div', { className: 'crop-muted crop-small' }, `活跃 ${fmtSpan(activeMs)} · 等待 ${fmtSpan(waitMs)}`),
         h('span', { className: 'crop-persona-chip' }, `你是一个${PERSONA_LABEL[persona] || persona}`),
-        h('div', { className: 'crop-sess-turn' }, `本回合 ${fmtSpan((data.current_minutes || 0) * 60000)}`));
+        h('div', { className: 'crop-sess-turn' }, `本回合 ${fmtSpan((data.current_minutes || 0) * 60000)}`),
+        h('div', { className: 'crop-sess-stats' },
+          (() => {
+            const stats = data.stats || {};
+            const items = [
+              ['超时', stats.reminders], ['卡点', stats.blocked], ['返工', stats.rework],
+              ['工具失败', stats.failed_tools], ['要改', stats.needs_fix], ['要想办法', stats.needs_idea],
+            ].filter(([, count]) => count > 0);
+            return items.length
+              ? items.map(([label, count]) => h('span', { key: label, className: 'crop-stat-chip' },
+                  label, h('b', null, String(count))))
+              : h('span', { className: 'crop-muted crop-small' }, '这次会话还没有异常记录');
+          })()));
 
       const active = data.active_work;
       const expect = active && active.expect_min ? active.expect_min : null;

@@ -1810,6 +1810,24 @@ def _expect_revisions(events: list[dict], task_id: str) -> int:
     return max(0, len(values) - 1)
 
 
+def _session_stats(events: list[dict]) -> dict:
+    reminders = [e for e in events if e.get("ev") == "reminder"]
+    reports = [e for e in events if e.get("ev") == "probe_report"]
+    tools = [e for e in events if e.get("ev") == "tool"]
+    blocked = [e for e in reports if e.get("phase") == "blocked"]
+    needs_fix = [e for e in reports if e.get("verdict") == "not-justified" and e.get("improve")]
+    needs_idea = [e for e in reports if e.get("verdict") == "not-justified" and not e.get("improve")]
+    return {
+        "reminders": len(reminders),
+        "overdue": sum(1 for e in reminders if e.get("tier") == "overdue"),
+        "blocked": len(blocked),
+        "rework": sum(1 for e in events if e.get("ev") in ("tool_churn", "rework_signal")),
+        "failed_tools": sum(1 for e in tools if e.get("is_error")),
+        "needs_fix": len(needs_fix),
+        "needs_idea": len(needs_idea),
+    }
+
+
 def _session_interventions(events: list[dict]) -> list[dict]:
     """Every report that names a problem, newest first — the panel pairs these
     with whip markers so the timeline and the reflection list line up."""
@@ -1947,6 +1965,13 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         except Exception:
             current = 0.0
 
+    if current <= 0 and events:
+        last_kind = events[-1].get("ev")
+        if last_kind in ("prompt", "tool", "reminder", "user_wait"):
+            last_prompt = next((e for e in reversed(events) if e.get("ev") == "prompt"), None)
+            if last_prompt:
+                current = max(0.0, (now_ms() - int(last_prompt.get("t") or 0)) / 60000.0)
+
     total = work_minutes + wait_ms / 60000.0
     share = {
         "work": round(work_minutes / total, 3) if total else 0.0,
@@ -2033,6 +2058,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         "session_started_at": int(events[0].get("t") or 0) if events else 0,
         "persona": str(load_config().get("persona") or "owner"),
         "interventions": _session_interventions(events),
+        "stats": _session_stats(events),
         "work_titles": _work_titles(events),
         "timeline": _session_timeline(events),
         "reflection": _latest_reflection(events),
