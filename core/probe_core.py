@@ -1754,8 +1754,9 @@ def day_detail(date: str, now: int | None = None) -> dict:
                 item = works.setdefault(work_id, {"work_id": work_id, "goal": "", "minutes": 0.0, "updates": 0})
                 item["updates"] += 1
                 item["minutes"] = round(item["minutes"] + float(event.get("minutes") or 0), 1)
-                if event.get("goal"):
-                    item["goal"] = event["goal"]
+                label = str(event.get("goal") or event.get("summary") or "").strip()
+                if label and (event.get("goal") or not item["goal"]):
+                    item["goal"] = label[:24] + ("…" if len(label) > 24 else "")
     return {
         "date": date,
         "events": len(events),
