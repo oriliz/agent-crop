@@ -853,18 +853,27 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const windowInterventions = interventions.filter((item) => item.at >= windowStart && item.at <= viewEnd);
       // Greedy one-to-one: each whip marker claims the nearest still-unused
       // intervention. Two markers never point at the same reflection row.
+      const exactLinks = new Map();
+      windowInterventions.forEach((item, index) => {
+        if (item.reply_to) exactLinks.set(item.reply_to, index);
+      });
       const whipLink = new Map();
       {
         const used = new Set();
         for (const whip of whips.slice().sort((a, b) => a.t - b.t)) {
-          const pool = windowInterventions
-            .map((item, index) => ({ index, gap: Math.abs((item.at || 0) - whip.t) }))
-            .filter((item) => !used.has(item.index))
-            .sort((a, b) => a.gap - b.gap);
-          const pick = pool[0];
-          if (!pick || pick.gap > 6 * 3600 * 1000) continue;
-          used.add(pick.index);
-          whipLink.set(`${whip.work_id}|${whip.t}`, pick.index);
+          const exact = exactLinks.get(whip.t);
+          let pickIndex = exact != null && !used.has(exact) ? exact : null;
+          if (pickIndex == null) {
+            const pool = windowInterventions
+              .map((item, index) => ({ index, gap: Math.abs((item.at || 0) - whip.t) }))
+              .filter((item) => !used.has(item.index))
+              .sort((a, b) => a.gap - b.gap);
+            // Legacy rows have no reply_to: fall back to nearest-but-unused.
+            pickIndex = pool[0] && pool[0].gap <= 6 * 3600 * 1000 ? pool[0].index : null;
+          }
+          if (pickIndex == null) continue;
+          used.add(pickIndex);
+          whipLink.set(`${whip.work_id}|${whip.t}`, pickIndex);
         }
       }
       const nearestIv = (workId, mark) => whipLink.get(`${workId}|${mark.at}`) ?? -1;

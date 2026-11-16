@@ -577,6 +577,21 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         write_runtime(sid, workspace, block_start)
         return {**record, "side_issue": True}
 
+    # Link this report to the reminder it is answering, when there is one.
+    # Reminders and reports used to be unrelated events, which forced the panel
+    # to guess by timestamp; this makes new data map exactly.
+    try:
+        report_at = int(record.get("t") or 0)
+        for prior in reversed(load_events(sid=sid)):
+            if prior.get("ev") == "reminder":
+                if report_at - int(prior.get("t") or 0) <= 2 * 60 * 60 * 1000:
+                    record["reply_to"] = int(prior.get("t") or 0)
+                break
+            if prior.get("ev") in ("prompt", "stop"):
+                break
+    except Exception:
+        pass
+
     append_jsonl(os.path.join(paths()["reports_dir"], f"{today()}.jsonl"), record)
     write_runtime(sid, workspace, block_start)
     append_event({**record, "ev": "probe_report"})
@@ -1849,6 +1864,7 @@ def _session_interventions(events: list[dict]) -> list[dict]:
             "improve": improve[:200],
             "verdict": verdict,
             "category": str(event.get("category") or ""),
+            "reply_to": event.get("reply_to"),
         })
         if len(out) >= 8:
             break
