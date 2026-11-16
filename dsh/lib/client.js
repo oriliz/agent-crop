@@ -675,8 +675,8 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-reflect-cause { line-height: 1.6; color: #b9c6e2; }
 .crop-imp-row { display: flex; gap: 6px; padding: 4px 0; line-height: 1.5; color: #c6d2ea; min-width: 0; max-width: 100%; }
 .crop-imp-main { flex: 1 1 0; width: 0; min-width: 0; overflow-wrap: anywhere; }
-.crop-reflect > div { min-width: 0; overflow: hidden; }
-.crop-imp-text { overflow-wrap: anywhere; }
+.crop-reflect > div { min-width: 0; }
+.crop-imp-text { overflow-wrap: anywhere; word-break: break-word; }
 .crop-imp-ctx { margin-top: 2px; font-size: 10.5px; line-height: 1.55; color: #7785a6; overflow-wrap: anywhere; }
 .crop-imp-problem { color: #a9b6d4; }
 .crop-imp-no { width: 14px; flex: none; color: #7f9fe0; }
