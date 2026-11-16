@@ -872,7 +872,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('div', { className: 'crop-tl-track' }, h('div', { className: 'crop-tl-grid' }), waitSegments, segments, marks, blocked));
       });
 
-      const wall = Math.max(0, end - started);
+      const wall = Math.max(0, baseEnd - started);
       const activeMs = (data.work_minutes || 0) * 60000;
       const waitMs = Math.max(0, wall - activeMs);
       const head = h('div', { key: 'head', className: 'crop-card crop-sess-head' },
