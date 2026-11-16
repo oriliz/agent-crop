@@ -62,6 +62,9 @@ test('registers probe_report with the documented schema', async (t) => {
   assert.ok(ctx.registered.some((item) => item.name === 'crop_work'));
   assert.deepEqual(tool.parameters.required, ['phase', 'task_id', 'summary']);
   assert.ok(tool.parameters.properties.phase.enum.includes('blocked'));
+  for (const field of ['what', 'cost', 'next_time', 'artifact', 'expect_min', 'verdict']) {
+    assert.ok(tool.parameters.properties[field], `${field} should be in the schema`);
+  }
   assert.equal(typeof tool.execute, 'function');
 });
 
@@ -239,6 +242,25 @@ test('nags an unbound session that already used tools', async (t) => {
 
   const decision = await preStep({ agent: { session }, turn: 1, step: 2 }, async () => ({ kind: 'enter', messages: [] }));
   assert.ok(decision.messages.some((message) => message.content[0].text.includes('还没有绑定')));
+});
+
+test('ledger tools do not count as work for the binding nudge', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const session = fakeSession('s-ledger');
+  const event = ctx.handlers.get('session/event');
+  const preStep = ctx.handlers.get('agent/pre-step');
+
+  event(session, { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '看看健康度' }] } });
+  event(session, { type: 'tool/call', data: { callId: 'c1', name: 'crop_health' } });
+  event(session, { type: 'tool/result', data: { message: { toolCallId: 'c1' } } });
+
+  const decision = await preStep({ agent: { session }, turn: 1, step: 2 }, async () => ({ kind: 'enter', messages: [] }));
+  assert.ok(!decision.messages.some((message) => message.content[0].text.includes('还没有绑定')));
 });
 
 test('stays quiet when the session is really bound', async (t) => {

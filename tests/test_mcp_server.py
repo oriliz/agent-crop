@@ -138,6 +138,29 @@ class McpServerContractTest(unittest.TestCase):
         self.assertFalse(reply["result"]["isError"])
         self.assertIn("recorded progress", reply["result"]["content"][0]["text"])
 
+    def test_rich_report_fields_are_accepted(self):
+        self.initialize()
+        self.rpc({
+            "jsonrpc": "2.0", "id": 8, "method": "tools/call",
+            "params": {"name": "crop_update", "arguments": {
+                "phase": "start", "task_id": "mcp-rich", "summary": "开始",
+                "expect_min": 20, "verdict": "justified", "type": "implement",
+            }},
+        })
+        reply = self.rpc({
+            "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+            "params": {"name": "crop_update", "arguments": {
+                "phase": "end", "task_id": "mcp-rich", "summary": "收尾",
+                "what": "做完了", "cost": "查资料", "next_time": "先画图",
+                "artifact": "docs/plan.md",
+            }},
+        })
+        self.assertFalse(reply["result"]["isError"])
+        path = os.path.join(self._tmp.name, "events.jsonl")
+        events = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
+        summaries = [event for event in events if event.get("ev") == "work_summary"]
+        self.assertEqual(summaries[-1]["artifact"], "docs/plan.md")
+
     def test_health_tool_returns_a_report(self):
         self.initialize()
         reply = self.rpc(
