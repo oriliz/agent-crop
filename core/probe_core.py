@@ -486,6 +486,8 @@ def validate_report(args: dict) -> dict:
     cost = _text(args.get("cost"), "cost")
     next_time = _text(args.get("next_time"), "next_time")
     artifact = _text(args.get("artifact"), "artifact")
+    if phase == "end" and not what:
+        raise ValueError("phase=end requires what: 用一句话写这次做了什么（cost / next_time 可选）")
     if phase == "blocked" and (not cause or not category):
         raise ValueError("blocked reports require both cause and category")
     return {
@@ -697,7 +699,11 @@ REPEAT_TOOL_THRESHOLD = int(os.environ.get("KIT_REPEAT_TOOL", "5"))
 
 def record_tool(sid: str, name: str, is_error: bool) -> None:
     tool = str(name or "")[:80]
-    append_event({"ev": "tool", "sid": sid, "name": tool, "is_error": bool(is_error)})
+    work_id = resolve_binding(sid) or ""
+    event = {"ev": "tool", "sid": sid, "name": tool, "is_error": bool(is_error)}
+    if work_id:
+        event["work_id"] = work_id
+    append_event(event)
     try:
         start = current_block_start(sid)
         recent = [
@@ -707,11 +713,14 @@ def record_tool(sid: str, name: str, is_error: bool) -> None:
         tail = recent[-REPEAT_TOOL_THRESHOLD:]
         if len(tail) >= REPEAT_TOOL_THRESHOLD and all(event.get("name") == tool for event in tail):
             failures = sum(1 for event in tail if event.get("is_error"))
-            append_event({
-                "ev": "tool_churn", "sid": sid, "work_id": "",
+            churn = {
+                "ev": "tool_churn", "sid": sid,
                 "kind": "repeat-tool", "tool": tool,
                 "count": len(tail), "failures": failures,
-            })
+            }
+            if work_id:
+                churn["work_id"] = work_id
+            append_event(churn)
     except Exception:
         pass
 
@@ -2244,7 +2253,7 @@ _HEALTH_PASSIVE = (
 _HEALTH_ACTIVE = (
     ("probe_report", "工作上报", "work", ("phase", "task_id", "summary"), "", True),
     ("work_close", "工作关闭", "work", ("work_id",), "", True),
-    ("work_summary", "收尾小结", "ended", ("what", "cost", "next_time"), "42ae110d", True),
+    ("work_summary", "收尾小结", "ended", ("what",), "42ae110d", True),
     ("side_issue", "枝节记录", "on_demand", ("work_id", "note"), "", True),
     ("adjustment", "改进记录", "work", ("metric", "before", "after"), "fd0acdc3", False),
 )

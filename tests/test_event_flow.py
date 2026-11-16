@@ -93,6 +93,33 @@ class EventFlowTest(unittest.TestCase):
         stops = [e for e in self.core.load_events(sid="other-session") if e["ev"] == "stop"]
         self.assertEqual(stops[-1]["work_id"], "")
 
+    def test_tool_events_carry_the_bound_work(self):
+        self.report(phase="start")
+        self.core.record_tool(self.sid, "Bash", False)
+        tools = [e for e in self.events() if e["ev"] == "tool"]
+        self.assertEqual(tools[-1].get("work_id"), "flow-work")
+
+    def test_tool_churn_carries_the_bound_work(self):
+        self.report(phase="start")
+        for _ in range(5):
+            self.core.record_tool(self.sid, "Bash", False)
+        churn = [e for e in self.events() if e["ev"] == "tool_churn"]
+        self.assertTrue(churn)
+        self.assertEqual(churn[-1].get("work_id"), "flow-work")
+
+    def test_tool_events_without_binding_have_no_work_id(self):
+        self.core.record_tool(self.sid, "Bash", False)
+        tools = [e for e in self.events() if e["ev"] == "tool"]
+        self.assertNotIn("work_id", tools[-1])
+
+    def test_end_requires_what(self):
+        self.report(phase="start")
+        with self.assertRaises(ValueError):
+            self.report(phase="end", summary="收尾")
+        with self.assertRaises(ValueError):
+            self.report(phase="end", cost="查资料")
+        self.report(phase="end", what="做完")
+
     def test_end_report_persists_artifact(self):
         self.report(phase="start")
         self.report(phase="end", what="做完", cost="查资料", next_time="先画图",

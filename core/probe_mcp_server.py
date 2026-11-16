@@ -84,7 +84,7 @@ TOOL = {
             "expect_why": {"type": "string", "description": "One sentence backing the estimate."},
             "rework": {"type": "string", "enum": ["redo", "major", "minor", "none"]},
             "sentiment": {"type": "string", "enum": ["pos", "neu", "neg"]},
-            "what": {"type": "string", "description": "end: what was done."},
+            "what": {"type": "string", "description": "end: required — what was done."},
             "cost": {"type": "string", "description": "end: where the time went."},
             "next_time": {"type": "string", "description": "end: what to do better next time."},
             "artifact": {"type": "string", "description": "Optional: what this work produced."},

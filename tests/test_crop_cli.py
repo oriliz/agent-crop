@@ -378,7 +378,7 @@ class StatusViewTest(unittest.TestCase):
         core.record_prompt("s1", "开工", "/tmp/ws")
         core.record_stop("s1")
         core.record_report(
-            {"phase": "end", "task_id": "t1", "summary": "面板收尾"},
+            {"phase": "end", "task_id": "t1", "summary": "面板收尾", "what": "把面板收尾"},
             {"sid": "s1", "workspace": "/tmp/ws"},
         )
         summary = core.period_summary(7, start=0)
