@@ -731,6 +731,17 @@ body[data-ds-dark-theme] .crop-page .crop-card {
   border-color: rgba(160, 180, 230, .18);
   box-shadow: 0 2px 12px rgba(0, 0, 0, .28);
 }
+.crop-improve-list { display: grid; gap: 0; }
+.crop-improve-row { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 10px; padding: 10px 0; border-top: 1px solid rgba(160, 180, 230, .10); }
+.crop-improve-row:first-child { border-top: 0; }
+.crop-improve-dot { width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: #e8c46a; }
+.crop-improve-body { min-width: 0; }
+.crop-improve-quote { font-size: 12.5px; line-height: 1.6; color: #e8edf8; }
+.crop-improve-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
+.crop-chip-sm { font-size: 9.5px; line-height: 15px; padding: 0 7px; border-radius: 999px; border: 1px solid rgba(160, 180, 230, .20); color: #a9b6d4; }
+.crop-improve-time { font-size: 10px; color: #7785a6; margin-left: auto; font-variant-numeric: tabular-nums; }
+.crop-improve-why { margin-top: 4px; font-size: 11px; line-height: 1.55; color: #7785a6; overflow-wrap: anywhere; }
+
 `;
 
     const S = {
