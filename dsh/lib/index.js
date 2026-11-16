@@ -18,6 +18,7 @@ export const inject = ['tools'];
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CORE_CLI = join(HERE, '..', '..', 'core', 'probe_core_cli.py');
 const WHIP_ICON = join(HERE, '..', 'assets', 'whip-run.png');
+const THINK_ICON = join(HERE, '..', 'assets', 'crop-think.png');
 
 const PHASES = ['start', 'progress', 'blocked', 'end'];
 const CATEGORIES = [
@@ -86,6 +87,8 @@ export const Config = z.object({
     .description('提醒冷却：同一条提醒多少分钟内不重复'),
   missMin: z.number().min(0).max(60).default(2).volatile()
     .description('缺报检测：一轮超过多少分钟且没有上报，下一轮提醒补记'),
+  persona: z.string().default('owner').volatile()
+    .description('鞭策风格：owner 奴隶主（重时间效率）/ senior 和蔼的前辈（鼓励提问）/ colleague 经验丰富的同事（建议拆解）/ free 放任自由的家长（不鞭策）'),
   askHumanTools: z.string().default('ask_user_question,ask_human,askHuman')
     .description('哪些工具名算“在等用户回答”，逗号分隔；不同宿主名字不同，在这里加'),
 });
@@ -131,6 +134,7 @@ export function apply(ctx, config = {}) {
           KIT_TASK_YELLOW_MIN: String(setting(config.yellowMin, 10)),
           KIT_TASK_RED_MIN: String(setting(config.redMin, 30)),
           KIT_TASK_REMIND_MIN: String(setting(config.remindMin, 15)),
+          KIT_TASK_PERSONA: String(setting(config.persona, 'owner')),
         },
       });
       if (result.error || result.status !== 0 || !result.stdout) return null;
@@ -201,6 +205,20 @@ export function apply(ctx, config = {}) {
           kind: 'exact',
           path: '/api/agent-crop/session',
           handler: relay((url) => ({ op: 'session', args: { sid: url.searchParams.get('sid') ?? '' } })),
+        }),
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/think-icon',
+          handler: (req, res) => {
+            try {
+              const body = readFileSync(THINK_ICON);
+              res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
+              res.end(body);
+            } catch {
+              res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+              res.end('missing think icon');
+            }
+          },
         }),
         webServer.register({
           kind: 'exact',

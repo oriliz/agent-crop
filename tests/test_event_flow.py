@@ -86,6 +86,20 @@ class EventFlowTest(unittest.TestCase):
         self.assertIn("work_claim", kinds)
         self.assertIn("work_open", kinds)
 
+    def test_persona_switches_nudge_voice(self):
+        import json, os
+        path = self.core.paths()["config"]
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"persona": "senior"}, handle)
+        senior = self.core._nudge("yellow", {"m": 12, "e": 10})
+        self.assertIn("问", senior)
+
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"persona": "free"}, handle)
+        self.assertEqual(self.core._nudge("yellow", {"m": 12, "e": 10}), "")
+
     def test_session_summary_exposes_timeline(self):
         self.report(phase="start")
         self.core.record_prompt(self.sid, "hi", "/tmp/ws")

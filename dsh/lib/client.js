@@ -75,6 +75,8 @@ window.__ModuleLoader__.load({
     };
 
     const enumLabel = (kind, value) => (ENUM_LABELS[kind] && ENUM_LABELS[kind][value]) || value || '';
+    const PERSONA_LABEL = { owner: '奴隶主', senior: '和蔼的前辈', colleague: '经验丰富的同事', free: '放任自由的家长' };
+    const personaIcon = (persona) => (persona && persona !== 'owner' ? '/api/agent-crop/think-icon' : '/api/agent-crop/whip-icon');
 
 
     const LAMP = { green: '#4ade80', yellow: '#eab308', red: '#ef4444' };
@@ -619,6 +621,7 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-sess-split i.work { background: #5b8cff; }
 .crop-sess-split i.wait { background: rgba(150, 165, 205, .42); }
 .crop-sess-turn { margin-left: auto; font-size: 12px; color: #b9c6e2; }
+.crop-persona-chip { font-size: 11px; border: 1px solid rgba(160,180,230,.22); border-radius: 999px; padding: 1px 8px; color: #a9b6d4; }
 .crop-small { font-size: 11.5px; }
 .crop-sess-current { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
 .crop-sess-label { width: 56px; flex: none; font-size: 11.5px; color: #8f9dbe; }
@@ -769,6 +772,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
 
       const timeline = data.timeline || {};
       const titles = data.work_titles || {};
+      const persona = data.persona || 'owner';
       const labelOf = (workId) => titles[workId] || workId || '未归属';
       const allBlocks = timeline.blocks || [];
       const lastAt = allBlocks.length ? allBlocks[allBlocks.length - 1].t : Date.now();
@@ -866,13 +870,13 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             cluster.last = whip.t;
             continue;
           }
-          cluster = { at: whip.t, last: whip.t, count: 1 };
+          cluster = { at: whip.t, last: whip.t, count: 1, persona: whip.persona || 'owner' };
           whipMarks.push(cluster);
         }
         const marks = whipMarks.map((mark, index) => h('img', {
           key: `w${index}`,
           className: 'crop-whip',
-          src: '/api/agent-crop/whip-icon',
+          src: personaIcon(mark.persona),
           style: { left: pct(pos(mark.at)) },
           title: `鞭策 ${mark.count} 次`,
         }));
@@ -909,6 +913,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('i', { className: 'work', style: { width: pct(wall ? (activeMs / wall) * 100 : 0) } }),
           h('i', { className: 'wait', style: { width: pct(wall ? (waitMs / wall) * 100 : 0) } })),
         h('div', { className: 'crop-muted crop-small' }, `活跃 ${fmtSpan(activeMs)} · 等待 ${fmtSpan(waitMs)}`),
+        h('span', { className: 'crop-persona-chip' }, PERSONA_LABEL[persona] || persona),
         h('div', { className: 'crop-sess-turn' }, `本回合 ${fmtSpan((data.current_minutes || 0) * 60000)}`));
 
       const active = data.active_work;
@@ -932,7 +937,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             }, label))),
           h('span', { className: 'crop-tl-legend' },
             h('span', null, h('i', { className: 'crop-swatch' }), '活跃'),
-            h('span', null, h('img', { className: 'crop-legend-whip', src: '/api/agent-crop/whip-icon', alt: '' }), '鞭策'),
+            h('span', null, h('img', { className: 'crop-legend-whip', src: personaIcon(persona), alt: '' }), persona === 'owner' ? '鞭策' : '提醒'),
             h('span', null, h('i', { className: 'crop-dot-red' }), '卡点'))),
         h('div', {
           className: 'crop-tl-body crop-tl-drag',

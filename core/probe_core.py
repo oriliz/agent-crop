@@ -227,6 +227,8 @@ def load_events(limit: int = MAX_EVENTS_READ, sid: str | None = None) -> list[di
 # Config
 
 
+PERSONAS = ("owner", "senior", "colleague", "free")
+
 DEFAULT_CONFIG = {
     "yellow_min": 10.0,
     "red_min": 30.0,
@@ -237,6 +239,8 @@ DEFAULT_CONFIG = {
     "warm_ratio": 0.8,
     "red_ratio": 1.5,
     "overdue_ratio": 2.5,
+    # 鞭策风格：owner 奴隶主 / senior 和蔼的前辈 / colleague 经验丰富的同事 / free 放任自由的家长
+    "persona": "owner",
 }
 
 
@@ -246,7 +250,9 @@ def load_config() -> dict:
         stored = read_json(paths()["config"], {})
         if isinstance(stored, dict):
             for key, value in stored.items():
-                if key in config and isinstance(value, (int, float, bool)):
+                if key == "persona" and isinstance(value, str) and value in PERSONAS:
+                    config[key] = value
+                elif key in config and isinstance(value, (int, float, bool)):
                     config[key] = value
     except Exception:
         pass
@@ -254,6 +260,7 @@ def load_config() -> dict:
         ("KIT_TASK_YELLOW_MIN", "yellow_min", float),
         ("KIT_TASK_RED_MIN", "red_min", float),
         ("KIT_TASK_REMIND_MIN", "remind_min", float),
+        ("KIT_TASK_PERSONA", "persona", str),
     ):
         try:
             raw = os.environ.get(env)
@@ -776,8 +783,36 @@ def _latest_work_for_session(sid: str) -> str | None:
     return None
 
 
+def _persona_nudge(tier: str, meta: dict, persona: str) -> str:
+    """Neutral guidance for the non-slave-owner personas."""
+    minutes = float(meta.get("m") or 0)
+    expect = meta.get("e")
+    header = f"[crop] 已经 {fmt_minutes(minutes)}"
+    if expect:
+        header += f"，你报的是 {fmt_minutes(float(expect))}"
+    action = "顺手 crop_update 写一行：在做什么 / 卡在哪 / 下一步。"
+    if persona == "senior":
+        return (
+            f"{header}。\n"
+            "别一个人硬扛：卡住的地方随时可以问我，也可以先说说你打算怎么试，我们一起看。\n"
+            + action
+        )
+    if persona == "colleague":
+        return (
+            f"{header}。\n"
+            "要不要先拆一下？先把最小可验证的一步做出来，再回头补剩下的。\n"
+            + action
+        )
+    return "" if persona == "free" else ""
+
+
 def _nudge(tier: str, meta: dict) -> str:
     """Draw one nudge; plain wording is the fallback if the copy pools are gone."""
+    persona = str(load_config().get("persona") or "owner")
+    if persona == "free":
+        return ""
+    if persona in ("senior", "colleague"):
+        return _persona_nudge(tier, meta, persona)
     if voice is not None:
         try:
             return voice.reminder(tier, meta, paths().get("voice"))
@@ -860,10 +895,14 @@ def maybe_work_reminder(sid: str) -> str:
         return ""
     if _cooldown_active(sid, float(config["remind_min"]), tier, work_id=task_id):
         return ""
+    persona = str(config.get("persona") or "owner")
+    if persona == "free":
+        return ""
     append_event({
         "ev": "reminder", "sid": sid, "work_id": task_id, "tier": tier,
         "minutes": round(float(health.get("minutes") or 0), 1),
         "expect_min": health.get("expect_min"),
+        "persona": persona,
         "kind": "work",
     })
     return _nudge(tier, _nudge_meta(health, config))
@@ -880,9 +919,12 @@ def maybe_reminder(sid: str) -> str:
         minutes = max(0.0, (now_ms() - start) / 60000.0)
         red = float(config["red_min"])
         if minutes >= red and not _cooldown_active(sid, float(config["remind_min"]), "red"):
+            persona = str(config.get("persona") or "owner")
+            if persona == "free":
+                return ""
             append_event({
                 "ev": "reminder", "sid": sid, "block_start": start, "tier": "red",
-                "minutes": round(minutes, 1), "kind": "block",
+                "minutes": round(minutes, 1), "persona": persona, "kind": "block",
             })
             return _nudge("red", {
                 "m": minutes, "e": None, "goal": "",
@@ -1826,6 +1868,7 @@ def _session_timeline(events: list[dict]) -> dict:
             whips.append({
                 "kind": "whip", "t": at,
                 "work_id": str(event.get("work_id") or ""),
+                "persona": str(event.get("persona") or "owner"),
                 "tier": str(event.get("tier") or ""),
                 "minutes": event.get("minutes"),
                 "expect_min": event.get("expect_min"),
@@ -1962,6 +2005,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         "session_works": session_works,
         "recent_blocks": recent[-5:][::-1],
         "session_started_at": int(events[0].get("t") or 0) if events else 0,
+        "persona": str(load_config().get("persona") or "owner"),
         "work_titles": _work_titles(events),
         "timeline": _session_timeline(events),
         "reflection": _latest_reflection(events),
