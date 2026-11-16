@@ -665,6 +665,8 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-reflect-verdict { margin: 6px 0 4px; }
 .crop-reflect-cause { line-height: 1.6; color: #b9c6e2; }
 .crop-imp-row { display: flex; gap: 6px; padding: 4px 0; line-height: 1.5; color: #c6d2ea; }
+.crop-imp-main { flex: 1; min-width: 0; }
+.crop-imp-ctx { margin-top: 2px; font-size: 10.5px; line-height: 1.55; color: #7785a6; }
 .crop-imp-no { width: 14px; flex: none; color: #7f9fe0; }
 .crop-imp-tag { flex: none; height: 15px; line-height: 14px; padding: 0 5px; border: 1px solid rgba(160, 180, 230, .16); border-radius: 999px; font-size: 9.5px; color: #8fa0c4; }
 
@@ -972,10 +974,19 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('div', { className: 'crop-reflect-cause' }, reflection.cause || '还没有上报过反思。')),
         h('div', null,
           h('div', { className: 'crop-muted crop-small' }, 'AI 提出的改进'),
-          improvements.length ? improvements.map((item, index) => h('div', { key: `${item.at}-${index}`, className: 'crop-imp-row' },
-            h('span', { className: 'crop-imp-no' }, String(index + 1)),
-            h('span', { className: 'crop-imp-tag', title: item.work_id || '' }, labelOf(item.work_id) || '本会话'),
-            h('span', null, item.text))) : h('div', { className: 'crop-muted' }, '还没有改进建议。')));
+          improvements.length ? improvements.map((item, index) => {
+            const when = item.at && started ? `第 ${Math.max(1, Math.round((item.at - started) / 60000))} 分钟` : '';
+            const state = item.phase === 'blocked' ? '卡点' : item.phase === 'end' ? '收尾' : item.phase ? '进行中' : '';
+            const why = item.cause || item.summary || '';
+            const context = [when, state, item.category ? enumLabel('category', item.category) : ''].filter(Boolean).join(' · ');
+            return h('div', { key: `${item.at}-${index}`, className: 'crop-imp-row' },
+              h('span', { className: 'crop-imp-no' }, String(index + 1)),
+              h('span', { className: 'crop-imp-tag', title: item.work_id || '' }, labelOf(item.work_id) || '本会话'),
+              h('div', { className: 'crop-imp-main' },
+                h('div', null, item.text),
+                context || why ? h('div', { className: 'crop-imp-ctx' },
+                  context, why ? ` · 当时：${why}` : '') : null));
+          }) : h('div', { className: 'crop-muted' }, '还没有改进建议。')));
 
       return h('div', { className: 'crop-page' }, [head, current, frame, works, reflect]);
     }
@@ -1245,7 +1256,15 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         ? h('div', { key: 'improve', className: 'crop-card' },
             h('div', { className: 'crop-muted', style: S.caption }, 'AI 自述的改进（下次可以少走一步）'),
             h('ul', { className: 'crop-list' },
-              improves.slice(0, 4).map((item, index) => h('li', { key: index }, `「${item.improve}」`))))
+              improves.slice(0, 4).map((item, index) => h('li', { key: index },
+                h('div', null, `「${item.improve}」`),
+                h('div', { className: 'crop-imp-ctx' }, [
+                  item.goal || item.work_id || '',
+                  item.phase === 'blocked' ? '卡点' : item.phase === 'end' ? '收尾' : '',
+                  item.category ? enumLabel('category', item.category) : '',
+                  item.cause ? `当时：${item.cause}` : item.summary ? `当时：${item.summary}` : '',
+                  item.t ? new Date(item.t).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '',
+                ].filter(Boolean).join(' · '))))))
         : null;
 
       const categories = (data && data.categories) || [];

@@ -1559,6 +1559,10 @@ def improvement_summary(days: float = 7.0) -> dict:
                 "goal": report.get("goal") or "",
                 "improve": text,
                 "t": report.get("t"),
+                "phase": report.get("phase") or "",
+                "cause": str(report.get("cause") or "")[:160],
+                "category": report.get("category") or "",
+                "summary": str(report.get("summary") or "")[:160],
             })
     categories: dict[str, int] = {}
     for report in reports:
@@ -1783,6 +1787,10 @@ def _session_improvements(events: list[dict]) -> list[dict]:
         out.append({
             "text": text[:200], "work_id": work_id,
             "at": int(event.get("t") or 0), "source": source,
+            "phase": str(event.get("phase") or ("end" if source == "next_time" else ""))[:20],
+            "cause": str(event.get("cause") or "")[:160],
+            "category": str(event.get("category") or "")[:40],
+            "summary": str(event.get("summary") or event.get("what") or "")[:160],
         })
         if len(out) >= 5:
             break
