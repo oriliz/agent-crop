@@ -630,6 +630,20 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-imp-row { display: flex; gap: 6px; padding: 4px 0; line-height: 1.5; color: #c6d2ea; }
 .crop-imp-no { width: 14px; flex: none; color: #7f9fe0; }
 .crop-imp-tag { flex: none; height: 15px; line-height: 14px; padding: 0 5px; border: 1px solid rgba(160, 180, 230, .16); border-radius: 999px; font-size: 9.5px; color: #8fa0c4; }
+
+/* The session page is also a data surface: same denser glass as the global
+   page so numbers keep contrast over a busy wallpaper. */
+.crop-page .crop-card {
+  background: rgb(242 245 250 / min(1, calc(var(--dsh-skin-bubble-alpha, .5) * 1.7)));
+  border: 1px solid rgba(255, 255, 255, .35);
+  box-shadow: 0 2px 12px rgba(20, 30, 60, .10);
+}
+
+body[data-ds-dark-theme] .crop-page .crop-card {
+  background: rgb(16 22 42 / min(1, calc(var(--dsh-skin-bubble-alpha, .5) * 2 * .8)));
+  border-color: rgba(160, 180, 230, .18);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .28);
+}
 `;
 
     const S = {
