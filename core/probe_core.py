@@ -1716,6 +1716,21 @@ def type_breakdown(days: float = 30.0, now: int | None = None) -> list[dict]:
     return sorted(rows, key=lambda row: row["minutes"], reverse=True)
 
 
+def _work_titles(events: list[dict]) -> dict:
+    """Friendly labels for AI-generated work ids (goal > summary), per work."""
+    titles: dict[str, str] = {}
+    for event in events:
+        if event.get("ev") != "probe_report":
+            continue
+        work_id = str(event.get("task_id") or event.get("work_id") or "")
+        if not work_id:
+            continue
+        label = str(event.get("goal") or event.get("summary") or "").strip()
+        if label:
+            titles[work_id] = label[:60]
+    return titles
+
+
 def _latest_reflection(events: list[dict]) -> dict:
     """Latest report that carries a judgement or a cause, for the panel's reflection card."""
     latest = {}
@@ -1939,6 +1954,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         "session_works": session_works,
         "recent_blocks": recent[-5:][::-1],
         "session_started_at": int(events[0].get("t") or 0) if events else 0,
+        "work_titles": _work_titles(events),
         "timeline": _session_timeline(events),
         "reflection": _latest_reflection(events),
         "improvements": _session_improvements(events),

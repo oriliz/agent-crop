@@ -92,6 +92,7 @@ class EventFlowTest(unittest.TestCase):
         data = self.core.session_summary(self.sid)
         self.assertGreater(data["session_started_at"], 0)
         self.assertTrue(data["timeline"]["blocks"])
+        self.assertTrue(data["work_titles"])
         self.assertIn("reflection", data)
         self.assertIn("improvements", data)
 

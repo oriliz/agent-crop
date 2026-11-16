@@ -606,16 +606,23 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-swatch { display: inline-block; width: 12px; height: 6px; border-radius: 2px; background: #5b8cff; margin-right: 5px; }
 .crop-legend-whip { width: 16px; height: 16px; object-fit: contain; vertical-align: middle; margin-right: 4px; }
 .crop-dot-red { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f08484; margin-right: 5px; }
-.crop-tl-body { display: grid; gap: 12px; }
+.crop-tl-body { display: grid; gap: 4px; }
 .crop-tl-row { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: end; }
-.crop-tl-label { font-size: 12px; padding-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crop-tl-label { font-size: 12px; padding-bottom: 4px; overflow: hidden; }
+.crop-tl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crop-tl-meta { font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crop-tl-label--current { color: #cfe0ff; }
-.crop-tl-track { position: relative; height: 30px; border-radius: 6px; background: rgba(120, 140, 190, .07); margin-top: 46px; }
+.crop-tl-track { position: relative; height: 34px; border-radius: 6px; background: rgba(120, 140, 190, .07); margin-top: 6px; }
 .crop-tl-grid { position: absolute; inset: 0; background-image: repeating-linear-gradient(90deg, rgba(160, 180, 230, .10) 0 1px, transparent 1px 10%); }
 .crop-seg { position: absolute; top: 8px; height: 14px; border-radius: 3px; background: linear-gradient(180deg, #5b8cff, #4a77e0); cursor: pointer; }
 .crop-seg--picked { outline: 1.5px solid rgba(240, 212, 138, .9); }
-.crop-whip { position: absolute; bottom: 8px; height: 48px; width: auto; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .4)); }
-.crop-whip-count { position: absolute; bottom: 52px; transform: translateX(4px); font-size: 9px; line-height: 13px; padding: 0 4px; border-radius: 999px; background: #e8c46a; color: #1a1608; }
+.crop-seg--wait { background: repeating-linear-gradient(135deg, rgba(150, 165, 205, .34) 0 4px, rgba(150, 165, 205, .16) 4px 8px); }
+.crop-tl-axis { position: relative; height: 14px; margin-top: 4px; margin-left: 106px; font-size: 10px; color: #7785a6; }
+.crop-tl-axis span { position: absolute; transform: translateX(-50%); }
+.crop-tl-axis span:first-child { transform: none; }
+.crop-tl-axis span:last-child { transform: translateX(-100%); }
+.crop-whip { position: absolute; bottom: -6px; height: 44px; width: auto; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .45)); }
+.crop-whip-count { position: absolute; bottom: 38px; transform: translateX(4px); font-size: 9px; line-height: 13px; padding: 0 4px; border-radius: 999px; background: #e8c46a; color: #1a1608; }
 .crop-blocked-dot { position: absolute; bottom: 9px; width: 9px; height: 9px; border-radius: 50%; background: #f08484; border: 1px solid rgba(255, 255, 255, .45); transform: translateX(-50%); }
 .crop-tl-detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(160, 180, 230, .12); display: flex; gap: 10px; align-items: baseline; font-size: 11.5px; }
 .crop-tl-range { color: #f0a9a9; font-variant-numeric: tabular-nums; }
@@ -727,15 +734,24 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       }
 
       const timeline = data.timeline || {};
-      const blocks = timeline.blocks || [];
-      const whips = timeline.whips || [];
-      const waits = timeline.waits || [];
-      const reports = timeline.reports || [];
-      const started = data.session_started_at || (blocks.length ? blocks[0].start : Date.now());
-      const end = Date.now();
-      const span = Math.max(60 * 1000, end - started);
-      const pos = (t) => Math.min(100, Math.max(0, ((t - started) / span) * 100));
+      const titles = data.work_titles || {};
+      const labelOf = (workId) => titles[workId] || workId || '未归属';
+      const allBlocks = timeline.blocks || [];
+      const lastAt = allBlocks.length ? allBlocks[allBlocks.length - 1].t : Date.now();
+      // Sessions can stay open for days. Showing the whole wall clock turns
+      // every bar into a hairline, so the timeline shows a recent window
+      // (3h) ending at the last activity, not at "now" while idle.
+      const started = data.session_started_at || (allBlocks.length ? allBlocks[0].start : Date.now());
+      const idle = lastAt > 0 && Date.now() - lastAt > 30 * 60 * 1000;
+      const end = idle ? lastAt : Date.now();
+      const windowStart = Math.max(started, end - 6 * 60 * 60 * 1000);
+      const span = Math.max(30 * 60 * 1000, end - windowStart);
+      const pos = (t) => Math.min(100, Math.max(0, ((t - windowStart) / span) * 100));
       const pct = (v) => `${v}%`;
+      const blocks = allBlocks.filter((block) => block.t >= windowStart);
+      const whips = (timeline.whips || []).filter((whip) => whip.t >= windowStart);
+      const waits = (timeline.waits || []).filter((wait) => wait.t >= windowStart);
+      const reports = (timeline.reports || []).filter((report) => report.t >= windowStart);
 
       const laneMap = new Map();
       for (const block of blocks) {
@@ -756,10 +772,22 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const lanes = [...laneMap.values()].sort((a, b) => {
         if (a.key === activeId) return -1;
         if (b.key === activeId) return 1;
+        // A lane with a whip marker is the interesting one; keep it above
+        // quiet lanes when the list has to be capped.
+        const aWhip = a.whips.length ? 0 : 1;
+        const bWhip = b.whips.length ? 0 : 1;
+        if (aWhip !== bWhip) return aWhip - bWhip;
         return (a.blocks[0]?.start || 0) - (b.blocks[0]?.start || 0);
       });
 
-      const laneRows = lanes.map((lane) => {
+      const visibleLanes = lanes.slice(0, 5);
+      const moreLanes = lanes.length - visibleLanes.length;
+      const laneRows = visibleLanes.map((lane) => {
+        const waitSegments = waits.filter((wait) => (wait.work_id || '') === lane.key).map((wait, index) => {
+          const width = Math.max(0.6, pos(wait.t) - pos(wait.t - wait.ms));
+          return h('div', { key: `w${index}`, className: 'crop-seg crop-seg--wait',
+            style: { left: pct(pos(wait.t - wait.ms)), width: pct(width) } });
+        });
         const segments = lane.blocks.map((block, index) => {
           const width = Math.max(0.8, pos(block.t) - pos(block.start));
           return h('div', {
@@ -804,9 +832,12 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         }));
         return h('div', { key: lane.key || 'none', className: 'crop-tl-row' },
           h('div', { className: `crop-tl-label${lane.key === activeId ? ' crop-tl-label--current' : ''}` },
-            h('div', null, lane.key === activeId ? '▸ ' : '', lane.key || '未归属'),
-            h('div', { className: 'crop-muted' }, `${lane.blocks.reduce((sum, b) => sum + (b.minutes || 0), 0).toFixed(0)}m`)),
-          h('div', { className: 'crop-tl-track' }, h('div', { className: 'crop-tl-grid' }), segments, marks, blocked));
+            h('div', { className: 'crop-tl-name', title: lane.key || '' },
+              lane.key === activeId ? '▸ ' : '', labelOf(lane.key)),
+            h('div', { className: 'crop-muted crop-tl-meta' },
+              `${lane.blocks.reduce((sum, b) => sum + (b.minutes || 0), 0).toFixed(0)}m`,
+              lane.key && lane.key !== labelOf(lane.key) ? ` · ${lane.key}` : '')),
+          h('div', { className: 'crop-tl-track' }, h('div', { className: 'crop-tl-grid' }), waitSegments, segments, marks, blocked));
       });
 
       const wall = Math.max(0, end - started);
@@ -814,7 +845,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const waitMs = Math.max(0, wall - activeMs);
       const head = h('div', { key: 'head', className: 'crop-card crop-sess-head' },
         h('div', { className: 'crop-sess-title' }, 'Crop'),
-        h('div', { className: 'crop-sess-clock' }, `${fmtSpan(wall)}`, h('span', { className: 'crop-muted' }, '本次会话')),
+        h('div', { className: 'crop-sess-clock' }, `${fmtSpan(wall)}`, h('span', { className: 'crop-muted' }, windowStart > started ? '最近 ' + Math.round(span / 60000) + 'm' : '本次会话')),
         h('div', { className: 'crop-sess-split', title: `活跃 ${fmtSpan(activeMs)} · 等待 ${fmtSpan(waitMs)}` },
           h('i', { className: 'work', style: { width: pct(wall ? (activeMs / wall) * 100 : 0) } }),
           h('i', { className: 'wait', style: { width: pct(wall ? (waitMs / wall) * 100 : 0) } })),
@@ -825,7 +856,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const expect = active && active.expect_min ? active.expect_min : null;
       const current = h('div', { key: 'current', className: 'crop-card crop-sess-current' },
         h('span', { className: 'crop-sess-label' }, '当前工作'),
-        h('span', { className: 'crop-sess-name' }, active ? (active.title || active.goal || active.work_id) : '本会话还没有绑定工作'),
+        h('span', { className: 'crop-sess-name', title: active ? active.work_id : '' }, active ? (active.title || active.goal || labelOf(active.work_id)) : '本会话还没有绑定工作'),
         expect ? h('div', { className: 'crop-sess-bar' },
           h('i', { style: { width: pct(Math.min(100, ((active.minutes || 0) / expect) * 100)) } })) : null,
         h('span', { className: 'crop-muted crop-small' },
@@ -838,7 +869,13 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('span', null, h('i', { className: 'crop-swatch' }), '活跃'),
             h('span', null, h('img', { className: 'crop-legend-whip', src: '/api/agent-crop/whip-icon', alt: '' }), '鞭策'),
             h('span', null, h('i', { className: 'crop-dot-red' }), '卡点'))),
-        h('div', { className: 'crop-tl-body' }, laneRows.length ? laneRows : h('div', { className: 'crop-muted' }, '这次会话还没有完成一个时间块。')),
+        h('div', { className: 'crop-tl-body' }, laneRows.length ? laneRows : h('div', { className: 'crop-muted' }, '这次会话还没有完成一个时间块。'),
+          moreLanes > 0 ? h('div', { className: 'crop-muted crop-small' }, `还有 ${moreLanes} 个工作未显示`) : null),
+        h('div', { className: 'crop-tl-axis' },
+          [0, 0.25, 0.5, 0.75, 1].map((share) => h('span', {
+            key: share,
+            style: { left: pct(share * 100) },
+          }, `${Math.round((span * share) / 60000)}m`))),
         picked ? h('div', { className: 'crop-tl-detail' },
           h('span', { className: 'crop-tl-range' }, `${picked.block.minutes}m`),
           h('span', null, `${picked.lane || '未归属'} · 这一段做了 ${picked.block.minutes} 分钟`)) : null);
@@ -848,7 +885,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('div', { className: 'crop-muted crop-small crop-tl-cap' }, '本会话碰过的工作'),
             h('div', null, data.session_works.map((item) => h('div', { key: item.work_id, className: 'crop-work-row' },
               h('i', { className: 'crop-dot', style: { background: lampColor(item.ratio) } }),
-              h('span', null, item.work_id),
+              h('span', { title: item.work_id }, labelOf(item.work_id)),
               h('span', { className: 'crop-muted crop-small', style: { marginLeft: 'auto' } },
                 `${Math.round(item.minutes || 0)}m`)))))
         : null;
