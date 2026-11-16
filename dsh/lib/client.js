@@ -931,7 +931,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('i', { className: 'work', style: { width: pct(wall ? (activeMs / wall) * 100 : 0) } }),
           h('i', { className: 'wait', style: { width: pct(wall ? (waitMs / wall) * 100 : 0) } })),
         h('div', { className: 'crop-muted crop-small' }, `活跃 ${fmtSpan(activeMs)} · 等待 ${fmtSpan(waitMs)}`),
-        h('span', { className: 'crop-persona-chip' }, PERSONA_LABEL[persona] || persona),
+        h('span', { className: 'crop-persona-chip' }, `你是${PERSONA_LABEL[persona] || persona}`),
         h('div', { className: 'crop-sess-turn' }, `本回合 ${fmtSpan((data.current_minutes || 0) * 60000)}`));
 
       const active = data.active_work;
