@@ -401,6 +401,8 @@ def _upsert_task(report: dict, workspace: str) -> None:
         task["type"] = report["type"]
     if report.get("difficulty"):
         task["difficulty"] = report["difficulty"]
+    if report.get("sediment"):
+        task["sediment"] = report["sediment"]
     if report.get("expect_min"):
         current = float(report["expect_min"])
         previous = task.get("expect_min")
@@ -517,6 +519,7 @@ def validate_report(args: dict) -> dict:
     artifact = _text(args.get("artifact"), "artifact")
     if phase == "end" and not what:
         raise ValueError("phase=end requires what: 用一句话写这次做了什么（cost / next_time 可选）")
+    sediment = _text(args.get("sediment"), "sediment")
     if phase == "blocked" and (not cause or not category):
         raise ValueError("blocked reports require both cause and category")
     return {
@@ -539,6 +542,7 @@ def validate_report(args: dict) -> dict:
         "what": what,
         "cost": cost,
         "next_time": next_time,
+        "sediment": sediment,
     }
 
 
@@ -759,6 +763,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         "sentiment": report.get("sentiment", ""),
         "type": report.get("type", ""),
         "difficulty": report.get("difficulty", ""),
+        "sediment": report.get("sediment", ""),
         "turn": context.get("turn"),
         "step": context.get("step"),
         "block_start": block_start,
@@ -795,10 +800,19 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         pass
     record["origin"] = "reminder" if record.get("reply_to") else "self"
 
+    already_closed = (report["phase"] == "end"
+                      and report["task_id"] not in (load_open().get("tasks") or {}))
     append_jsonl(os.path.join(paths()["reports_dir"], f"{today()}.jsonl"), record)
     write_runtime(sid, workspace, block_start)
-    append_event({**record, "ev": "probe_report"})
+    if not already_closed:
+        append_event({**record, "ev": "probe_report"})
     if report["phase"] == "end":
+        if already_closed:
+            # 二次收尾（补沉淀/补小结）：不重复关单、不重复释放绑定
+            if report.get("sediment"):
+                append_event({"ev": "work_sediment", "sid": sid, "work_id": report["task_id"],
+                              "sediment": report["sediment"]})
+            return {**record, "already_closed": True}
         if report.get("what") or report.get("cost") or report.get("next_time"):
             append_event({
                 "ev": "work_summary",
@@ -821,6 +835,9 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                 "cost": report.get("cost", ""), "next_time": report.get("next_time", ""),
                 "artifact": report.get("artifact", ""),
             })
+        if report.get("sediment"):
+            append_event({"ev": "work_sediment", "sid": sid, "work_id": report["task_id"],
+                          "sediment": report["sediment"]})
         append_event({"ev": "work_close", "sid": sid, "work_id": report["task_id"],
                       "verdict": report.get("verdict", "")})
         release_binding(sid)
@@ -2905,6 +2922,19 @@ def health_summary(
                      if row.get("phase") == "start" and _work_keys(row)[1]}
     works_ended = {_work_keys(row) for row in by_kind.get("probe_report", [])
                    if row.get("phase") == "end" and _work_keys(row)[1]}
+    sedimented = set()
+    for row in by_kind.get("probe_report", []):
+        if row.get("phase") == "end" and str(row.get("sediment") or "").strip():
+            sedimented.add(_work_keys(row))
+    for row in by_kind.get("work_sediment", []):
+        if str(row.get("sediment") or "").strip():
+            sedimented.add(_work_keys(row))
+    sediment_block = {
+        "ended": len(works_ended),
+        "with_sediment": len(works_ended & sedimented),
+        "rate": (round(len(works_ended & sedimented) / len(works_ended), 3)
+                 if works_ended else None),
+    }
     denominators = {
         "session": len(eligible),
         "work": len(works_started),
@@ -3089,6 +3119,7 @@ def health_summary(
         "window": {"days": window_days, "start": start, "end": end},
         "sessions": {"total": len(all_sessions), "eligible": len(eligible)},
         "works": {"started": len(works_started), "ended": len(works_ended)},
+        "sediment": sediment_block,
         "hosts": hosts,
         "passive": passive,
         "active": active,
@@ -3127,6 +3158,11 @@ def format_health(summary: dict) -> str:
         f"工作收尾 {works.get('ended', 0)}/{works.get('started', 0)}",
         str(stats.get("headline") or ""),
     ]
+    sediment = summary.get("sediment") or {}
+    if sediment.get("ended"):
+        rate = sediment.get("rate")
+        suffix = f"（{float(rate):.0%}）" if rate is not None else ""
+        lines.append(f"沉淀闭合：{sediment.get('with_sediment', 0)}/{sediment.get('ended', 0)}{suffix}")
     problems = [d for d in summary.get("diagnostics") or [] if d.get("severity") != "info"]
     for item in problems:
         card = f"（卡 {item['card']}）" if item.get("card") else ""
