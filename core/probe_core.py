@@ -55,7 +55,11 @@ CLAIM_TTL_MIN = float(os.environ.get("KIT_CLAIM_TTL_MIN", "120"))
 VERDICTS = ("justified", "not-justified", "unknown")
 REVIEW_LEVELS = ("redo", "major", "minor", "none")
 SENTIMENTS = ("pos", "neu", "neg")
-WORK_TYPES = ("design", "implement", "debug", "docs")
+# Built-in types keep their own calibration history.  The list is not a closed
+# enum: users can define their own short slug, and `explore` is first-class
+# because research/triage estimates behave differently from implementation.
+WORK_TYPES = ("design", "implement", "debug", "docs", "explore")
+TYPE_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 DIFFICULTIES = ("s", "m", "l")
 MAX_TEXT = 600
 MAX_EVENTS_READ = 4000
@@ -454,8 +458,8 @@ def validate_report(args: dict) -> dict:
         raise ValueError(f"category must be one of {', '.join(CATEGORIES)}")
     goal = _text(args.get("goal"), "goal")
     work_type = _text(args.get("type"), "type").lower()
-    if work_type and work_type not in WORK_TYPES:
-        raise ValueError(f"type must be one of {', '.join(WORK_TYPES)}")
+    if work_type and not TYPE_SLUG.match(work_type):
+        raise ValueError("type must be a short slug: 1-32 lowercase letters, digits or hyphens")
     difficulty = _text(args.get("difficulty"), "difficulty").lower()
     if difficulty and difficulty not in DIFFICULTIES:
         raise ValueError(f"difficulty must be one of {', '.join(DIFFICULTIES)}")
