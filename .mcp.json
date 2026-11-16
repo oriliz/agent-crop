@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "probe": {
+    "crop": {
       "type": "stdio",
       "command": "python3",
       "args": ["${CLAUDE_PLUGIN_ROOT}/core/probe_mcp_server.py"],

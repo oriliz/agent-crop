@@ -63,7 +63,7 @@ config.json                  # red_min / remind_min / user_facing
 | `SessionEnd` | 记录 session 结束 |
 
 工具通过 `.mcp.json` 暴露；模型侧名字形如
-`mcp__plugin_agent-crop_probe__probe_report`。
+`mcp__plugin_agent-crop_crop__probe_report`。
 
 ## DSH 映射
 

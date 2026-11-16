@@ -16,7 +16,7 @@ try:
 except Exception:  # pragma: no cover
     core = None
 
-SERVER_NAME = "agent-crop"
+SERVER_NAME = "crop"
 SERVER_VERSION = "0.4.0"
 PROTOCOL_VERSION = "2024-11-05"
 
