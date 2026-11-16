@@ -69,6 +69,31 @@ tr.sect .n{color:#6f7887;margin-left:6px}
 tbody.sect-group.closed tr.row{display:none}
 .spark-row{display:flex;align-items:center;gap:8px}
 .spark-row .delta{font-size:11px}
+.health-switch{display:flex;align-items:center;gap:8px}
+.mode{background:#161920;border:1px solid #2a2f39;color:#aeb6c4;border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer}
+.mode.on{background:#233047;border-color:#3b5b8a;color:#dbe7ff}
+.health-switch .copy{margin-left:auto}
+.strip{background:#161920;border:1px solid #23262d;border-radius:10px;padding:12px 14px;display:grid;gap:8px}
+.strip-bar{display:flex;gap:3px;height:14px}
+.strip-bar i{flex:1;border-radius:3px;min-width:4px}
+.strip-legend{display:flex;gap:16px;color:#8b93a1;font-size:12px;flex-wrap:wrap}
+.strip-legend b{color:#e6e6e6;font-weight:600}
+.cockpit{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px}
+.tile{background:#161920;border:1px solid #23262d;border-radius:10px;padding:10px 12px;display:grid;gap:6px}
+.tile-head{display:flex;align-items:center;gap:6px;font-size:12.5px}
+.tile-head b{font-weight:600}
+.tile-value{font-size:20px;font-variant-numeric:tabular-nums}
+.tile-bar{height:8px;background:#1e2128;border-radius:4px;overflow:hidden}
+.tile-bar i{display:block;height:100%}
+.tile-foot{color:#6f7887;font-size:11px;line-height:1.5}
+.tile.tone-red{border-color:#ef4444;background:rgba(239,68,68,.12);box-shadow:0 0 0 1px rgba(239,68,68,.35)}
+.tile.tone-yellow{border-color:rgba(234,179,8,.5)}
+.tile.tone-gray{opacity:.8;border-style:dashed}
+.tile.tone-green .dot{background:#4ade80}
+.tile.tone-red .dot{background:#ef4444}
+.tile.tone-yellow .dot{background:#eab308}
+.tile.tone-gray .dot{background:#6b7280}
+.tile.tone-red .tile-value{color:#ff9b9b}
 select.host{background:#161920;border:1px solid #2a2f39;color:#aeb6c4;border-radius:7px;padding:4px 8px;font-size:12px}
 .chart{display:flex;align-items:flex-end;gap:6px;height:180px;padding-top:6px}
 .slot{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;cursor:pointer;min-width:8px}
@@ -103,22 +128,32 @@ footer{color:#6f7887;font-size:11px;padding:0 28px 24px}
   </section>
   </div>
   <div id="view-health" class="view" hidden>
-    <div class="headline" id="health-headline">
-      <span id="headline-text"></span>
+    <div class="cards" id="health-cards"></div>
+    <div class="health-switch">
+      <button class="mode on" data-health-mode="cockpit">驾驶舱</button>
+      <button class="mode" data-health-mode="fix">修复模式</button>
+      <span class="sub" id="health-mode-note"></span>
       <button class="copy" id="copy-diagnosis" title="复制成一段话，可直接丢给 AI 去修">复制修复指令</button>
     </div>
-    <div class="cards" id="health-cards"></div>
-    <section><h2>先修这些</h2>
-      <div class="hint">诊断按指标自动生成，每条都指到对应看板卡；没有问题的工具收在下面的分区里。</div>
-      <div id="health-diags"></div>
-    </section>
-    <section><h2>采集工具健康度</h2>
-      <div class="hint">覆盖 = 事件在自己锚点上的比例（会话 / 工作 / 收尾；条内写百分比，下面写 n/N）；闭环 = 有开始的工作里已收尾的比例；趋势 = 每天的事件条数，旁边是比上周。</div>
-      <table class="health-table" id="health-table"><thead><tr><th>工具</th><th>覆盖</th><th>完整</th><th>闭环</th><th>趋势（7 天）</th></tr></thead></table>
-    </section>
+    <div id="health-cockpit">
+      <div class="strip" id="cockpit-strip"></div>
+      <div class="cockpit" id="cockpit-grid"></div>
+    </div>
+    <div id="health-fix" hidden>
+      <div class="headline" id="health-headline"><span id="headline-text"></span></div>
+      <section><h2>先修这些</h2>
+        <div class="hint">诊断按指标自动生成，每条都指到对应看板卡；没有问题的工具收在下面的分区里。</div>
+        <div id="health-diags"></div>
+      </section>
+      <section><h2>采集工具健康度</h2>
+        <div class="hint">覆盖 = 事件在自己锚点上的比例（会话 / 工作 / 收尾；条内写百分比，下面写 n/N）；闭环 = 有开始的工作里已收尾的比例；趋势 = 每天的事件条数，旁边是比上周。</div>
+        <table class="health-table" id="health-table"><thead><tr><th>工具</th><th>覆盖</th><th>完整</th><th>闭环</th><th>趋势（7 天）</th></tr></thead></table>
+      </section>
+    </div>
+  </div>
   </div>
 </main>
-<footer>灯色 = 该工作活跃时长 ÷ 同类型同难度基线：&lt; 0.6 绿 · 0.6–1.5 黄 · ≥ 1.5 红。数字由事件机械生成，归因只引用 AI 自述。<br>健康度：覆盖条颜色 = 状态（绿达标 / 黄偏低 / 红完全没采到），红条所在行加红底；分区标题可点开/收起；趋势柱 = 每天的事件条数，悬停看日期；条下数字是 n/N。「复制修复指令」会把问题和对应卡片拼成一段话，可直接丢给 AI。指标全部从事件派生，不新增采集。</footer>
+<footer>灯色 = 该工作活跃时长 ÷ 同类型同难度基线：&lt; 0.6 绿 · 0.6–1.5 黄 · ≥ 1.5 红。数字由事件机械生成，归因只引用 AI 自述。<br>健康度：驾驶舱用磁贴展示全量工具（颜色 = 状态，正常也展示，红黄排前面）；修复模式只留要处理的问题与证据，分区标题可点开/收起。红条所在行加红底；「复制修复指令」会把问题和对应卡片拼成一段话，可直接丢给 AI。指标全部从事件派生，不新增采集。</footer>
 <script>
 let rangeDays = 7;
 const LAMP = {green:'#4ade80', yellow:'#eab308', red:'#ef4444'};
@@ -201,6 +236,22 @@ function renderWorkList(rows){
 let view = 'overview';
 let lastHealth = null;
 const openSections = new Set(['issues']);
+let healthMode = 'cockpit';
+
+function setHealthMode(mode){
+  healthMode = mode;
+  document.querySelectorAll('.mode').forEach(button =>
+    button.classList.toggle('on', button.dataset.healthMode === mode));
+  const cockpit = document.getElementById('health-cockpit');
+  const fix = document.getElementById('health-fix');
+  if (cockpit) cockpit.hidden = mode !== 'cockpit';
+  if (fix) fix.hidden = mode !== 'fix';
+  const note = document.getElementById('health-mode-note');
+  if (note) note.textContent = mode === 'cockpit' ? '全量工具一眼看，红黄优先排前面' : '只留要修的问题和证据';
+}
+document.querySelectorAll('.mode').forEach(button =>
+  button.addEventListener('click', () => setHealthMode(button.dataset.healthMode)));
+setHealthMode('cockpit');
 
 function setView(next){
   view = next;
@@ -389,6 +440,70 @@ document.getElementById('health-table').addEventListener('click', event => {
     Boolean((lastHealth.summary || {}).has_previous));
 });
 
+function toneOf(row){
+  if (row.status === 'not-shipped' || row['class'] === 'on_demand') return 'gray';
+  if (row.lamp === 'red') return 'red';
+  if (row.lamp === 'yellow') return 'yellow';
+  return 'green';
+}
+
+function tileValue(row){
+  if (row.status === 'not-shipped') return '未上线';
+  if (row['class'] === 'on_demand') return row.events + ' 次';
+  return row.session_coverage == null ? '—' : pct(row.session_coverage);
+}
+
+function tileFoot(row){
+  if (row.status === 'not-shipped') return '设计已存在，代码未实现';
+  if (row['class'] === 'on_demand') return '条件触发，只看有没有在采';
+  const parts = [];
+  if (row.coverage_denominator != null) parts.push(row.coverage_numerator + ' / ' + row.coverage_denominator);
+  if (row.events) parts.push('完整 ' + pct(row.field_completeness));
+  if (row.stage_closure != null) parts.push('闭环 ' + pct(row.stage_closure));
+  const missing = Object.entries(row.missing_fields || {});
+  if (missing.length) parts.push('缺 ' + missing.map(([key, value]) => key + '×' + value).join('、'));
+  return parts.join(' · ');
+}
+
+function tileHtml(row){
+  const tone = toneOf(row);
+  const value = tileValue(row);
+  const thresholds = {session: 0.8, work: 0.7, ended: 0.8, call: 0.9};
+  let color = '#6b7280';
+  if (row.status !== 'not-shipped' && row['class'] !== 'on_demand' && row.session_coverage != null) {
+    const threshold = thresholds[row['class']] || 0.8;
+    color = row.session_coverage >= threshold ? '#4ade80'
+      : (row.session_coverage > 0 ? '#eab308' : '#ef4444');
+  }
+  const width = row.session_coverage == null ? 0 : Math.round(row.session_coverage * 100);
+  const bar = tone === 'gray' ? '' : '<div class="tile-bar"><i style="width:' + width + '%;background:' + color + '"></i></div>';
+  return '<div class="tile tone-' + tone + '" title="' + esc(row.tool + ' · ' + row.scope + '口径') + '">' +
+    '<div class="tile-head"><span class="dot"></span><b>' + esc(row.label) + '</b><span class="tag">' + esc(row.scope) + '</span></div>' +
+    '<div class="tile-value">' + esc(value) + '</div>' + bar +
+    '<div class="tile-foot">' + esc(tileFoot(row)) + '</div></div>';
+}
+
+function renderCockpit(data){
+  const rows = (data.passive || []).concat(data.active || []);
+  const order = {red: 0, yellow: 1, green: 2, gray: 3};
+  const sorted = rows.slice().sort((a, b) => order[toneOf(a)] - order[toneOf(b)]);
+  document.getElementById('cockpit-grid').innerHTML = sorted.map(row => tileHtml(row)).join('');
+  const counts = {red: 0, yellow: 0, green: 0, gray: 0};
+  rows.forEach(row => { counts[toneOf(row)] += 1; });
+  const segments = rows.map(row => {
+    const tone = toneOf(row);
+    const color = tone === 'red' ? '#ef4444' : (tone === 'yellow' ? '#eab308' : (tone === 'green' ? '#4ade80' : '#3a3f4a'));
+    return '<i style="background:' + color + '" title="' + esc(row.label) + '"></i>';
+  }).join('');
+  const headline = (data.summary || {}).headline || '';
+  document.getElementById('cockpit-strip').innerHTML =
+    '<div class="strip-bar">' + segments + '</div>' +
+    '<div class="strip-legend"><span><b>' + counts.green + '</b> 正常</span>' +
+    '<span><b>' + (counts.red + counts.yellow) + '</b> 要处理</span>' +
+    '<span><b>' + counts.gray + '</b> 按需 / 未上线</span>' +
+    '<span style="margin-left:auto" class="sub">' + esc(headline) + '</span></div>';
+}
+
 function renderHealth(data){
   lastHealth = data;
   const s = data.summary || {};
@@ -404,9 +519,11 @@ function renderHealth(data){
   document.getElementById('health-cards').innerHTML = cards.map(([k, v, note]) =>
     '<div class="card"><div class="k">' + k + '</div><div class="v">' + (v == null ? '—' : v) + '</div>' +
     '<div class="n">' + note + '</div></div>').join('');
+  renderCockpit(data);
   renderTable((data.passive || []).concat(data.active || []), works, Boolean(s.has_previous));
   renderDiags(data);
   syncHostOptions(data.hosts || []);
+  setHealthMode(healthMode);
 }
 
 async function loadHealth(){
