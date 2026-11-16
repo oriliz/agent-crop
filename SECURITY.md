@@ -50,7 +50,7 @@ Crop 会往 AI 的上下文里写字，这是它最主要的能力，也是它�
 - **DSH**：常驻系统提示段 `crop:protocol`（`dsh/lib/index.js`）；每回合首步一行工作状态；
   超红线时一行提醒
 - **Claude Code**：hooks 注入额外上下文（`hooks/claude-hooks.json` → `core/probe_hook.py`）；
-  MCP 工具 `probe_report`（`.mcp.json` → `core/probe_mcp_server.py`）
+  MCP 工具 `crop`（`.mcp.json` → `core/probe_mcp_server.py`）
 
 这些文本来自本机事件存储，只做 `strip` 与 **600 字符截断**（`core/probe_core.py` 的 `MAX_TEXT`），
 **不做转义、不做语义过滤**。因此：

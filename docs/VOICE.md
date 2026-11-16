@@ -37,8 +37,8 @@
 ## 报预期与改报价
 
 ```
-crop_report(phase="start", task_id="做A", summary="…", expect_min=40, expect_why="先看代码结构再改")
-crop_report(phase="progress", task_id="做A", summary="…", cause="数据层要重做", expect_min=90)
+crop_update(phase="start", task_id="做A", summary="…", expect_min=40, expect_why="先看代码结构再改")
+crop_update(phase="progress", task_id="做A", summary="…", cause="数据层要重做", expect_min=90)
 ```
 
 - `start` 时带 `expect_min` 就写进任务（`expect_min` / `expect_why` / `expect_set_at`）；

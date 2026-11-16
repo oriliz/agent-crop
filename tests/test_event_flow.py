@@ -80,6 +80,12 @@ class EventFlowTest(unittest.TestCase):
         self.assertEqual(task["type"], "design")
         self.assertEqual(task["difficulty"], "m")
 
+    def test_start_report_emits_work_claim(self):
+        self.report(phase="start")
+        kinds = self.kinds()
+        self.assertIn("work_claim", kinds)
+        self.assertIn("work_open", kinds)
+
     def test_report_keeps_possible_improvements(self):
         self.report(phase="blocked", cause="文档顺序错", category="tool-misuse",
                     improve="先读文档再选工具", verdict="not-justified")

@@ -9,7 +9,7 @@
     {
       "name": "agent-crop",
       "source": "./",
-      "description": "Agent Crop：长任务提醒 + crop_report 工具 + 共享工作数据。",
+      "description": "Agent Crop：长任务提醒 + crop_update 工具 + 共享工作数据。",
       "category": "productivity"
     }
   ]

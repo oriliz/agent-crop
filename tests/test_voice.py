@@ -89,14 +89,14 @@ class RenderTest(unittest.TestCase):
         for text in self.draw("yellow", {"m": 48, "e": 40, "goal": "做A"}):
             self.assertIn("[crop]", text)
             self.assertIn("48", text)
-            self.assertIn("crop_report", text)
+            self.assertIn("crop_update", text)
             self.assertIn("verdict", text)
 
     def test_warm_render_does_not_demand_a_report(self):
         texts = self.draw("warm", {"m": 32, "e": 40, "goal": "做A"})
         for text in texts:
             self.assertIn("32", text)
-            self.assertNotIn("crop_report", text)
+            self.assertNotIn("crop_update", text)
         self.assertTrue(any("8" in text for text in texts), "还剩 8 分钟该出现在某些句子里")
 
     def test_missing_estimate_says_so(self):
@@ -119,7 +119,7 @@ class RenderTest(unittest.TestCase):
     def test_miss_render_carries_streak(self):
         text = voice.miss(3, self.state)
         self.assertIn("3", text)
-        self.assertIn("crop_report", text)
+        self.assertIn("crop_update", text)
 
 
 if __name__ == "__main__":

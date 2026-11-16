@@ -44,6 +44,19 @@ def dispatch(payload: dict):
         return core.mark_stale_works()
     if op == "binding":
         return core.resolve_binding(sid)
+    if op == "health_text":
+        args = payload.get("args") or {}
+        summary = core.health_summary(
+            float(args.get("days") or 7.0),
+            host_filter=args.get("host") or None,
+        )
+        return core.format_health(summary)
+    if op == "health":
+        args = payload.get("args") or {}
+        return core.health_summary(
+            float(args.get("days") or 7.0),
+            host_filter=args.get("host") or None,
+        )
     if op == "record_review":
         return core.record_review(payload.get("args") or {}, context)
     if op == "record_report":

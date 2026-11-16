@@ -424,6 +424,165 @@ body[data-ds-dark-theme] .crop-global .crop-card {
   padding: 2px 10px;
   font-size: 11px;
 }
+
+/* --- health view --------------------------------------------------------- */
+
+.crop-modes {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.crop-health-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.crop-donut {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  position: relative;
+  flex: none;
+}
+
+.crop-donut-hole {
+  position: absolute;
+  inset: 22px;
+  border-radius: 50%;
+  background: rgb(242 245 250 / .92);
+  display: grid;
+  place-items: center;
+  text-align: center;
+  line-height: 1.25;
+}
+
+body[data-ds-dark-theme] .crop-donut-hole {
+  background: rgb(16 22 42 / .92);
+}
+
+.crop-donut-hole b {
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+}
+
+.crop-donut-hole span {
+  font-size: 11px;
+  opacity: .65;
+}
+
+.crop-legend-list {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.crop-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crop-legend-row b {
+  min-width: 24px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.crop-health-note {
+  margin-left: auto;
+  max-width: 340px;
+  text-align: right;
+  font-size: 12px;
+  opacity: .78;
+  line-height: 1.6;
+}
+
+.crop-meter {
+  position: relative;
+  height: 12px;
+  border-radius: 4px;
+  background: rgba(100, 116, 160, .16);
+  min-width: 64px;
+  overflow: hidden;
+}
+
+.crop-health-table {
+  table-layout: fixed;
+}
+
+.crop-meter i {
+  display: block;
+  height: 100%;
+  opacity: .55;
+}
+
+.crop-meter b {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.crop-row-red td {
+  background: rgba(239, 68, 68, .10);
+}
+
+.crop-sect td {
+  color: var(--dsw-alias-label-tertiary, #5f6e93);
+  font-size: 11px;
+  padding: 10px 6px 3px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(44, 58, 115, .12));
+}
+
+.crop-mini {
+  opacity: .6;
+  font-size: 10.5px;
+  margin-top: 2px;
+}
+
+.crop-diag {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(44, 58, 115, .12));
+}
+
+.crop-diag:last-child {
+  border-bottom: 0;
+}
+
+.crop-diag .t {
+  font-size: 12.5px;
+}
+
+.crop-diag .e,
+.crop-diag .c {
+  color: var(--dsw-alias-label-tertiary, #5f6e93);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.crop-spark {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+
+.crop-spark i {
+  display: block;
+  width: 5px;
+  border-radius: 1px 1px 0 0;
+  background: rgba(96, 128, 200, .55);
+  min-height: 2px;
+}
 `;
 
     const S = {
@@ -625,12 +784,38 @@ body[data-ds-dark-theme] .crop-global .crop-card {
       return state;
     }
 
+    function useHealth(days) {
+      const [state, setState] = React.useState({ data: null, error: null, at: 0 });
+      React.useEffect(() => {
+        let alive = true;
+        const tick = async () => {
+          try {
+            let response = await fetch(`${API}/tool-health?days=${days}`, { cache: 'no-store' });
+            if (!response.ok) {
+              // 开发期宿主还没重载插件时，退回本地 dashboard 的同源接口
+              response = await fetch(`http://127.0.0.1:8765/api/tool-health?days=${days}`, { cache: 'no-store' });
+            }
+            const data = await response.json();
+            if (alive) setState({ data, error: null, at: Date.now() });
+          } catch (error) {
+            if (alive) setState({ data: null, error: String(error), at: Date.now() });
+          }
+        };
+        tick();
+        const timer = setInterval(tick, 5000);
+        return () => { alive = false; clearInterval(timer); };
+      }, [days]);
+      return state;
+    }
+
     function GlobalPanel() {
       const [days, setDays] = React.useState(7);
       const [selected, setSelected] = React.useState(null);
       const [detail, setDetail] = React.useState(null);
       const [showAll, setShowAll] = React.useState(false);
       const global = useGlobal(days);
+      const [mode, setMode] = React.useState('overview');
+      const health = useHealth(days);
 
       React.useEffect(() => {
         if (!selected) { setDetail(null); return undefined; }
@@ -675,6 +860,14 @@ body[data-ds-dark-theme] .crop-global .crop-card {
               className: 'crop-chip',
               'data-on': days === value ? '' : undefined,
               onClick: () => { setDays(value); setSelected(null); },
+            }, label))),
+          h('div', { className: 'crop-modes' },
+            [['overview', '概览'], ['health', '健康度']].map(([value, label]) => h('button', {
+              key: value,
+              type: 'button',
+              className: 'crop-chip',
+              'data-on': mode === value ? '' : undefined,
+              onClick: () => setMode(value),
             }, label))),
           h('span', { className: 'crop-muted crop-global-asof' },
             global.at ? `更新于 ${new Date(global.at).toLocaleTimeString()}` : '')));
@@ -836,7 +1029,186 @@ body[data-ds-dark-theme] .crop-global .crop-card {
               : h('div', { className: 'crop-muted', style: S.quiet }, '这段时间还没有工作记录。先用 probe_report 认领一条。'))
         : null;
 
-      return h('div', { className: 'crop-global' }, [head, loadingCard, metrics, chart, improvements, pitfalls, works]);
+      const healthNodes = (() => {
+        const data = health.data;
+        if (!data) {
+          return [h('div', { key: 'hstate', className: 'crop-card' },
+            h('div', { className: 'crop-muted', style: S.quiet }, health.error ? '健康度读不到：检查 dsh 日志里的 crop 报错。' : '正在读取…'))];
+        }
+        const cell = { ...S.td, padding: '5px 6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+        const cellRight = { ...S.tdRight, padding: '5px 6px', whiteSpace: 'nowrap' };
+        const pctText = (value) => (value == null ? '—' : `${Math.round(value * 100)}%`);
+        const pctWidth = (value) => `${Math.max(0, Math.min(100, Math.round((value || 0) * 100)))}%`;
+        const toneOf = (row) => {
+          if (row.status === 'not-shipped' || row['class'] === 'on_demand') return 'gray';
+          if (row.lamp === 'red' || (row.events > 0 && row.session_coverage === 0)) return 'red';
+          return row.lamp === 'yellow' ? 'yellow' : 'green';
+        };
+        const colorOf = (row) => {
+          if (row.status === 'not-shipped' || row['class'] === 'on_demand') return '#8892a6';
+          const threshold = { session: .8, work: .7, ended: .8, call: .9 }[row['class']] || .8;
+          const value = row.session_coverage;
+          if (value == null) return '#8892a6';
+          return value >= threshold ? '#4ade80' : (value > 0 ? '#eab308' : '#ef4444');
+        };
+        const all = [...(data.passive || []), ...(data.active || [])];
+        const counts = { green: 0, yellow: 0, red: 0, gray: 0 };
+        all.forEach((row) => { counts[toneOf(row)] += 1; });
+        const total = all.length || 1;
+        let cursor = 0;
+        const stops = [];
+        [['green', '#4ade80'], ['yellow', '#eab308'], ['red', '#ef4444'], ['gray', '#8892a6']].forEach(([key, color]) => {
+          if (!counts[key]) return;
+          const share = counts[key] / total * 100;
+          stops.push(`${color} ${cursor}% ${cursor + share}%`);
+          cursor += share;
+        });
+        const donut = h('div', { key: 'd', className: 'crop-donut', style: { background: `conic-gradient(${stops.join(',')})` } },
+          h('div', { className: 'crop-donut-hole' }, [
+            h('b', { key: 'v' }, `${counts.green} / ${all.length}`),
+            h('span', { key: 's' }, '正常'),
+          ]));
+        const legend = h('div', { key: 'l', className: 'crop-legend-list' }, [
+          ['#4ade80', '正常', counts.green],
+          ['#eab308', '偏低', counts.yellow],
+          ['#ef4444', '要处理', counts.red],
+          ['#8892a6', '按需 / 未上线', counts.gray],
+        ].map(([color, label, count]) => h('div', { key: label, className: 'crop-legend-row' },
+          h('i', { className: 'crop-dot', style: { background: color } }),
+          h('b', null, String(count)),
+          h('span', { className: 'crop-muted' }, label))));
+        const summaryCard = h('div', { key: 'summary', className: 'crop-card crop-health-head' }, [
+          donut,
+          legend,
+          h('div', { key: 'n', className: 'crop-health-note' }, (data.summary || {}).headline || ''),
+        ]);
+
+        const tableHead = (showClosure) => h('thead', { key: 'th' }, h('tr', null, [
+          h('th', { key: 't', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '工具'),
+          h('th', { key: 's', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '口径'),
+          h('th', { key: 'e', style: { ...cellRight, fontSize: '11.5px' } }, '事件'),
+          h('th', { key: 'c', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '覆盖'),
+          h('th', { key: 'f', style: { ...cellRight, fontSize: '11.5px' } }, '完整'),
+          showClosure ? h('th', { key: 'cl', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '闭环') : null,
+        ]));
+
+        const rowEl = (row, showClosure) => {
+          const red = row.lamp === 'red' || (row.events > 0 && row.session_coverage === 0);
+          const color = colorOf(row);
+          const coverageNote = row.coverage_denominator == null ? '' : `${row.coverage_numerator} / ${row.coverage_denominator}`;
+          const missing = Object.entries(row.missing_fields || {}).map(([key, value]) => `${key}×${value}`).join('、');
+          const meter = (value, fill) => h('div', { className: 'crop-meter', style: { background: fill === '#ef4444' ? 'rgba(239,68,68,.20)' : 'rgba(100,116,160,.16)' } },
+            h('i', { style: { width: pctWidth(value), background: fill } }),
+            h('b', null, pctText(value)));
+          return h('tr', { key: row.tool, className: red ? 'crop-row-red' : undefined }, [
+            h('td', { key: 'n', style: cell }, [
+              h('div', { key: 't' }, [
+                row.label,
+                h('span', { key: 'e', className: 'crop-muted', style: { marginLeft: 6 } }, row.tool),
+              ]),
+              row.note ? h('div', { key: 'note', className: 'crop-mini' }, row.note) : null,
+            ]),
+            h('td', { key: 's', style: cell }, row.scope || ''),
+            h('td', { key: 'ev', style: cellRight }, String(row.events)),
+            h('td', { key: 'cv', style: cell }, [
+              row.status === 'not-shipped' ? h('span', { key: 'x', className: 'crop-muted' }, '未上线')
+                : row['class'] === 'on_demand' ? h('span', { key: 'x', className: 'crop-muted' }, '—')
+                  : meter(row.session_coverage, color),
+              coverageNote ? h('div', { key: 'cd', className: 'crop-mini' }, coverageNote) : null,
+            ]),
+            h('td', { key: 'f', style: { ...cellRight, color: row.events && row.field_completeness < .95 ? '#b45309' : undefined } }, [
+              row.events ? pctText(row.field_completeness) : '—',
+              missing ? h('div', { key: 'm', className: 'crop-mini' }, `缺 ${missing}`) : null,
+            ]),
+            showClosure ? h('td', { key: 'cl', style: cell }, [
+              row.stage_closure == null
+                ? h('span', { key: 'x', className: 'crop-muted' }, '—')
+                : meter(row.stage_closure, row.stage_closure >= .7 ? '#4ade80' : '#eab308'),
+            ]) : null,
+          ]);
+        };
+
+        const rowsFor = (list, showClosure) => {
+          const groups = [
+            ['required', '必采 · 直接决定数据能不能用'],
+            ['on-demand', '按需 · 条件触发，只看有没有在采'],
+            ['not-shipped', '未上线'],
+          ];
+          const out = [];
+          groups.forEach(([id, label]) => {
+            const items = list.filter((row) => {
+              if (id === 'not-shipped') return row.status === 'not-shipped';
+              if (id === 'on-demand') return row.status !== 'not-shipped' && row['class'] === 'on_demand';
+              return row.status !== 'not-shipped' && row['class'] !== 'on_demand';
+            });
+            if (!items.length) return;
+            out.push(h('tr', { key: `sec-${id}`, className: 'crop-sect' },
+              h('td', { colSpan: showClosure ? 6 : 5 }, label)));
+            items.forEach((row) => out.push(rowEl(row, showClosure)));
+          });
+          return out;
+        };
+
+        const tableCard = (key, title, list, showClosure) => h('div', { key, className: 'crop-card' }, [
+          h('div', { key: 'c', className: 'crop-muted', style: S.caption }, title),
+          list.length
+            ? h('table', { key: 't', className: 'crop-health-table', style: S.table }, [
+                showClosure
+                  ? h('colgroup', { key: 'cg' }, [
+                      h('col', { key: '1', style: { width: '28%' } }),
+                      h('col', { key: '2', style: { width: '8%' } }),
+                      h('col', { key: '3', style: { width: '8%' } }),
+                      h('col', { key: '4', style: { width: '22%' } }),
+                      h('col', { key: '5', style: { width: '16%' } }),
+                      h('col', { key: '6', style: { width: '18%' } }),
+                    ])
+                  : h('colgroup', { key: 'cg' }, [
+                      h('col', { key: '1', style: { width: '32%' } }),
+                      h('col', { key: '2', style: { width: '9%' } }),
+                      h('col', { key: '3', style: { width: '9%' } }),
+                      h('col', { key: '4', style: { width: '26%' } }),
+                      h('col', { key: '5', style: { width: '24%' } }),
+                    ]),
+                tableHead(showClosure),
+                h('tbody', { key: 'tb' }, rowsFor(list, showClosure)),
+              ])
+            : h('div', { key: 'e', className: 'crop-muted', style: S.quiet }, '这段时间没有数据。'),
+        ]);
+
+        const diagnostics = (data.diagnostics || []).map((item) => h('div', { key: item.title, className: 'crop-diag' }, [
+          h('i', { key: 'd', className: 'crop-dot', style: { background: item.severity === 'info' ? '#8892a6' : '#eab308' } }),
+          h('div', { key: 'b' }, [
+            h('div', { key: 't', className: 't' }, item.title),
+            h('div', { key: 'e', className: 'e' }, item.evidence),
+            h('div', { key: 'c', className: 'c' }, `${item.cause}${item.card ? ` · 卡 ${item.card}` : ''}`),
+          ]),
+        ]));
+        const copyText = ['Crop 健康度：' + ((data.summary || {}).headline || '')]
+          .concat((data.diagnostics || []).filter((d) => d.severity !== 'info')
+            .map((d) => `- ${d.title}：${d.evidence}${d.card ? `（卡 ${d.card}）` : ''}`))
+          .join('\n');
+        const diagCard = h('div', { key: 'diag', className: 'crop-card' }, [
+          h('div', { key: 'c', className: 'crop-muted', style: S.caption }, '诊断 · 哪些工具在一线是哑的'),
+          diagnostics.length ? diagnostics : h('div', { key: 'e', className: 'crop-muted', style: S.quiet }, '没有发现问题。'),
+          h('div', { key: 'a', style: { display: 'flex', justifyContent: 'flex-end', marginTop: 8 } },
+            h('button', {
+              type: 'button',
+              className: 'crop-chip',
+              onClick: () => { navigator.clipboard?.writeText(copyText).catch(() => {}); },
+            }, '复制修复指令')),
+        ]);
+
+        return [
+          summaryCard,
+          tableCard('passive', '被动采集', data.passive || [], false),
+          tableCard('active', 'AI 主动上报', data.active || [], true),
+          diagCard,
+        ];
+      })();
+
+      return h('div', { className: 'crop-global' }, mode === 'health'
+        ? [head, ...healthNodes]
+        : [head, loadingCard, metrics, chart, improvements, pitfalls, works]);
     }
 
     /** Sidebar glyph for the global panel row; the shell owns the row itself. */

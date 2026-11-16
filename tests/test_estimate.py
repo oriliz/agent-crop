@@ -146,7 +146,7 @@ class EstimateLadderTest(unittest.TestCase):
         first = self.core.miss_nudge(1)
         second = self.core.miss_nudge(1)
         self.assertIn("[crop]", first)
-        self.assertIn("crop_report", first)
+        self.assertIn("crop_update", first)
         self.assertNotEqual(first, second, "two nudges in a row should not repeat")
 
 

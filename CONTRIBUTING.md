@@ -115,7 +115,7 @@ git push -u origin fix/status-line-claim
 这是直接进 AI 上下文的字，改一句话就改变所有用户机器上 AI 的行为，还要算 token。
 
 - DSH 侧：常驻系统提示段 `crop:protocol`，在 `dsh/lib/index.js`；每回合首步一行工作状态、超红线一行提醒
-- Claude 侧：hooks 注入（`hooks/claude-hooks.json` → `core/probe_hook.py`）与 MCP 工具 `probe_report`（`.mcp.json` → `core/probe_mcp_server.py`）
+- Claude 侧：hooks 注入（`hooks/claude-hooks.json` → `core/probe_hook.py`）与 MCP 工具 `crop`（`.mcp.json` → `core/probe_mcp_server.py`）
 
 ### 3. 面板客户端
 

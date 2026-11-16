@@ -6,6 +6,7 @@ loopback origins are echoed back. These tests pin that contract.
 """
 
 import http.client
+import json
 import os
 import sys
 import tempfile
@@ -79,10 +80,34 @@ class CorsHeaderTest(unittest.TestCase):
         self.assertIsNone(response.getheader("Access-Control-Allow-Origin"))
 
     def test_all_json_endpoints_are_protected(self):
-        for path in ("/api/summary?days=1", "/api/session", "/api/day?date=2026-11-15"):
+        for path in ("/api/summary?days=1", "/api/session", "/api/day?date=2026-11-15",
+                     "/api/tool-health?days=7", "/api/health"):
             with self.subTest(path=path):
                 self.assertIsNone(self._get(path, origin="https://evil.example").getheader("Access-Control-Allow-Origin"))
                 self.assertIsNotNone(self._get(path, origin="http://127.0.0.1:3082").getheader("Access-Control-Allow-Origin"))
+
+
+    def test_tool_health_payload_shape(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", "/api/tool-health?days=7")
+        response = connection.getresponse()
+        payload = json.loads(response.read())
+        connection.close()
+        self.assertEqual(response.status, 200)
+        for key in ("generated_at", "window", "sessions", "passive", "active", "diagnostics", "summary"):
+            self.assertIn(key, payload)
+        self.assertTrue(any(row["tool"] == "tool" for row in payload["passive"]))
+        self.assertTrue(any(row["tool"] == "probe_report" for row in payload["active"]))
+
+    def test_process_health_identity_is_not_the_health_tab(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", "/api/health")
+        response = connection.getresponse()
+        payload = json.loads(response.read())
+        connection.close()
+        self.assertEqual(payload["ok"], True)
+        self.assertIn("pid", payload)
+        self.assertNotIn("passive", payload)
 
 
 if __name__ == "__main__":
