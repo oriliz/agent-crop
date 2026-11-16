@@ -679,6 +679,8 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-pair--urgent { border-left: 3px solid #e5484d; background: rgba(239, 68, 68, .06); }
 .crop-pair--think { border-left: 3px solid #e8c46a; background: rgba(232, 196, 106, .06); }
 .crop-iv-tag--think { color: #1a1608; background: #e8c46a; font-weight: 700; }
+.crop-iv-tag--self { color: #1a1608; background: #f0d48a; font-weight: 700; }
+.crop-pair--self { border-left: 3px solid #f0d48a; background: rgba(240, 212, 138, .05); }
 .crop-pair--hl { background: rgba(120, 160, 255, .10); }
 .crop-pair--flash { animation: cropFlash 1.4s ease; }
 @keyframes cropFlash { 0% { background: rgba(240, 212, 138, 0); } 25% { background: rgba(240, 212, 138, .22); } 100% { background: rgba(240, 212, 138, 0); } }
@@ -1086,7 +1088,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('span', { key: 'cap', className: 'crop-muted crop-small' }, '本会话反思'),
           h('span', { key: 'badge', className: 'crop-badge' }, '自评 · 待复核'),
           h('span', { key: 'counts', className: 'crop-muted crop-small' },
-            `提醒 ${whips.length} 次 · 窗口内问题 ${windowInterventions.length} 条`,
+            `提醒 ${whips.length} 次 · 窗口内问题 ${windowInterventions.length} 条 · 自驱 ${data.stats ? (data.stats.self_driven || 0) : 0} 次`,
             fixCount ? ` · 要改 ${fixCount}` : '',
             thinkCount ? ` · 要想办法 ${thinkCount}` : ''),
         ]),
@@ -1094,13 +1096,14 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           ? windowInterventions.map((item, index) => {
               const urgent = item.verdict === 'not-justified';
               const needsIdea = urgent && !item.improve;
+              const selfDriven = (item.origin || (item.reply_to ? 'reminder' : 'self')) === 'self';
               const when = item.at && started ? `第 ${Math.max(1, Math.round((item.at - started) / 60000))} 分钟` : '';
               const state = item.phase === 'blocked' ? '卡点' : item.phase === 'end' ? '收尾' : item.phase ? '进行中' : '';
               const meta = [when, state, item.category ? enumLabel('category', item.category) : ''].filter(Boolean).join(' · ');
               return h('div', {
                 key: `iv${index}`,
                 id: `crop-iv-${index}`,
-                className: `crop-pair${urgent && !needsIdea ? ' crop-pair--urgent' : ''}${needsIdea ? ' crop-pair--think' : ''}${hoverIv === index ? ' crop-pair--hl' : ''}${flashIv === index ? ' crop-pair--flash' : ''}`,
+                className: `crop-pair${urgent && !needsIdea ? ' crop-pair--urgent' : ''}${needsIdea ? ' crop-pair--think' : ''}${selfDriven ? ' crop-pair--self' : ''}${hoverIv === index ? ' crop-pair--hl' : ''}${flashIv === index ? ' crop-pair--flash' : ''}`,
                 onMouseEnter: () => {
                   const first = markerLinks.find((item) => item.link === index);
                   setHoverIv(index);

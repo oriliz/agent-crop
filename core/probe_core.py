@@ -591,6 +591,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                 break
     except Exception:
         pass
+    record["origin"] = "reminder" if record.get("reply_to") else "self"
 
     append_jsonl(os.path.join(paths()["reports_dir"], f"{today()}.jsonl"), record)
     write_runtime(sid, workspace, block_start)
@@ -1841,6 +1842,7 @@ def _session_stats(events: list[dict]) -> dict:
         "failed_tools": sum(1 for e in tools if e.get("is_error")),
         "needs_fix": len(needs_fix),
         "needs_idea": len(needs_idea),
+        "self_driven": sum(1 for e in reports if (e.get("origin") or "self") == "self" and e.get("cause")),
     }
 
 
@@ -1865,6 +1867,7 @@ def _session_interventions(events: list[dict]) -> list[dict]:
             "verdict": verdict,
             "category": str(event.get("category") or ""),
             "reply_to": event.get("reply_to"),
+            "origin": event.get("origin") or ("reminder" if event.get("reply_to") else "self"),
         })
         if len(out) >= 8:
             break
