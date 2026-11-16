@@ -139,6 +139,16 @@ Agent Crop 把这件事记了下来：同一个命令反复翻 help、反复试�
 
 ![全局面板的健康度 tab：健康构成环形图、被动采集/AI 主动上报两张表、诊断清单](docs/assets/panel-health.jpg)
 
+同一份健康度也给了 AI 和脚本两个入口：
+
+```bash
+crop health --days 7          # 人读：一句话结论 + 问题 + 每个工具一行
+crop health --json            # 机器读：完整 health_summary
+```
+
+- DSH 插件：工具 `crop_health`（参数 `days` / `host`），怀疑数据不可信时直接调。
+- Claude Code（MCP）：`crop_health`，与 `crop_update` 并列暴露。
+
 诚实说四点：
 
 - 指标还很少，图只有堆叠柱；没有筛选、对比表、导出。

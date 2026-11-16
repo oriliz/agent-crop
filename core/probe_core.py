@@ -2545,3 +2545,39 @@ def _median(values: list[float]) -> float:
     if len(ordered) % 2:
         return float(ordered[mid])
     return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def format_health(summary: dict) -> str:
+    """把 health_summary 的输出变成一段人能读、AI 也能直接吃的文本。"""
+    window = summary.get("window") or {}
+    sessions = summary.get("sessions") or {}
+    works = summary.get("works") or {}
+    stats = summary.get("summary") or {}
+    lines = [
+        f"Crop 健康度 · 近 {window.get('days', 7)} 天 · "
+        f"{sessions.get('eligible', 0)} 个有效会话 · "
+        f"工作收尾 {works.get('ended', 0)}/{works.get('started', 0)}",
+        str(stats.get("headline") or ""),
+    ]
+    problems = [d for d in summary.get("diagnostics") or [] if d.get("severity") != "info"]
+    for item in problems:
+        card = f"（卡 {item['card']}）" if item.get("card") else ""
+        lines.append(f"- {item['title']}：{item['evidence']}{card}")
+    lines.append("按工具：")
+    for row in (summary.get("passive") or []) + (summary.get("active") or []):
+        mark = {"green": "绿", "yellow": "黄", "red": "红", "gray": "灰"}.get(row.get("lamp"), "?")
+        if row.get("class") == "on_demand":
+            detail = f"{row['events']} 次（按需）"
+        elif row.get("status") == "not-shipped":
+            detail = "未上线"
+        else:
+            cover = row.get("session_coverage")
+            cover_text = "—" if cover is None else f"{row.get('coverage_numerator')}/{row.get('coverage_denominator')}"
+            detail = f"覆盖 {cover_text} · 完整 {float(row.get('field_completeness') or 0):.0%}"
+            if row.get("stage_closure") is not None:
+                detail += f" · 闭环 {float(row['stage_closure']):.0%}"
+            missing = row.get("missing_fields") or {}
+            if missing:
+                detail += " · 缺 " + "、".join(f"{k}×{v}" for k, v in missing.items())
+        lines.append(f"  [{mark}] {row.get('label')} {row.get('tool')}：{detail}")
+    return "\n".join(line for line in lines if line)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal stdio MCP server exposing the crop_update tool.
+"""Minimal stdio MCP server exposing the crop_update and crop_health tools.
 
 The Claude Code plugin starts this process through .mcp.json.  It speaks
 newline-delimited JSON-RPC on stdin/stdout and writes only to stderr for logs.
@@ -94,6 +94,23 @@ def fail(request_id, code: int, message: str) -> None:
     send({"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}})
 
 
+HEALTH_TOOL = {
+    "name": "crop_health",
+    "description": (
+        "Inspect how healthy the crop collectors are: per-tool coverage, field completeness, "
+        "work closure, and generated diagnostics. Use it before trusting numbers or when asked "
+        "whether collection is working."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "days": {"type": "number", "description": "Window in days (default 7)."},
+            "host": {"type": "string", "description": "Optional host filter, e.g. dsh / claude-code."},
+        },
+    },
+}
+
 def call_tool(arguments: dict) -> dict:
     if core is None:
         return {"content": [{"type": "text", "text": "probe core unavailable"}], "isError": True}
@@ -135,9 +152,21 @@ def main() -> None:
         elif method in ("notifications/initialized", "initialized"):
             continue
         elif method == "tools/list":
-            respond(request_id, {"tools": [TOOL]})
+            respond(request_id, {"tools": [TOOL, HEALTH_TOOL]})
         elif method == "tools/call":
             name = params.get("name")
+            if name == "crop_health":
+                arguments = params.get("arguments") or {}
+                try:
+                    summary = core.health_summary(
+                        float(arguments.get("days") or 7.0),
+                        host_filter=arguments.get("host") or None,
+                    )
+                    text = core.format_health(summary)
+                    respond(request_id, {"content": [{"type": "text", "text": text}], "isError": False})
+                except Exception as exc:
+                    respond(request_id, {"content": [{"type": "text", "text": f"crop_health failed: {exc}"}], "isError": True})
+                continue
             if name != TOOL_NAME and name not in LEGACY_TOOL_NAMES:
                 fail(request_id, -32601, f"unknown tool: {name}")
                 continue

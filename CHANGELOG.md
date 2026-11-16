@@ -25,6 +25,12 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
   - 统计纪律：排除 < 2 turn 的会话；闭环按「会话 × 工作」配对，避免同一 work_id 跨会话算成已收尾。
 - 测试：`tests/test_health.py` 7 条聚合单测 + `/api/tool-health` 端点契约测试。
 
+### Added（新增）
+
+- `crop health` 命令：`--days` / `--host` / `--json`，输出一句话结论、问题清单和每个工具一行；
+  同一份数据也通过 DSH 工具 `crop_health` 和 MCP 工具 `crop_health` 暴露给 AI。
+- 安装副本更新到本次版本（`~/.agentcrop/current`），本地面板默认跑在 `127.0.0.1:8765`。
+
 ### Changed（变更）
 
 - MCP 服务名从 `probe` 改为 `crop`。多个 MCP 同时挂载时，`probe` 和产品名对不上，

@@ -399,6 +399,36 @@ export function apply(ctx, config = {}) {
     },
   };
 
+  const healthTool = {
+    name: 'crop_health',
+    description:
+      '看采集器健康度：每个工具在自己锚点上的覆盖率、字段完整率、工作闭环率，以及按指标生成的诊断。'
+      + '怀疑数据不可信、要复盘、或用户问“采集有没有问题”时先调它。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        days: { type: 'number', description: '窗口天数，默认 7' },
+        host: { type: 'string', description: '可选：只看某个宿主，如 dsh / claude-code' },
+      },
+      required: [],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { ok: { type: 'boolean' }, text: { type: 'string' } },
+        required: ['ok', 'text'],
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute(args) {
+      const text = callCore({ op: 'health_text', args: { days: args?.days ?? 7, host: args?.host || null } });
+      if (!text) throw new Error('crop_health could not be computed');
+      return { ok: true, text };
+    },
+  };
+
   const worksTool = {
     name: 'crop_works',
     description: 'List works in progress on this machine (newest first). Use it when you are not sure which work this session should continue.',
@@ -440,6 +470,7 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => ctx.tools.register(legacyTool), 'agent-crop.probe_report (alias)');
   ctx.effect(() => ctx.tools.register(legacyCropReportTool), 'agent-crop.crop_report (alias)');
   ctx.effect(() => ctx.tools.register(worksTool), 'agent-crop.crop_works');
+  ctx.effect(() => ctx.tools.register(healthTool), 'agent-crop.crop_health');
   ctx.effect(() => ctx.tools.register(reviewTool), 'agent-crop.crop_review');
   ctx.effect(() => ctx.tools.register(workTool), 'agent-crop.crop_work');
 

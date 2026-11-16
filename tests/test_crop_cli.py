@@ -28,6 +28,22 @@ class StatusViewTest(unittest.TestCase):
         for name in ("KIT_DATA_DIR", "KIT_HOST"):
             os.environ.pop(name, None)
 
+    def test_health_cli_json_and_text(self):
+        self.core.record_session_start("s1", "/tmp/ws")
+        self.core.record_prompt("s1", "开工", "/tmp/ws")
+        self.core.record_tool("s1", "read", False)
+        cli = os.path.join(ROOT, "bin", "crop")
+        result = subprocess.run([sys.executable, cli, "health", "--json", "--days", "7"],
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertIn("passive", payload)
+        self.assertIn("diagnostics", payload)
+        text = subprocess.run([sys.executable, cli, "health", "--days", "7"],
+                              env=self.env, capture_output=True, text=True)
+        self.assertEqual(text.returncode, 0, text.stderr)
+        self.assertIn("Crop 健康度", text.stdout)
+
     def test_status_counts_today_events(self):
         core = self.core
         core.record_session_start("s1", "/tmp/ws")

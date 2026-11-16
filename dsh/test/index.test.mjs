@@ -45,6 +45,7 @@ test('registers probe_report with the documented schema', async (t) => {
   assert.ok(tool, 'crop_update should be registered');
   assert.ok(ctx.registered.some((item) => item.name === 'probe_report'), 'probe_report alias stays for old prompts');
   assert.ok(ctx.registered.some((item) => item.name === 'crop_report'), 'crop_report alias stays for older prompts');
+  assert.ok(ctx.registered.some((item) => item.name === 'crop_health'), 'crop_health is registered');
   assert.ok(ctx.registered.some((item) => item.name === 'crop_works'));
   assert.ok(ctx.registered.some((item) => item.name === 'crop_review'));
   assert.ok(ctx.registered.some((item) => item.name === 'crop_work'));
