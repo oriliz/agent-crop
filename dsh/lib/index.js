@@ -44,7 +44,7 @@ export const PROTOCOL_TEXT = [
   '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
   '- 用户表达不满、否定或要求重做时：在当次 crop_update 里带上 rework（redo/major/minor）和 sentiment，或单独调 crop_review；报完工作不等于报完返工，两步都要做。',
   '- 报慢或卡点的时候，除了 cause 再补一句 improve=下次可以怎么改进（一句话，供复盘参考，不一定被采纳）。',
-  '- 用户确认完成后再 crop_update(phase="end")，写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',
+  '- 用户确认完成后再 crop_update(phase="end")：what 必填（这次做了什么），cost / next_time 可选；顺手把 artifact 写上。',
   '- 看到“待清退”的工作：先问用户要继续 / 挂起 / 清退，再用 crop_work 执行，不要自己决定。',
 ].join('\n');
 
@@ -260,7 +260,7 @@ export function apply(ctx, config = {}) {
           enum: ['justified', 'not-justified', 'unknown'],
           description: '你是否认为这次变慢/超时是合理的：任务本身难 = justified；自己走错路 = not-justified',
         },
-        what: { type: 'string', description: 'end 时写：这次做了什么（一句话）' },
+        what: { type: 'string', description: 'end 时必填：这次做了什么（一句话）' },
         cost: { type: 'string', description: 'end 时写：时间花在哪（一句话）' },
         next_time: { type: 'string', description: 'end 时写：下次怎么更好（一句话）' },
         artifact: { type: 'string', description: '可选：这次产出了什么（路径 / 决定 / 稿子名）' },
