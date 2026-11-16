@@ -133,7 +133,7 @@ function renderChart(period){
 function renderWorkList(rows){
   const body = document.getElementById('works');
   if (!rows || !rows.length) {
-    body.innerHTML = '<tr><td colspan="6" class="muted">这段时间还没有工作记录。先用 probe_report 认领一条。</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="muted">这段时间还没有工作记录。先用 crop_update 认领一条。</td></tr>';
     return;
   }
   body.innerHTML = rows.map(row => {

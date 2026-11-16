@@ -5,8 +5,8 @@ Claude Code 侧的工具 id 由「插件 + 服务名 + 工具名」拼出来，�
 服务，发 JSON-RPC，看它自己怎么报名字。
 
 另外锁两件事：
-- 工具名应该是通用名 `crop`（后面还要承载工作生命周期、改进记录等，不再只做 report）；
-- 旧名 `probe_report` 作为调用别名保留，避免升级后旧会话直接报 unknown tool。
+- 工具名应该是 `crop_update`（它做的是工作状态更新，后面还要承载工作生命周期、改进记录等，不再只做 report）；
+- 旧名 `crop` / `probe_report` 作为调用别名保留，避免升级后旧会话直接报 unknown tool。
 """
 
 import json
@@ -71,11 +71,11 @@ class McpServerContractTest(unittest.TestCase):
         reply = self.initialize()
         self.assertEqual(reply["result"]["serverInfo"]["name"], "crop")
 
-    def test_tools_list_exposes_generic_tool_name(self):
+    def test_tools_list_exposes_crop_update(self):
         self.initialize()
         reply = self.rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         names = [tool["name"] for tool in reply["result"]["tools"]]
-        self.assertEqual(names, ["crop"])
+        self.assertEqual(names, ["crop_update"])
 
     def test_crop_tool_records_a_report(self):
         self.initialize()
@@ -85,7 +85,7 @@ class McpServerContractTest(unittest.TestCase):
                 "id": 3,
                 "method": "tools/call",
                 "params": {
-                    "name": "crop",
+                    "name": "crop_update",
                     "arguments": {
                         "phase": "start",
                         "task_id": "mcp-contract",
@@ -96,6 +96,26 @@ class McpServerContractTest(unittest.TestCase):
         )
         self.assertFalse(reply["result"]["isError"])
         self.assertIn("recorded start", reply["result"]["content"][0]["text"])
+
+    def test_legacy_crop_tool_name_still_works(self):
+        self.initialize()
+        reply = self.rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {
+                    "name": "crop",
+                    "arguments": {
+                        "phase": "progress",
+                        "task_id": "mcp-contract",
+                        "summary": "crop 旧名兼容",
+                        "expect_min": 5,
+                    },
+                },
+            }
+        )
+        self.assertFalse(reply["result"]["isError"])
 
     def test_legacy_tool_name_still_works(self):
         self.initialize()

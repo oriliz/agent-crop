@@ -747,7 +747,7 @@ def miss_nudge(streak: int) -> str:
             return voice.miss(int(streak or 0), paths().get("voice"))
         except Exception:
             pass
-    return "[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_report 写一行。"
+    return "[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_update 写一行。"
 
 
 def record_session_end(sid: str) -> None:
@@ -908,7 +908,7 @@ def ago(ms: int) -> str:
 
 
 ESTIMATE_HINT = (
-    "绑定后先报预期（不阻断，但必须报）：crop_report 带 expect_min=多少分钟 + expect_why=一句为什么。"
+    "绑定后先报预期（不阻断，但必须报）：crop_update 带 expect_min=多少分钟 + expect_why=一句为什么。"
     "提醒按你报的数字算——在你报的时长内不会有人抽鞭子；觉得报少了，就带着理由改。"
 )
 
@@ -923,7 +923,7 @@ def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | No
             return bound_line
     if not tasks:
         return ("[crop] 本机当前没有进行中的工作。新开一条："
-                "crop_report(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\", "
+                "crop_update(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\", "
                 "expect_min=预估分钟, expect_why=\"一句为什么\")。"
                 "提醒按你报的时长算：在你自己报的范围内不会被打扰。")
     claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
@@ -942,7 +942,7 @@ def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | No
     example = tasks[0].get("task_id")
     lines.append(
         "哪个属于本会话？先判断是接着做还是新开（先绑定，再干活）：接着做用 "
-        f'crop_report(phase="start", task_id="{example}")；新开用 2-3 个词的短名。'
+        f'crop_update(phase="start", task_id="{example}")；新开用 2-3 个词的短名。'
     )
     lines.append(ESTIMATE_HINT)
     lines.append("尽量让一个会话只对应一件工作；要做的其实是几件事就拆开，一件一件来。")
@@ -959,7 +959,7 @@ def format_reminder(minutes: float, config: dict) -> str:
         "先别急着继续，确认三件事：",
         "1. 还走在正确的路上吗？有没有更快的路径？",
         "2. 能不能先给用户一个阶段性交付？",
-        "3. 安抚用户，并把判断写进 crop_report（cause + verdict）。",
+        "3. 安抚用户，并把判断写进 crop_update（cause + verdict）。",
         "请做两件事：",
     ]
     if config.get("user_facing", True):
@@ -968,14 +968,14 @@ def format_reminder(minutes: float, config: dict) -> str:
             "后面会把这段记下来优化。"
         )
         lines.append(
-            '2. 调用 probe_report：phase="blocked" 或 "progress"，task_id="...", '
+            '2. 调用 crop_update：phase="blocked" 或 "progress"，task_id="...", '
             'summary="现在在做什么", cause="为什么慢", next="下一步", '
             'category="serial-wait|repeat-pitfall|design-churn|decision-batching|'
             'tool-misuse|no-evidence|spec-drift|human-wait|other"。'
         )
     else:
         lines.append(
-            '1. 调用 probe_report：phase="blocked" 或 "progress"，task_id="...", '
+            '1. 调用 crop_update：phase="blocked" 或 "progress"，task_id="...", '
             'summary="现在在做什么", cause="为什么慢", next="下一步", category="..."。'
         )
     return "\n".join(lines)
@@ -1117,7 +1117,7 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
             yellow = float(load_config().get("yellow_min", 10.0))
             overtime = "已超过黄线" if minutes >= yellow else "未超时"
             clock = f"已进行 {fmt_minutes(minutes)}，{overtime}（黄线 {fmt_minutes(yellow)}）"
-            tail = ("还没报预期时长：开工或下次上报时给个数字（crop_report 带 expect_min），"
+            tail = ("还没报预期时长：开工或下次上报时给个数字（crop_update 带 expect_min），"
                     "鞭子就按你的数字算。留意分叉与返工；有变化就更新一行。")
         return (
             f"[crop] 当前工作：{aim}（{current.get('task_id')}）{note}。"
@@ -1136,7 +1136,7 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
     example = tasks[0].get("task_id")
     lines.append(
         "哪个属于本会话？先绑定再干活：接着做用 "
-        f'crop_report(phase="start", task_id="{example}")；'
+        f'crop_update(phase="start", task_id="{example}")；'
         "新开用 2-3 个词的短名。尽量一个会话只对应一件工作。"
     )
     lines.append(ESTIMATE_HINT)

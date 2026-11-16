@@ -15,7 +15,7 @@ CWD = "/Users/lizhi/AgentProjects/agent-crop"
 PROMPTS = [
     ("warmup", "用 bash 数一下 README 有多少行，一句话回答。"),
     ("work", "用 bash 数一下 core 目录里有多少个 py 文件，一句话回答。"),
-    ("fork", "这是一件新的事：请调 crop_report(phase=\"start\", task_id=\"replay-fork\", summary=\"回放分叉测试\")，"
+    ("fork", "这是一件新的事：请调 crop_update(phase=\"start\", task_id=\"replay-fork\", summary=\"回放分叉测试\")，"
              "然后用 bash 看一眼 bin 目录有几个文件。"),
     ("continue", "继续做：把 README 的前三行内容用一句话概括。"),
     ("continue2", "再看看 docs 目录有几个 md 文件，一句话回答。"),

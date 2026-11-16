@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal stdio MCP server exposing the crop tool.
+"""Minimal stdio MCP server exposing the crop_update tool.
 
 The Claude Code plugin starts this process through .mcp.json.  It speaks
 newline-delimited JSON-RPC on stdin/stdout and writes only to stderr for logs.
@@ -20,9 +20,9 @@ SERVER_NAME = "crop"
 SERVER_VERSION = "0.4.0"
 PROTOCOL_VERSION = "2024-11-05"
 
-TOOL_NAME = "crop"
+TOOL_NAME = "crop_update"
 # 旧名保留为调用别名：升级后旧会话/旧配置仍能用，tools/list 只暴露新名。
-LEGACY_TOOL_NAMES = {"probe_report"}
+LEGACY_TOOL_NAMES = {"crop", "probe_report"}
 
 TOOL = {
     "name": TOOL_NAME,

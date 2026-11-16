@@ -14,12 +14,15 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
 
 - MCP 服务名从 `probe` 改为 `crop`。多个 MCP 同时挂载时，`probe` 和产品名对不上，
   看不出它属于 Agent Crop。MCP `serverInfo.name` 同步改为 `crop`。
-- MCP 工具名从 `probe_report` 改为通用名 `crop`：这个工具后面还会承载工作生命周期、
-  改进记录等内容，叫 `*_report` 会越用越不对。旧名 `probe_report` 保留为**调用别名**
-  （`tools/list` 只暴露 `crop`），旧会话/旧配置仍能调用。
-  Claude Code 侧工具名变为 `mcp__plugin_agent-crop_crop__crop`。
-  **迁移**：升级后重载 Claude Code 插件（重启会话生效）；如果有按旧服务名或旧工具名
-  写的权限白名单（`mcp__plugin_agent-crop_probe*`），需要同步改名。
+- 工具名统一为 `crop_update`（DSH 原 `crop_report`，MCP 原 `probe_report`）。
+  这个工具做的是「工作状态更新」——绑定、推进、卡点、收尾、预估、归因，不只是打报告；
+  叫 `*_report` 会和 CLI 的 `crop report`（生成汇总报告）混，也不利于以后继续加内容。
+  旧名 `crop_report` / `probe_report` / `crop` 全部保留为**调用别名**
+  （`tools/list` 只暴露 `crop_update`），旧会话、旧提示词仍能调用。
+  Claude Code 侧工具名变为 `mcp__plugin_agent-crop_crop__crop_update`。
+  **迁移**：升级后重载插件 / 重启会话生效；如果有按旧服务名或旧工具名写的权限白名单
+  （`mcp__plugin_agent-crop_probe*`），需要同步改名。数据层不受影响：
+  事件名仍是 `probe_report`，历史数据不需要迁移。
 
 ## [0.6.0] — 2026-11-15
 

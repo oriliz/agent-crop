@@ -198,7 +198,7 @@ class StatusViewTest(unittest.TestCase):
                            {"sid": "s1", "workspace": "/tmp/ws"})
         hint = core.format_start_hint(core.open_tasks("/tmp/ws", 3))
         self.assertIn("绑定", hint)
-        self.assertIn("crop_report", hint)
+        self.assertIn("crop_update", hint)
         self.assertIn('task_id="t1"', hint)
         self.assertNotIn("crop switch", hint)
 

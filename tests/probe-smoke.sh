@@ -41,7 +41,7 @@ PY
 echo "== post-tool reminder =="
 REMINDER="$(printf '%s' '{"session_id":"smoke-1","tool_name":"Bash","tool_response":{"stdout":"ok"},"hook_event_name":"PostToolUse"}' \
   | python3 "$ROOT/core/probe_hook.py" post-tool)"
-printf '%s\n' "$REMINDER" | grep -q 'crop_report' || { echo "missing reminder"; exit 1; }
+printf '%s\n' "$REMINDER" | grep -q 'crop_update' || { echo "missing reminder"; exit 1; }
 
 echo "== report via the DSH bridge =="
 printf '%s' '{"op":"record_report","args":{"phase":"blocked","task_id":"Smoke Test!","summary":"查资料","cause":"资料太散","next":"先定目录","category":"tool-misuse"},"context":{"sid":"smoke-1","workspace":"/tmp/smoke"}}' \
