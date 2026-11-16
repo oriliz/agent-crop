@@ -9,6 +9,12 @@
 - `main` 受保护：走 PR，一个 PR 一件事；文档 PR 只带文档提交。
 - 仓库可能同时有别的会话在改：先 `git worktree add ../agent-crop-<task> -b <task>`，不要在共享工作树上切分支。
 
+## 记录约定（Crop 台账）
+
+- 同一功能的一次迭代只用一个 `task_id`；截图、验证、合并算 `progress`，不单开工作。
+- `expect_min` 只在范围真的变了时改，并写进 `expect_why`；不要为了催自己把预期改小。
+- `end` 之后交付、汇报、截图不用重新绑定；只是收尾追问就记 `category="side-issue"`。
+
 ## 事实来源
 
 - 数据口径唯一真源：`core/probe_core.py`；面板与查询只读它。

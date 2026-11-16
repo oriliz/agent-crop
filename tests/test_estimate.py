@@ -90,15 +90,37 @@ class EstimateLadderTest(unittest.TestCase):
                  if e.get("ev") == "reminder"]
         self.assertEqual(tiers[-1], "yellow")
 
-    def test_cooldown_is_per_tier(self):
+    def test_cooldown_is_shared_across_tiers(self):
         self.start_work(expect_min=40)
         self.pretend(33, 40)
         self.assertNotEqual(self.core.maybe_work_reminder(self.sid), "")
         # same tier right after: cooled down
         self.assertEqual(self.core.maybe_work_reminder(self.sid), "")
-        # next tier is a different contract: it still gets through
-        self.pretend(48, 40)
-        self.assertNotEqual(self.core.maybe_work_reminder(self.sid), "")
+        # 档位升级不再绕过冷却：同一分钟内最多一条（卡片 82f42c50）
+        self.pretend(120, 40)
+        self.assertEqual(self.core.maybe_work_reminder(self.sid), "")
+
+    def test_revision_restarts_the_window_instead_of_going_overdue(self):
+        self.start_work(expect_min=40)
+        now = self.core.now_ms()
+        self.core.work_health = lambda work_id=None: {
+            "work_id": "est-work", "goal": "做点事", "minutes": 25.0,
+            "baseline": 30.0, "ratio": 0.8, "level": "yellow",
+            "expect_min": 2.0, "expect_why": "", "expect_changes": 1,
+            "expect_set_at": now, "expect_revised_at": now,
+        }
+        # 把预期改小后不该在同一分钟直接 overdue，先给一个冷静窗口
+        self.assertEqual(self.core.maybe_work_reminder(self.sid), "")
+
+    def test_report_returns_the_revision_for_the_tool_result(self):
+        self.start_work(expect_min=40)
+        record = self.core.record_report(
+            {"task_id": "est-work", "summary": "改口", "phase": "progress", "expect_min": 60},
+            {"sid": self.sid, "workspace": "/tmp/ws"},
+        )
+        self.assertEqual(record["estimate_revised"]["from"], 40.0)
+        self.assertEqual(record["estimate_revised"]["to"], 60.0)
+        self.assertEqual(record["estimate_revised"]["count"], 1)
 
     # -- estimate written, revised, counted --------------------------------
     def test_start_stores_the_estimate(self):

@@ -56,10 +56,12 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `adjustment` | 采纳了一个改进 | `work_id` `before` `after` `evidence` | D13 |
 | `tool_churn` | 工具层的重复/失败（事实信号，**不是返工**） | `kind`(repeat-tool) `tool` `count` `failures` | D3 |
 | `self_review` | AI 判断的返工档次（redo/major/minor/none） | `work_id` `rework` `sentiment` `reason` | D3 / D5 |
+| `work_summary` | 工作结束时趁记忆热写的复盘 | `work_id` `what` `cost` `next_time` `artifact` | D1 / D13 |
+| `estimate_revised` | 改口预期工时 | `work_id` `from` `to` `reason` | 估准率 |
+| `work_switch` | 会话从一个未收尾的工作切到另一个 | `sid` `from` `to` | 切工作可见（3681c288） |
 
 `tool` 事件的 `name` 来自 `tool/call`（插件先记 callId→name，`tool/result` 再回填）；
 早期数据里出现过 callId 当工具名的情况，属于 v1 之前的问题，不回溯修。
-| `work_summary` | 工作结束时趁记忆热写的复盘 | `work_id` `what` `cost` `next_time` | D1 / D13 |
 
 ### 1.3 派生而非新增采集
 

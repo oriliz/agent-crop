@@ -44,8 +44,8 @@ function fakeSession(id = 's1') {
 test('protocol pins the tone: colleague, not customer support', async () => {
   assert.ok(PROTOCOL_TEXT.includes('说话方式'), 'tone block must exist');
   assert.ok(PROTOCOL_TEXT.includes('同事吐槽'), 'must say colleague, not customer support');
-  assert.ok(PROTOCOL_TEXT.includes('牛马味'), 'must carry a before/after example');
-  assert.ok(PROTOCOL_TEXT.includes('梗是包装，不是内容'), 'jokes must not replace facts');
+  assert.ok(PROTOCOL_TEXT.includes('自嘲'), 'must carry the self-deprecating tone');
+  assert.ok(PROTOCOL_TEXT.includes('梗是包装'), 'jokes must not replace facts');
   assert.ok(PROTOCOL_TEXT.includes('expect_min'), 'estimate contract stays in the protocol');
 });
 
@@ -101,7 +101,7 @@ test('tool execute records a report through the Python core', async (t) => {
 test('protocol forbids starting work before claiming and forces side issues aside', async () => {
   const source = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8');
   assert.match(source, /phase="progress"/);
-  assert.match(source, /绑定只用这个工具/);
+  assert.match(source, /先绑定，再动手/);
   assert.match(source, /category="side-issue"/);
   assert.match(source, /禁止新建任务/);
 });
@@ -204,15 +204,20 @@ test('asks for a report after a substantial turn without one', async (t) => {
   const event = ctx.handlers.get('session/event');
   const preStep = ctx.handlers.get('agent/pre-step');
 
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
+  // 先绑定一件活，再构造一轮“用了工具但没上报”的长回合
   event(session, {
     type: 'user/message',
     data: { source: { kind: 'user' }, content: [{ type: 'text', text: '干活' }] },
   });
+  await tool.execute({ phase: 'start', task_id: 'miss-work', summary: '干活' }, { agent: { session } });
+  event(session, { type: 'turn/end', data: {} });
+
   event(session, { type: 'tool/call', data: { callId: 'c1', name: 'bash' } });
   event(session, { type: 'tool/result', data: { callId: 'c1' } });
   event(session, { type: 'turn/end', data: {} });
 
-  const decision = await preStep({ agent: { session }, turn: 2, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
+  const decision = await preStep({ agent: { session }, turn: 3, step: 1 }, async () => ({ kind: 'enter', messages: [] }));
   assert.ok(decision.messages.some((message) => message.content[0].text.includes('在做什么 / 卡在哪 / 下一步')));
 });
 
@@ -315,7 +320,7 @@ test('first turn honors an existing binding instead of listing candidates', asyn
   );
   const text = decision.messages.map((m) => m.content[0].text).join('\n');
   assert.ok(text.includes('当前工作'), text);
-  assert.ok(!text.includes('哪个属于本会话'), text);
+  assert.ok(!text.includes('先选一条'), text);
 });
 
 test('first turn shows the bound work even after it fell out of the candidates', async (t) => {
@@ -360,7 +365,7 @@ test('first turn shows the bound work even after it fell out of the candidates',
   const text = decision.messages.map((message) => message.content[0].text).join('\n');
   assert.ok(text.includes('当前工作'), text);
   assert.ok(text.includes('甲目标'), text);
-  assert.ok(!text.includes('哪个属于本会话'), text);
+  assert.ok(!text.includes('先选一条'), text);
 });
 
 test('registers the retro-sediment skill for on-demand loading', () => {
@@ -407,4 +412,62 @@ test('ending without sediment returns the nudge, and a sediment pointer is store
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const report = await readFile(join(directory, 'reports', `${day}.jsonl`), 'utf8');
   assert.match(report, /"sediment": "docs:WORKFLOW.md#复盘沉淀"/);
+});
+
+
+test('after an end, delivery tools do not trigger the binding nudge', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const session = fakeSession('s-done');
+  const event = ctx.handlers.get('session/event');
+  const preStep = ctx.handlers.get('agent/pre-step');
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
+
+  event(session, { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '干活' }] } });
+  await tool.execute({ phase: 'start', task_id: 'done-work', summary: '干活' }, { agent: { session } });
+  await tool.execute({ phase: 'end', task_id: 'done-work', summary: '做完了', what: '做完了' }, { agent: { session } });
+
+  // 收尾之后交付、截图、汇报都算收尾动作，不该被要求重新绑定
+  event(session, { type: 'tool/call', data: { callId: 'c1', name: 'gh' } });
+  event(session, { type: 'tool/result', data: { message: { toolCallId: 'c1' } } });
+  const decision = await preStep({ agent: { session }, turn: 2, step: 2 }, async () => ({ kind: 'enter', messages: [] }));
+  const text = decision.messages.map((message) => message.content[0].text).join('\n');
+  assert.ok(!text.includes('还没有绑定'), text);
+});
+
+test('starting another work warns that the old one is still open', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const session = fakeSession('s-switch');
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
+  await tool.execute({ phase: 'start', task_id: 'work-a', summary: '甲' }, { agent: { session } });
+  const second = await tool.execute({ phase: 'start', task_id: 'work-b', summary: '乙' }, { agent: { session } });
+  assert.match(second.recorded, /已从 work-a 切到 work-b/);
+  assert.match(second.recorded, /旧工作/);
+});
+
+test('a revised estimate returns a calm note instead of an instant overdue', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const session = fakeSession('s-revise');
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
+  await tool.execute({ phase: 'start', task_id: 'rev-work', summary: '做', expect_min: 40 }, { agent: { session } });
+  const record = await tool.execute(
+    { phase: 'progress', task_id: 'rev-work', summary: '改口', expect_min: 2, expect_why: '只剩收尾' },
+    { agent: { session } },
+  );
+  assert.match(record.recorded, /改口：40 → 2 分钟/);
+  assert.match(record.recorded, /不会立刻算超时/);
 });
