@@ -55,7 +55,7 @@ window.__ModuleLoader__.load({
     /* Enum values are wire vocabulary; the panel is Chinese. Keep one table
        so every surface (works table, pitfalls, reflection) reads the same. */
     const ENUM_LABELS = {
-      verdict: { justified: '合理', 'not-justified': '不合理', unknown: '不确定' },
+      verdict: { justified: '不用改', 'not-justified': '要改', unknown: '未判定' },
       category: {
         'serial-wait': '串行等待',
         'repeat-pitfall': '重复踩坑',
@@ -668,6 +668,8 @@ body[data-ds-dark-theme] .crop-donut-hole {
 .crop-reflect-meta { display: flex; align-items: center; gap: 6px; margin: 6px 0 5px; font-size: 11.5px; }
 .crop-verdict-tag { font-size: 10.5px; line-height: 17px; padding: 0 8px; border-radius: 999px; border: 1px solid rgba(160, 180, 230, .28); color: #c6d2ea; }
 .crop-verdict-tag--justified { color: #9fd8a8; border-color: rgba(110, 200, 130, .45); }
+.crop-reflect--urgent { border-left: 3px solid #ef4444; background: rgba(239, 68, 68, .07); }
+.crop-reflect--urgent .crop-verdict-tag--not-justified { background: rgba(239, 68, 68, .16); font-weight: 600; }
 .crop-verdict-tag--not-justified { color: #f0a9a9; border-color: rgba(240, 132, 132, .45); }
 .crop-verdict-tag--unknown { color: #a9b6d4; }
 .crop-reflect-cause { line-height: 1.6; color: #b9c6e2; }
@@ -973,7 +975,8 @@ body[data-ds-dark-theme] .crop-page .crop-card {
 
       const reflection = data.reflection || {};
       const improvements = data.improvements || [];
-      const reflect = h('div', { key: 'reflect', className: 'crop-card crop-reflect' },
+      const needsFix = reflection.verdict === 'not-justified';
+      const reflect = h('div', { key: 'reflect', className: `crop-card crop-reflect${needsFix ? ' crop-reflect--urgent' : ''}` },
         h('div', null,
           h('div', { className: 'crop-muted crop-small' }, '本会话反思 ', h('span', { className: 'crop-badge' }, '自评 · 待复核')),
           reflection.verdict || reflection.cause
@@ -981,6 +984,10 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                 h('span', { className: 'crop-muted' }, '判定'),
                 h('span', { className: `crop-verdict-tag crop-verdict-tag--${reflection.verdict || 'unknown'}` },
                   enumLabel('verdict', reflection.verdict || 'unknown')),
+                h('span', { className: 'crop-muted crop-small' },
+                  reflection.verdict === 'justified' ? '这次慢得有道理，不用改'
+                    : reflection.verdict === 'not-justified' ? '这次慢得没道理，要改'
+                      : '还没判定'),
                 h('span', { className: 'crop-muted crop-small' }, [
                   reflection.work_id ? labelOf(reflection.work_id) : '',
                   reflection.revisions ? `改口 ${reflection.revisions} 次` : '',
