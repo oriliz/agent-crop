@@ -1,6 +1,6 @@
 # CI / Release workflow 说明
 
-本目录两个 workflow，全部只使用官方 GitHub Actions，没有第三方 action，也不做任何依赖安装（本仓库是零依赖：Python 侧只用标准库，Node 侧只用内置模块）。
+本目录两个 workflow，全部只使用官方 GitHub Actions，没有第三方 action。Node 侧有一个运行时依赖（`@deepseek-ai/schemastery`），所以两个 workflow 都先 `npm ci`；Python 侧仍然只用标准库，不装任何包。
 
 | 文件 | 名字 | 触发 | 做什么 |
 | --- | --- | --- | --- |
@@ -27,9 +27,15 @@ python 最低 3.10 是因为源码用 PEP604 联合类型（`X | None`）；node
 
 ## release.yml
 
-1. `verify`：原样重跑上面三条测试命令，任一失败则后续 job 不会启动，等于不发版。
-2. `publish`：`setup-node` 配 `registry-url: https://registry.npmjs.org`；先 `npm pack --dry-run` 自检，再 `npm publish --provenance --access public`。
-3. 发布成功后 `gh release create <tag> --title <tag> --generate-notes`，Release 正文用 GitHub 自动 changelog，不手写内容。
+1. `guard`（5 分钟内跑完，最先失败）：**tag 必须等于 `package.json` 的版本**（`v0.7.0` ↔ `0.7.0`）。不一致直接红，不浪费后面几分钟。
+   > 这条是补的：2026-11-16 有人打错版本时，是等 verify 跑完才暴露的。
+2. `verify`：`npm ci` 后原样重跑上面三条测试命令，任一失败则后续 job 不会启动，等于不发版。
+3. `publish`：
+   - 先查 `npm view agent-crop-dsh@<version>`：**该版本已在 npm 上就跳过发布**，只补 Release（本地手动发过之后，重跑流水线不会红）。
+   - 真要发才检查 `NPM_TOKEN`，缺失显式失败。
+   - `npm pack --dry-run` 自检 → `npm publish --provenance --access public`。
+4. `gh release view ... || gh release create ...`：**幂等**。Release 已存在就跳过，不再因为「already exists」把重跑弄红。
+   Release 正文用 GitHub 自动 changelog，不手写。
 
 权限：`contents: write`（建 Release）+ `id-token: write`（provenance 签名）。只在 tag 上触发，PR 与分支 push 都不会进这条流水线。
 

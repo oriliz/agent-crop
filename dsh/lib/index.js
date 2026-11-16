@@ -48,8 +48,76 @@ export const PROTOCOL_TEXT = [
   '- 用户表达不满、否定或要求重做时：在当次 crop_update 里带上 rework（redo/major/minor）和 sentiment，或单独调 crop_review；报完工作不等于报完返工，两步都要做。',
   '- 报慢或卡点的时候，除了 cause 再补一句 improve=下次可以怎么改进（一句话，供复盘参考，不一定被采纳）。',
   '- 用户确认完成后再 crop_update(phase="end")：what 必填（这次做了什么），cost / next_time 可选；顺手把 artifact 写上。',
+  '- 用户确认完成后再 crop_update(phase="end")，写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',
+  '- 收尾时判断这条经验该落到哪：规范→AGENTS.md（一行换一行）、方法→skill、机械→工具、事实→docs、都不成立→none:<原因>；落点写进 sediment，规则见 skill crop-retro。',
   '- 看到“待清退”的工作：先问用户要继续 / 挂起 / 清退，再用 crop_work 执行，不要自己决定。',
 ].join('\n');
+
+// 收尾时没写 sediment 的补救提示：跟着 crop_update 的工具结果一起返回，
+// 比塞进下一轮注入更稳（模型当场能看到，且不会因 turn/end 清空 pending 而丢）。
+const END_SEDIMENT_NUDGE = [
+  '[crop] 收尾了，但还没写沉淀。这条经验落到哪？',
+  '规范→AGENTS.md（一行换一行）｜方法→skill｜机械→工具｜事实→docs｜都没有→none:<原因>。',
+  '补一次 crop_update(phase="end", task_id=同一条, what="补沉淀", summary="补沉淀", sediment=...) 即可，不会重复关单。',
+].join('\n');
+
+// 渐进式披露：常驻协议只留一行指针，完整决策树按需加载。
+const RETRO_SKILL = {
+  name: 'crop-retro',
+  description: '复盘沉淀：收尾时判断一条经验该写到哪一层（AGENTS.md / skill / 工具 / Hook / docs / 不沉淀），以及每条经验必须带的验收判据。',
+  whenToUse: '用户说复盘、复盘结论、沉淀、收尾沉淀、这条经验该写哪时加载。',
+  source: 'runtime',
+  content: [
+    '# 复盘沉淀',
+    '',
+    '把一条复盘结论变成“下次一定生效”的东西。先判断它属于哪一类：',
+    '',
+    '- **规范类**：下次必须怎么做 → 能强制执行的层（AGENTS.md / skill / 工具 / Hook）',
+    '- **事实类**：这次为什么这么定、试过什么不行 → 能检索的层（docs / 记忆）',
+    '',
+    '## 落点决策',
+    '',
+    '| 发现的性质 | 落点 | 要求 |',
+    '| --- | --- | --- |',
+    '| 跨项目永远成立，违反会系统性出事 | 用户全局 `$DSH_HOME/AGENTS.md` | 一行；新增必须挤掉一条旧的 |',
+    '| 本项目成立的规范/门禁 | 仓库根 `AGENTS.md` | 只对 cwd 在本仓库的会话注入 |',
+    '| 固定流程、要判断但判断能枚举 | skill | 触发条件写进 description |',
+    '| 纯机械、高频、输入输出稳定 | 工具（优先 CLI/MCP） | 三条件缺一就别封装 |',
+    '| 必须在生命周期节点强制注入 | Hook | 只放当次必须知道的 |',
+    '| 事实、决策、踩坑 | docs / PR / 评论 | 能检索到、可引用 |',
+    '| 一次性、环境相关 | 不沉淀 | 写 `none:<原因>`，别假装沉淀了 |',
+    '',
+    '## 每条经验必须带四件套',
+    '',
+    '1. **结论**：一句话',
+    '2. **落点**：写到哪个文件的哪一节',
+    '3. **验收判据**：怎么算它生效了（最硬：下次同类任务，同类错误没再犯）',
+    '4. **复查日期**：到期没验证标“待验”；长期零命中就删',
+    '',
+    '缺验收判据的不算沉淀。',
+    '',
+    '## 反模式',
+    '',
+    '- 全塞 AGENTS.md（给所有会话收税，而且最先失效）',
+    '- 写成没有触发条件的散文（“要注意 X”——什么时候注意？）',
+    '- 给一次性任务造工具',
+    '- 用 Hook 干 skill 的活（噪音，狼来了）',
+    '- 造了没人调的工具，却不敢删',
+    '- 同一结论在两层各存一份副本',
+    '',
+    '## 预算',
+    '',
+    'AGENTS.md 和 skill 都设行数上限，超了不是加、是换。让沉淀本身变成零和动作。',
+    '',
+    '## 和 Crop 的配合',
+    '',
+    '收尾时把落点填进 `crop_update(phase="end", sediment=...)`（what 照旧必填），只填指针不填正文：',
+    '',
+    '`agents:<文件>#<小节>` / `skill:<名字>` / `tool:<名字>` / `hook:<名字>` / `docs:<路径>` / `none:<原因>`',
+    '',
+    '台账只存“落到哪”，正文仍在目标层——否则 Crop 会变成第二本 AGENTS.md。',
+  ].join('\n'),
+};
 
 function textOf(message) {
   const content = message?.content;
@@ -110,6 +178,16 @@ export function apply(ctx, config = {}) {
     }
   } catch (error) {
     ctx.logger?.warn?.('[crop] system prompt section failed: %o', error);
+  }
+
+  // Runtime skill: keep the always-on protocol to one line; the full decision
+  // tree is only loaded when a retro actually happens.
+  try {
+    if (ctx.skills && typeof ctx.skills.register === 'function') {
+      ctx.effect(() => ctx.skills.register(RETRO_SKILL), 'agent-crop.crop-retro');
+    }
+  } catch (error) {
+    ctx.logger?.warn?.('[crop] crop-retro skill registration failed: %o', error);
   }
 
 
@@ -275,7 +353,8 @@ export function apply(ctx, config = {}) {
     name: 'crop_update',
     description:
       'Record what the current long task is doing, why it is slow or blocked, and what comes next. '
-      + 'Call it when the probe asks, or when the user confirms the task is finished. Keep fields short.',
+      + 'Call it when the probe asks, or when the user confirms the task is finished. Keep fields short. '
+      + '收尾时补 sediment=这条经验的落点（规范/方法/工具/事实/none:原因）。',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -321,6 +400,10 @@ export function apply(ctx, config = {}) {
           description: '可选：用户对上一轮表达不满时一并带上（redo=推翻重做 / major=大改 / minor=小修），省掉单独调用 crop_review',
         },
         sentiment: { type: 'string', enum: ['pos', 'neu', 'neg'], description: '可选：用户这句话的语气' },
+        sediment: {
+          type: 'string',
+          description: '可选：这条经验的落点，只记指针不记正文——agents:<文件>#<小节> / skill:<名字> / tool:<名字> / hook:<名字> / docs:<路径> / none:<原因>',
+        },
       },
       required: ['phase', 'task_id', 'summary'],
     },
@@ -372,6 +455,10 @@ export function apply(ctx, config = {}) {
       const retire = result.phase === 'end' ? (callCore({ op: 'pending_retire' }) || '') : '';
       const expect = Number(args?.expect_min) > 0 ? ` · 预估 ${Number(args.expect_min)} 分钟` : '';
       const recorded = `recorded ${result.phase} ${result.task_id} (${result.minutes ?? 0} min in this block)${expect}`;
+      const extra = [];
+      if (retire) extra.push(retire);
+      // 收尾没写落点：当场把补救方式放进工具结果，下一轮注入不会被 turn/end 清掉。
+      if (result.phase === 'end' && !String(args?.sediment || '').trim()) extra.push(END_SEDIMENT_NUDGE);
       return {
         ok: true,
         phase: result.phase,
@@ -379,7 +466,7 @@ export function apply(ctx, config = {}) {
         session_id: sid,
         turn,
         step,
-        recorded: retire ? recorded + '\n' + retire : recorded,
+        recorded: [recorded, ...extra].join('\n'),
       };
     },
   };

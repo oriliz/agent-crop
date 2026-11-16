@@ -26,7 +26,7 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `tool` | 每次工具调用结束 | `sid` `name` `is_error` | 工具分布、失败率 |
 | `stop` | 回合结束 | `sid` `block_start` `minutes` `work_id` | 任务块终点；`work_id` = 结束时的认领 |
 | `reminder` | 超红线提醒注入 | `sid` `block_start` `minutes` | 提醒效果 |
-| `probe_report` | AI 主动上报 | `phase` `task_id` `summary` `cause` `next` `category` `minutes` `turn` `step` | 归因与任务状态 |
+| `probe_report` | AI 主动上报 | `phase` `task_id` `summary` `cause` `next` `category` `minutes` `turn` `step` `sediment`(收尾落点) | 归因与任务状态 |
 | `task_link` | 报告/块归属到工作 | `task_id` `block_start` | 把工作挂到时间线上；同一 `block_start` 以最后一条为准 |
 | `session_end` | 会话结束 | `sid` | 收尾 |
 
@@ -47,6 +47,7 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `work_open` | 开始一条工作 | `work_id` `goal` `type` `difficulty_est` `workspace` | D1 / D7 / D10 |
 | `work_update` | 工作推进/挂起/恢复 | `work_id` `state` `summary` | D8 |
 | `work_close` | 判定完成 | `work_id` `difficulty_actual` `summary` | D1 / D7 / D8 |
+| `work_sediment` | 收尾时登记这条经验的落点 | `work_id` `sediment`(`agents:`/`skill:`/`tool:`/`hook:`/`docs:`/`none:`) | 复盘沉淀；二次收尾补记时只发这个事件 |
 | `work_archive` | 挂起超期归档 | `work_id` `archived_at` | D8 / D9 |
 | `turn_end` | 回合结束（替代/补充 `stop`） | `sid` `block_start` `minutes` | D2 |
 | `user_wait` | 从回合结束到用户回话 | `sid` `waiting_ms` `within_work_hours` `active_work_id` | D2 |
