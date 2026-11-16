@@ -72,7 +72,16 @@ TOOL = {
                 "description": "Failure category (required for blocked).",
             },
             "goal": {"type": "string", "description": "One-line goal of this work (keep it short, <= 20 chars)."},
-            "type": {"type": "string", "enum": ["design", "implement", "debug", "docs"]},
+            "goal": {"type": "string", "description": "One-line goal of this work."},
+            "type": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+                "maxLength": 32,
+                "description": (
+                    "Work type. Built-ins: design / implement / debug / docs / explore; "
+                    "you may also use your own short lowercase slug (letters, digits, hyphen)."
+                ),
+            },
             "difficulty": {"type": "string", "enum": ["s", "m", "l"]},
             "verdict": {
                 "type": "string",

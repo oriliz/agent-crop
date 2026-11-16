@@ -287,7 +287,12 @@ export function apply(ctx, config = {}) {
         next: { type: 'string' },
         category: { type: 'string', enum: CATEGORIES },
         goal: { type: 'string', description: 'One-line goal of this piece of work' },
-        type: { type: 'string', enum: ['design', 'implement', 'debug', 'docs'] },
+        type: {
+          type: 'string',
+          pattern: '^[a-z0-9][a-z0-9-]{0,31}$',
+          maxLength: 32,
+          description: 'Built-ins: design / implement / debug / docs / explore; or your own short lowercase slug',
+        },
         difficulty: { type: 'string', enum: ['s', 'm', 'l'] },
         verdict: {
           type: 'string',
