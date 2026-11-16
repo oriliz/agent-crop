@@ -684,7 +684,7 @@ body[data-ds-dark-theme] .crop-donut-hole {
 @keyframes cropFlash { 0% { background: rgba(240, 212, 138, 0); } 25% { background: rgba(240, 212, 138, .22); } 100% { background: rgba(240, 212, 138, 0); } }
 .crop-iv-tag { font-size: 9.5px; line-height: 15px; padding: 0 6px; border-radius: 999px; margin-right: 5px; }
 .crop-iv-tag--urgent { color: #fff; background: #e5484d; font-weight: 700; }
-.crop-session-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr); gap: 14px; align-items: start; }
+.crop-session-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); gap: 14px; align-items: start; }
 .crop-session-main { display: grid; gap: 14px; min-width: 0; }
 .crop-reflect { position: sticky; top: 8px; scroll-behavior: smooth; max-height: calc(100vh - 240px); overflow-y: auto; }
 @media (max-width: 900px) {
@@ -1126,13 +1126,11 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             })
           : h('div', { className: 'crop-muted crop-small' }, '当前时间窗口内没有问题记录，平移时间轴看看。'));
 
-      return h('div', { className: 'crop-page' }, [
-        head, current,
+      return h('div', { className: 'crop-page' },
         h('div', { className: 'crop-session-grid' }, [
-          h('div', { className: 'crop-session-main' }, [frame, works]),
+          h('div', { className: 'crop-session-main' }, [head, current, frame, works]),
           reflect,
-        ]),
-      ]);
+        ]));
     }
 
     function fixed(value, digits) {
