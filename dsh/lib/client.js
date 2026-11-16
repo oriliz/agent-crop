@@ -52,6 +52,30 @@ window.__ModuleLoader__.load({
       unknown: { label: '说不清', color: 'rgba(255,255,255,.4)' },
     };
 
+    /* Enum values are wire vocabulary; the panel is Chinese. Keep one table
+       so every surface (works table, pitfalls, reflection) reads the same. */
+    const ENUM_LABELS = {
+      verdict: { justified: '合理', 'not-justified': '不合理', unknown: '不确定' },
+      category: {
+        'serial-wait': '串行等待',
+        'repeat-pitfall': '重复踩坑',
+        'design-churn': '设计反复',
+        'decision-batching': '决策批处理',
+        'tool-misuse': '工具误用',
+        'no-evidence': '无证据',
+        'spec-drift': '需求漂移',
+        'human-wait': '等人',
+        other: '其他',
+      },
+      type: { design: '设计', implement: '实现', debug: '排错', docs: '文档' },
+      difficulty: { s: '小', m: '中', l: '大' },
+      rework: { redo: '重做', major: '大改', minor: '小修', none: '不需要' },
+      sentiment: { pos: '积极', neu: '中性', neg: '消极' },
+    };
+
+    const enumLabel = (kind, value) => (ENUM_LABELS[kind] && ENUM_LABELS[kind][value]) || value || '';
+
+
     const LAMP = { green: '#4ade80', yellow: '#eab308', red: '#ef4444' };
 
     /* Glass recipe shared with the wallpaper skins' message plates. The colour
@@ -860,7 +884,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           key: `b${index}`,
           className: 'crop-blocked-dot',
           style: { left: pct(pos(report.t)) },
-          title: report.cause || report.category || 'blocked',
+          title: report.cause || enumLabel('category', report.category) || '卡点',
         }));
         return h('div', { key: lane.key || 'none', className: 'crop-tl-row' },
           h('div', { className: `crop-tl-label${lane.key === activeId ? ' crop-tl-label--current' : ''}` },
@@ -941,7 +965,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         h('div', null,
           h('div', { className: 'crop-muted crop-small' }, '本会话反思 ', h('span', { className: 'crop-badge' }, '自评 · 待复核')),
           reflection.verdict ? h('div', { className: 'crop-reflect-verdict' },
-            h('b', null, reflection.verdict),
+            h('b', null, enumLabel('verdict', reflection.verdict)),
             h('span', { className: 'crop-muted crop-small' },
               ` ${reflection.work_id || ''}${reflection.revisions ? ` · 改口 ${reflection.revisions} 次` : ''}`)) : null,
           h('div', { className: 'crop-reflect-cause' }, reflection.cause || '还没有上报过反思。')),
@@ -949,7 +973,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('div', { className: 'crop-muted crop-small' }, 'AI 提出的改进'),
           improvements.length ? improvements.map((item, index) => h('div', { key: `${item.at}-${index}`, className: 'crop-imp-row' },
             h('span', { className: 'crop-imp-no' }, String(index + 1)),
-            h('span', { className: 'crop-imp-tag' }, item.work_id || '本会话'),
+            h('span', { className: 'crop-imp-tag', title: item.work_id || '' }, labelOf(item.work_id) || '本会话'),
             h('span', null, item.text))) : h('div', { className: 'crop-muted' }, '还没有改进建议。')));
 
       return h('div', { className: 'crop-page' }, [head, current, frame, works, reflect]);
@@ -1228,7 +1252,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         ? h('div', { key: 'pitfalls', className: 'crop-card' },
             h('div', { className: 'crop-muted', style: S.caption }, '还在重复的坑（AI 自述的归因类别）'),
             h('div', { className: 'crop-tags' },
-              categories.slice(0, 6).map((item) => h('span', { key: item.category, className: 'crop-tag' }, `${item.category} ×${item.count}`))))
+              categories.slice(0, 6).map((item) => h('span', { key: item.category, className: 'crop-tag' }, `${enumLabel('category', item.category)} ×${item.count}`))))
         : null;
 
       const rows = (data && data.work_list) || [];
@@ -1251,8 +1275,8 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                         h('i', { style: S.lamp(LAMP[row.level] || '#6b7280') }), row.level || '—'),
                       h('td', { style: S.td },
                         h('div', { className: 'crop-work-title' }, row.goal || row.work_id)),
-                      h('td', { style: S.td }, row.type || '—'),
-                      h('td', { style: S.td }, row.difficulty || '—'),
+                      h('td', { style: S.td }, row.type ? enumLabel('type', row.type) : '—'),
+                      h('td', { style: S.td }, row.difficulty ? enumLabel('difficulty', row.difficulty) : '—'),
                       h('td', { style: S.tdRight }, fmtMinutes(row.minutes)),
                       h('td', { style: S.tdRight }, row.wait_minutes ? fmtMinutes(row.wait_minutes) : '—')))),
                 ])
