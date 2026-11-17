@@ -490,3 +490,53 @@ test('crop_adjust records an improvement and reads the ledger', async (t) => {
   const ledger = await tool.execute({ action: 'ledger' });
   assert.match(ledger.text, /改进台账/);
 });
+
+
+function fakeWebCtx(rejection) {
+  const routes = [];
+  const ctx = fakeCtx();
+  ctx.routes = routes;
+  ctx.inject = (_specs, fn) => fn({
+    webServer: { register(route) { routes.push(route); return () => {}; } },
+    connection: { requestRejection: () => rejection },
+  });
+  return ctx;
+}
+
+function fakeResponse() {
+  const res = {
+    statusCode: 200,
+    headers: {},
+    ended: false,
+    body: '',
+    setHeader(key, value) { res.headers[key] = value; },
+    writeHead(status, headers) { res.statusCode = status; Object.assign(res.headers, headers || {}); },
+    end(body) { res.ended = true; if (body !== undefined) res.body += body; },
+  };
+  return res;
+}
+
+test('dashboard routes ask Connection before serving any data', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-gate-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const denied = fakeWebCtx(403);
+  apply(denied, { python: 'python3' });
+  const deniedRoute = denied.routes.find((item) => item.path === '/api/agent-crop/global');
+  assert.ok(deniedRoute, 'route registers once a web server is present');
+  const blocked = fakeResponse();
+  deniedRoute.handler({ url: '/api/agent-crop/global?days=7', headers: {} }, blocked);
+  assert.equal(blocked.statusCode, 403, 'rejection status is passed through');
+  assert.equal(blocked.ended, true);
+  assert.equal(blocked.body, '', 'nothing is read or leaked before the gate');
+  assert.equal(blocked.headers['content-type'], undefined, 'rejected before the data path');
+
+  const allowed = fakeWebCtx(undefined);
+  apply(allowed, { python: 'python3' });
+  const openRoute = allowed.routes.find((item) => item.path === '/api/agent-crop/global');
+  const served = fakeResponse();
+  openRoute.handler({ url: '/api/agent-crop/global?days=7', headers: {} }, served);
+  assert.equal(served.statusCode, 200, 'a trusted request still gets data');
+  assert.match(served.headers['content-type'], /application\/json/);
+});
