@@ -311,6 +311,11 @@ export function apply(ctx, config = {}) {
         }),
         webServer.register({
           kind: 'exact',
+          path: '/api/agent-crop/ledger',
+          handler: relay((url) => ({ op: 'ledger', args: { days: Number(url.searchParams.get('days') ?? 180) || 180 } })),
+        }),
+        webServer.register({
+          kind: 'exact',
           path: '/api/agent-crop/tool-health',
           handler: relay((url) => ({
             op: 'health',
@@ -585,6 +590,72 @@ export function apply(ctx, config = {}) {
     },
   };
 
+  const adjustTool = {
+    name: 'crop_adjust',
+    description:
+      '改进台账：action="record" 记一条采纳的改进（metric + before/after + evidence，缺证据不收）；'
+      + 'action="ledger" 读台账，看每条改动的前后值、样本量、护栏与达成状态。'
+      + '判定是规则算的，不是 AI 说有效就算有效。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        action: { type: 'string', enum: ['record', 'ledger'] },
+        metric: { type: 'string', description: 'record 必填：work_minutes / reminder_per_turn / report_latency_min / unowned_tool_share，或自定义 slug' },
+        before: { type: 'number', description: 'record 必填：改前值' },
+        after: { type: 'number', description: '可选：改后值；先不填就是待验证' },
+        evidence: { type: 'string', description: 'record 必填：命令 / 事件 id / 链接' },
+        work_id: { type: 'string', description: '可选：这条改进挂在哪个工作上' },
+        window: { type: 'string', description: '可选：采样窗口，如 2026-10-20~11-03' },
+        note: { type: 'string' },
+        days: { type: 'number', description: 'ledger 可选：窗口天数，默认 180' },
+      },
+      required: ['action'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { ok: { type: 'boolean' }, text: { type: 'string' } },
+        required: ['ok', 'text'],
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute(args) {
+      if (args?.action === 'ledger') {
+        const ledger = callCore({ op: 'ledger', args: { days: args?.days ?? 180 } });
+        if (!ledger) throw new Error('crop ledger could not be read');
+        return { ok: true, text: formatLedgerText(ledger) };
+      }
+      const result = callCore({
+        op: 'record_adjustment',
+        args: {
+          metric: args?.metric, before: args?.before, after: args?.after,
+          evidence: args?.evidence, work_id: args?.work_id, window: args?.window,
+          note: args?.note,
+        },
+      });
+      if (!result) throw new Error('crop_adjust could not be recorded (evidence and before are required)');
+      const after = result.after === null || result.after === undefined ? '待验证' : result.after;
+      return { ok: true, text: `recorded adjustment ${result.metric}: ${result.before} → ${after}` };
+    },
+  };
+
+  const formatLedgerText = (ledger) => {
+    const rows = ledger?.rows ?? [];
+    const lines = [`改进台账 · 近 ${ledger?.window?.days ?? 0} 天 · ${ledger?.total ?? 0} 条`];
+    if (!rows.length) return lines.concat('还没有 adjustment 记录。').join('\n');
+    for (const row of rows) {
+      const after = row.after === null || row.after === undefined ? '待验证' : row.after;
+      const delta = row.delta === null || row.delta === undefined ? '' : `，变化 ${(row.delta * 100).toFixed(0)}%`;
+      lines.push(`- [${row.status_label}] ${row.metric_label}：${row.before} → ${after}${delta}（样本 ${row.samples?.before ?? 0}/${row.samples?.after ?? 0}）`);
+    }
+    for (const row of ledger?.rollback_hints ?? []) {
+      lines.push(`- 回滚提示：${row.metric_label} 已满 4 周仍未达标，先看证据：${row.evidence}`);
+    }
+    return lines.join('\n');
+  };
+
   const worksTool = {
     name: 'crop_works',
     description: 'List works in progress on this machine (newest first). Use it when you are not sure which work this session should continue.',
@@ -627,6 +698,7 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => ctx.tools.register(legacyCropReportTool), 'agent-crop.crop_report (alias)');
   ctx.effect(() => ctx.tools.register(worksTool), 'agent-crop.crop_works');
   ctx.effect(() => ctx.tools.register(healthTool), 'agent-crop.crop_health');
+  ctx.effect(() => ctx.tools.register(adjustTool), 'agent-crop.crop_adjust');
   ctx.effect(() => ctx.tools.register(reviewTool), 'agent-crop.crop_review');
   ctx.effect(() => ctx.tools.register(workTool), 'agent-crop.crop_work');
 

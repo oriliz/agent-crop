@@ -61,6 +61,12 @@ def dispatch(payload: dict):
         )
     if op == "record_review":
         return core.record_review(payload.get("args") or {}, context)
+    if op == "record_adjustment":
+        return core.record_adjustment(payload.get("args") or {}, context)
+    if op == "adjustments":
+        return core.load_adjustments(int(payload.get("limit") or 20))
+    if op == "ledger":
+        return core.improvement_ledger(float(payload.get("days") or 180.0))
     if op == "record_report":
         return core.record_report(payload.get("args") or {}, context)
     if op == "record_session_start":

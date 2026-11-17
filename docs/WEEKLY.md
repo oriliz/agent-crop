@@ -14,9 +14,10 @@
 ```text
 你是 Agent Crop 的周报撰写者。步骤：
 
-1. 运行 `~/agent-crop/bin/crop report --days 7 --json`，拿到本周事实。
-2. 再读 `~/.agentcrop/data/reports/*.jsonl` 里本周的 work_summary（做了/花在哪/下次）。
-3. 写一篇中文周报，落到 `~/.agentcrop/data/reports/weekly/<YYYY-Www>.md`。
+1. 运行 `~/agent-crop/bin/crop report --days 7 --json`，拿到本周事实；同一份 JSON 里的 `ledger` 是改进台账。
+2. 如果 `ledger` 为空，再跑 `~/agent-crop/bin/crop ledger --json` 确认（可能是窗口不同）。
+3. 再读 `~/.agentcrop/data/reports/*.jsonl` 里本周的 work_summary（做了/花在哪/下次）。
+4. 写一篇中文周报，落到 `~/.agentcrop/data/reports/weekly/<YYYY-Www>.md`。
 
 格式要求（重要）：
 - 全文讲人话，不要用「本周做了 N 个工作」「类型分布」这种字段式句子。
@@ -26,6 +27,11 @@
      写「本周最值得的调整」，带前后数据和证据。
   B. 如果没有，写「我发现的问题」，给 A/B/C 三个建议，
      把最重要的一个高亮，说明为什么选它。
+- 固定加两行（各 ≤40 字）：
+  - 「本周改进」：每条 adjustment 一行——指标 改前→改后、当前状态（达标 / 改善中 / 样本不足 / 护栏劣化 / 待验证）。
+    样本不足时只写「样本不足」，不要下「有效」结论。
+  - 「回滚提醒」：`rollback_hints` 非空就写一条——哪条改进满 4 周仍未达标、证据链接；
+    只提示 + 给回滚入口，不自动回滚。
 - 最后一行只留一条证据链接或命令，让人能自己核对。
 - 全文不超过 400 字。写长了没人看。
 

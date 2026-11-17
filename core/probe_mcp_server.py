@@ -27,9 +27,11 @@ LEGACY_TOOL_NAMES = {"crop", "probe_report"}
 TOOL = {
     "name": TOOL_NAME,
     "description": (
-        "Record what the current long task is doing, why it is slow or blocked, "
-        "and what comes next. Call it when the probe asks, or when the user "
-        "confirms the task is finished. Keep summary/cause/next short."
+        "Bind a work, log progress, a blocker, or the finish. Start by binding and "
+        "reporting expect_min. Keep one task_id per feature iteration; log micro-changes "
+        "as phase=progress, not a new work. After end, delivery/reporting/screenshots do "
+        "not need a new binding; use category=side-issue for follow-up questions. "
+        "Keep summary/cause/next short."
     ),
     "inputSchema": {
         "type": "object",
@@ -38,11 +40,11 @@ TOOL = {
             "phase": {
                 "type": "string",
                 "enum": ["start", "progress", "blocked", "end"],
-                "description": "start a task, report progress, report a blocker, or end the task.",
+                "description": "start=binding/begin; progress=something changed; blocked=stuck; end=finished.",
             },
             "task_id": {
                 "type": "string",
-                "description": "Stable kebab-case id, e.g. design-doc-payment.",
+                "description": "Short 2-3 word work name, e.g. payment-design. Keep it stable within one iteration.",
             },
             "summary": {
                 "type": "string",
@@ -50,7 +52,7 @@ TOOL = {
             },
             "cause": {
                 "type": "string",
-                "description": "Why it is taking long or is blocked (required for blocked).",
+                "description": "Why it is slow or blocked (required for blocked). When verdict=justified, add how you might be wrong.",
             },
             "next": {
                 "type": "string",
@@ -71,8 +73,7 @@ TOOL = {
                 ],
                 "description": "Failure category (required for blocked).",
             },
-            "goal": {"type": "string", "description": "One-line goal of this work (keep it short, <= 20 chars)."},
-            "goal": {"type": "string", "description": "One-line goal of this work."},
+            "goal": {"type": "string", "description": "One-line goal, <= 20 chars."},
             "type": {
                 "type": "string",
                 "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
@@ -86,7 +87,7 @@ TOOL = {
             "verdict": {
                 "type": "string",
                 "enum": ["justified", "not-justified", "unknown"],
-                "description": "Whether the slowdown was reasonable vs. a wrong path.",
+                "description": "Self-review: task genuinely hard=justified, wrong path=not-justified. Add a one-line counter-check in cause when justified.",
             },
             "improve": {"type": "string", "description": "One thing to do better next time."},
             "expect_min": {"type": "number", "description": "Your own estimate of this work in minutes."},
@@ -97,8 +98,42 @@ TOOL = {
             "cost": {"type": "string", "description": "end: where the time went."},
             "next_time": {"type": "string", "description": "end: what to do better next time."},
             "artifact": {"type": "string", "description": "Optional: what this work produced."},
+            "sediment": {
+                "type": "string",
+                "description": "On end: where the lesson belongs (agents:<file>#<section> / skill:<name> / tool:<name> / hook:<name> / docs:<path> / none:<reason>).",
+            },
         },
         "required": ["phase", "task_id", "summary"],
+    },
+}
+
+
+ADJUST_TOOL = {
+    "name": "crop_adjust",
+    "description": (
+        "Improvement ledger. action=record stores one adopted change with metric, "
+        "before/after and evidence (evidence is required); action=ledger reads the "
+        "before/after, sample sizes, guardrails and status. The status is derived by "
+        "rules from the event log, not from the model's claim."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "action": {"type": "string", "enum": ["record", "ledger"]},
+            "metric": {
+                "type": "string",
+                "description": "work_minutes / reminder_per_turn / report_latency_min / unowned_tool_share, or your own slug.",
+            },
+            "before": {"type": "number", "description": "Value before the change (record)."},
+            "after": {"type": "number", "description": "Value after the change; omit while pending verification."},
+            "evidence": {"type": "string", "description": "Command / event id / link (record, required)."},
+            "work_id": {"type": "string"},
+            "window": {"type": "string", "description": "Sampling window, e.g. 2026-10-20~11-03."},
+            "note": {"type": "string"},
+            "days": {"type": "number", "description": "Ledger window in days (default 180)."},
+        },
+        "required": ["action"],
     },
 }
 
@@ -178,9 +213,23 @@ def main() -> None:
         elif method in ("notifications/initialized", "initialized"):
             continue
         elif method == "tools/list":
-            respond(request_id, {"tools": [TOOL, HEALTH_TOOL]})
+            respond(request_id, {"tools": [TOOL, HEALTH_TOOL, ADJUST_TOOL]})
         elif method == "tools/call":
             name = params.get("name")
+            if name == "crop_adjust":
+                arguments = params.get("arguments") or {}
+                try:
+                    if arguments.get("action") == "ledger":
+                        ledger = core.improvement_ledger(float(arguments.get("days") or 180.0))
+                        text = core.format_ledger(ledger)
+                    else:
+                        event = core.record_adjustment(arguments, context={})
+                        after = "pending" if event.get("after") is None else event["after"]
+                        text = f"recorded adjustment {event['metric']}: {event['before']} -> {after}"
+                    respond(request_id, {"content": [{"type": "text", "text": text}], "isError": False})
+                except Exception as exc:
+                    respond(request_id, {"content": [{"type": "text", "text": f"crop_adjust failed: {exc}"}], "isError": True})
+                continue
             if name == "crop_health":
                 arguments = params.get("arguments") or {}
                 try:
