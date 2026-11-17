@@ -30,6 +30,11 @@ try:
 except Exception:  # pragma: no cover - copy pools are optional at runtime
     voice = None
 
+try:
+    import crop_templates
+except Exception:  # pragma: no cover - user templates are optional at runtime
+    crop_templates = None
+
 DEFAULT_SHARED_HOME = os.path.expanduser("~/.agentcrop")
 # Pre-rename installs used this path.  Only fall back to it when the new home
 # does not exist yet, so an upgrade keeps seeing its old data exactly once.
@@ -1061,7 +1066,19 @@ def binding_hint(sid: str) -> str:
         if event.get("ev") == "probe_report":
             last_report = event
             break
-    if last_report and last_report.get("phase") == "end":
+    ended = bool(last_report and last_report.get("phase") == "end")
+    if crop_templates is not None:
+        try:
+            rendered = crop_templates.render("binding-hint", {
+                "last_work": str((last_report or {}).get("task_id") or ""),
+                "last_phase": "end" if ended else "",
+                "example_task_id": "<短名>",
+            })
+        except Exception:
+            rendered = None
+        if rendered is not None:
+            return _template_prefix(rendered)
+    if ended:
         work_id = last_report.get("task_id") or "上一件工作"
         return (
             f'[crop] 上一件工作（{work_id}）已经收尾，当前没有绑定。'
@@ -1309,20 +1326,16 @@ def _session_work_counts(sid: str | None) -> tuple[int, int]:
     return mine, len(rows) - mine
 
 
-def format_candidates(tasks: list[dict], total: int | None = None,
-                      sid: str | None = None) -> str:
-    """Unbound session: one imperative action first, then at most three candidates.
+def _template_prefix(text: str) -> str:
+    """Templates carry the body only; the ``[crop]`` marker is ours."""
+    if not text:
+        return text
+    return text if text.lstrip().startswith("[crop]") else "[crop] " + text
 
-    本会话 / 其他会话分开数，别把全局待办当成“本会话的活”（card 9da932ed）。
-    """
-    count = total if total is not None else len(tasks)
-    mine, others = _session_work_counts(sid)
-    if sid and mine == 0:
-        lines = [f"[crop] 本会话还没有绑定工作；其他会话有 {others or count} 条在跑。候选（最多 3 条）："]
-    elif sid:
-        lines = [f"[crop] 未完成的工作：本会话 {mine} 条 / 其他会话 {others} 条。最近活跃的是："]
-    else:
-        lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
+
+def _candidate_lines(tasks: list[dict], count: int) -> list[str]:
+    """Task rows + the "另有 N 条" tail, without the title line."""
+    lines = []
     for task in tasks:
         lines.append(
             f"- {task.get('task_id')} — {task.get('goal') or task.get('title') or ''}"
@@ -1331,6 +1344,38 @@ def format_candidates(tasks: list[dict], total: int | None = None,
     extra = count - len(tasks)
     if extra > 0:
         lines.append(f"另有 {extra} 条，用 crop_works 查看或筛选。")
+    return lines
+
+
+def format_candidates(tasks: list[dict], total: int | None = None,
+                      sid: str | None = None) -> str:
+    """Unbound session: one imperative action first, then at most three candidates.
+
+    本会话 / 其他会话分开数，别把全局待办当成“本会话的活”（card 9da932ed）。
+    用户模板 ``start-hint`` 存在时替换整段（变量见 docs/DESIGN-CUSTOM-TEMPLATES.md）。
+    """
+    count = total if total is not None else len(tasks)
+    mine, others = _session_work_counts(sid)
+    if crop_templates is not None:
+        try:
+            rendered = crop_templates.render("start-hint", {
+                "mine": str(mine),
+                "others": str(others or count),
+                "candidates": "\n".join(_candidate_lines(tasks, count)),
+                "example_task_id": str(tasks[0].get("task_id") or "") if tasks else "",
+                "limit": "3",
+            })
+        except Exception:
+            rendered = None
+        if rendered is not None:
+            return _template_prefix(rendered)
+    if sid and mine == 0:
+        lines = [f"[crop] 本会话还没有绑定工作；其他会话有 {others or count} 条在跑。候选（最多 3 条）："]
+    elif sid:
+        lines = [f"[crop] 未完成的工作：本会话 {mine} 条 / 其他会话 {others} 条。最近活跃的是："]
+    else:
+        lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
+    lines.extend(_candidate_lines(tasks, count))
     example = tasks[0].get("task_id")
     lines.append(
         "先选一条，再动手：接着做用 "
