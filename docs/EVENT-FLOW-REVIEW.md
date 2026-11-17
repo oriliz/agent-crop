@@ -65,7 +65,7 @@ session_start
 - **真实落盘**：
 
 ```json
-{"ev":"session_start","sid":"session-fef5…","workspace":"/Users/lizhi/startup-ideas","host":"dsh"}
+{"ev":"session_start","sid":"session-fef5…","workspace":"/home/dev/example-project","host":"dsh"}
 ```
 
 - **AI 侧**：不参与
@@ -96,7 +96,7 @@ session_start
 - **真实落盘**：
 
 ```json
-{"ev":"prompt","sid":"session-fef5…","workspace":"/Users/lizhi/startup-ideas","snippet":"只回复 OK","host":"dsh"}
+{"ev":"prompt","sid":"session-fef5…","workspace":"/home/dev/example-project","snippet":"只回复 OK","host":"dsh"}
 ```
 
 - **AI 侧**：不参与；但它是后续所有注入的锚点

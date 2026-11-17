@@ -107,7 +107,7 @@ claude plugin marketplace remove agent-crop
 ### DSH
 
 ```bash
-# 独立 profile，避免影响线上 web / 小橘
+# 独立 profile，避免影响正在使用的其他 DSH 实例
 dsh --profile coding --from-default-profile web --dump-config
 dsh plugin --profile coding add ~/agent-crop
 dsh --profile coding --port 3081 --no-open

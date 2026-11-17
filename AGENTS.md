@@ -7,7 +7,7 @@
 
 - 推之前跑 `bash scripts/check.sh`：Python unittest + Node `node --test` + probe smoke。CI 只是第二道闸。
 - `main` 受保护：走 PR，一个 PR 一件事；文档 PR 只带文档提交。
-- 仓库可能同时有别的会话在改：先 `git worktree add ../agent-crop-<task> -b <task>`，不要在共享工作树上切分支。
+- 如果你会在同一个工作树上并行跑多个会话：先 `git worktree add ../<repo>-<task> -b <task>`，不要在共享工作树上切分支。
 
 ## 记录约定（Crop 台账）
 
