@@ -1811,9 +1811,11 @@ def works_needing_check(days: float = 1.0, now: int | None = None) -> list[dict]
 # Report (weekly / arbitrary window)
 
 
-def _events_between(start_ms: int, end_ms: int) -> list[dict]:
+def _events_between(start_ms: int, end_ms: int, host: str | None = None) -> list[dict]:
     events = load_events(limit=200000)
-    return [event for event in events if start_ms <= int(event.get("t") or 0) <= end_ms]
+    return [event for event in events
+            if start_ms <= int(event.get("t") or 0) <= end_ms
+            and (not host or event.get("host") == host)]
 
 
 def _closed_works_between(start_ms: int, end_ms: int) -> list[dict]:
@@ -1902,7 +1904,8 @@ def _work_list(events: list[dict], completed: list[dict], start_ms: int) -> list
 
 
 def period_summary(
-    days: float = 7.0, now: int | None = None, start: int | None = None
+    days: float = 7.0, now: int | None = None, start: int | None = None,
+    host: str | None = None,
 ) -> dict:
     """Range totals for the dashboard and the text report.
 
@@ -1911,7 +1914,7 @@ def period_summary(
     """
     end = now if now is not None else now_ms()
     start = int(start) if start is not None else end - int(days * 86400000)
-    events = _events_between(start, end)
+    events = _events_between(start, end, host)
     blocks = [event for event in events if event.get("ev") == "stop"]
     reports = [event for event in events if event.get("ev") == "probe_report"]
     waits = [event for event in events if event.get("ev") == "user_wait"]
@@ -2022,14 +2025,14 @@ def _natural_start(days: float) -> int:
     return start_of_today_ms() - int((max(1.0, float(days)) - 1) * 86400000)
 
 
-def _window_metrics(start_ms: int, end_ms: int) -> dict:
+def _window_metrics(start_ms: int, end_ms: int, host: str | None = None) -> dict:
     """Friction numbers for one window — the raw material of the global page.
 
     Only facts the event log already carries: no judgement, no inference. A
     metric whose denominator is 0 comes back as None so the panel can say
     "no sample" instead of drawing a fake trend.
     """
-    events = _events_between(start_ms, end_ms)
+    events = _events_between(start_ms, end_ms, host)
     blocks = [event for event in events if event.get("ev") == "stop"]
     waits = [event for event in events if event.get("ev") == "user_wait"]
     tools = [event for event in events if event.get("ev") == "tool"]
@@ -2069,7 +2072,7 @@ def _median(values: list[float]) -> float | None:
     return round((ordered[middle - 1] + ordered[middle]) / 2, 1)
 
 
-def improvement_summary(days: float = 7.0) -> dict:
+def improvement_summary(days: float = 7.0, host: str | None = None) -> dict:
     """Global page payload: friction this window against the one before it.
 
     The comparison window has the same length, so a 7-day panel compares with
@@ -2082,16 +2085,16 @@ def improvement_summary(days: float = 7.0) -> dict:
     start = _natural_start(days)
     previous_start = start - int(days * 86400000)
 
-    current = _window_metrics(start, end)
-    previous = _window_metrics(previous_start, start - 1)
+    current = _window_metrics(start, end, host)
+    previous = _window_metrics(previous_start, start - 1, host)
 
-    summary = period_summary(days, start=start)
+    summary = period_summary(days, start=start, host=host)
     works = summary.get("work_list") or []
     per_work = [float(row.get("minutes") or 0) for row in works if row.get("minutes")]
     current["works"] = len(works)
     current["median_active_per_work"] = _median(per_work)
 
-    events = _events_between(start, end)
+    events = _events_between(start, end, host)
     reports = [event for event in events if event.get("ev") == "probe_report"]
     improvements = []
     for report in reports:
@@ -2113,13 +2116,17 @@ def improvement_summary(days: float = 7.0) -> dict:
         if category:
             categories[category] = categories.get(category, 0) + 1
 
+    hosts = sorted({str(event.get("host"))
+                    for event in _events_between(start, end) if event.get("host")})
     return {
         "days": days,
         "start": start,
         "end": end,
+        "host": host or "",
+        "hosts": hosts,
         "current": current,
         "previous": previous,
-        "daily": daily_breakdown(days, start=start),
+        "daily": daily_breakdown(days, start=start, host=host),
         "work_list": works,
         "improvements": improvements,
         "categories": sorted(
@@ -2131,11 +2138,12 @@ def improvement_summary(days: float = 7.0) -> dict:
 
 
 def daily_breakdown(
-    days: float = 14.0, now: int | None = None, start: int | None = None
+    days: float = 14.0, now: int | None = None, start: int | None = None,
+    host: str | None = None,
 ) -> list[dict]:
     end = now if now is not None else now_ms()
     start = int(start) if start is not None else end - int(days * 86400000)
-    events = _events_between(start, end)
+    events = _events_between(start, end, host)
     buckets: dict[str, dict] = {}
     for event in events:
         stamp = int(event.get("t") or 0)
