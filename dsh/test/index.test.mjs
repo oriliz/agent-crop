@@ -544,11 +544,25 @@ test('dashboard routes ask Connection before serving any data', async (t) => {
   assert.match(served.headers['content-type'], /application\/json/);
 });
 
-
 test('protocol section falls back to the built-in text when no template exists', async () => {
   const ctx = fakeCtx();
   apply(ctx, { python: 'python3' });
   const section = ctx.sections.find((entry) => entry.name === 'crop:protocol');
   assert.ok(section, 'protocol section must be registered');
   assert.equal(section.text, PROTOCOL_TEXT, 'default template path must not change the protocol');
+});
+
+test('a wrong tool call returns a contextual error instead of a bare failure', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const tool = ctx.registered.find((item) => item.name === 'crop_update');
+  await assert.rejects(
+    () => tool.execute({ action: 'ledger' }, { agent: { session: fakeSession() } }),
+    (error) => /crop_adjust\(action="ledger"\)/.test(error.message)
+      && /missing: phase, task_id, summary/.test(error.message),
+  );
 });
