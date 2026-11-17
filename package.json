@@ -43,8 +43,8 @@
     "!**/*.pyc"
   ],
   "scripts": {
-    "test": "node --test dsh/test/index.test.mjs && python3 -m unittest discover -s tests -t . && bash tests/probe-smoke.sh",
-    "test:node": "node --test dsh/test/index.test.mjs",
+    "test": "node --test dsh/test/index.test.mjs dsh/test/client.test.mjs && python3 -m unittest discover -s tests -t . && bash tests/probe-smoke.sh",
+    "test:node": "node --test dsh/test/index.test.mjs dsh/test/client.test.mjs",
     "test:python": "python3 -m unittest discover -s tests -t .",
     "test:smoke": "bash tests/probe-smoke.sh"
   },

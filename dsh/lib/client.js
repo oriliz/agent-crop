@@ -80,6 +80,16 @@ window.__ModuleLoader__.load({
     const PERSONA_LABEL = { owner: '奴隶主', senior: '和蔼的前辈', colleague: '经验丰富的同事', free: '放任自由的家长' };
     const personaIcon = (persona) => (persona && persona !== 'owner' ? '/api/agent-crop/think-icon' : '/api/agent-crop/whip-icon');
 
+    /* The four nudge voices, as the settings page offers them. `owner` is the
+       whipped copy everyone knows; the other three are neutral reminders. */
+    const PERSONA_CHOICES = [
+      { value: 'owner', label: '奴隶主', hint: '默认。重时间和效率，超时催收尾、催交活。' },
+      { value: 'senior', label: '和蔼的前辈', hint: '不抽鞭子；提醒你卡住可以问、先说说打算怎么试。' },
+      { value: 'colleague', label: '经验丰富的同事', hint: '不抽鞭子；提醒你先拆最小可验证的一步。' },
+      { value: 'free', label: '放任自由的家长', hint: '完全不提醒，自己安排。' },
+    ];
+    const personaLabelOf = (value) => (PERSONA_CHOICES.find(item => item.value === value) || PERSONA_CHOICES[0]).label;
+
 
     const LAMP = { green: '#4ade80', yellow: '#eab308', red: '#ef4444' };
 
@@ -741,6 +751,25 @@ body[data-ds-dark-theme] .crop-page .crop-card {
 .crop-chip-sm { font-size: 9.5px; line-height: 15px; padding: 0 7px; border-radius: 999px; border: 1px solid rgba(160, 180, 230, .20); color: #a9b6d4; }
 .crop-improve-time { font-size: 10px; color: #7785a6; margin-left: auto; font-variant-numeric: tabular-nums; }
 .crop-improve-why { margin-top: 4px; font-size: 11px; line-height: 1.55; color: #7785a6; overflow-wrap: anywhere; }
+
+/* Plugins page → Agent Crop → row → configuration: the nudge voice. */
+.crop-config { display: grid; gap: 10px; font-size: 13px; max-width: 560px; }
+.crop-config-title { font-size: 13px; font-weight: 600; }
+.crop-config-hint { font-size: 12px; line-height: 1.55; color: var(--dsw-alias-label-tertiary, #6b7899); }
+.crop-persona-list { display: grid; gap: 8px; }
+.crop-persona-option {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(150, 170, 220, .22));
+  cursor: pointer;
+}
+.crop-persona-option[data-active] {
+  border-color: rgba(110, 140, 230, .65);
+  background: rgba(110, 140, 230, .08);
+}
+.crop-persona-option input { margin-top: 2px; accent-color: #5b7cfa; }
+.crop-persona-body { display: grid; gap: 2px; }
+.crop-config-note { font-size: 12px; color: var(--dsw-alias-label-secondary, #4a5568); }
 
 `;
 
@@ -1754,6 +1783,56 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       ]);
     }
 
+    /**
+     * Plugins page configuration for this bundle's row: the nudge voice.
+     * The Host owns the form (`form.state` / `form.mutate` over the volatile
+     * `persona` field); this page only renders the four choices. `view ===
+     * 'summary'` is the row's one-liner fallback, so it renders as text.
+     */
+    function PersonaSettings(props) {
+      const form = props && props.form;
+      const stored = form && form.state && form.state.value && form.state.value.persona;
+      const [value, setValue] = React.useState(stored || 'owner');
+      const [note, setNote] = React.useState('');
+      if (props && props.view === 'summary') {
+        return h('span', null, `鞭策风格：${personaLabelOf(stored || value)}`);
+      }
+      if (!form) {
+        return h('div', { className: 'crop-config' },
+          h('div', { className: 'crop-config-title' }, '鞭策风格'),
+          h('div', { className: 'crop-config-hint' }, 'Host 没有为这个插件提供配置表单；暂时只能改 profile 里的 config.persona。'));
+      }
+      const choose = (next) => {
+        if (next === value) return;
+        setValue(next);
+        setNote('保存中…');
+        form.mutate([{ op: 'set', path: ['persona'], value: next }], form.state.revision)
+          .then((ok) => setNote(ok ? '已保存，下一条提醒立即生效。' : 'Host 拒绝了这次修改。'))
+          .catch((error) => setNote(`保存失败：${error && error.message ? error.message : error}`));
+      };
+      return h('div', { className: 'crop-config' },
+        h('div', { className: 'crop-config-title' }, '鞭策风格'),
+        h('div', { className: 'crop-config-hint' }, '决定超时提醒的语气。只有「奴隶主」会抽鞭子；改完立即生效，不用重启。'),
+        h('div', { className: 'crop-persona-list' }, PERSONA_CHOICES.map((choice) => h('label', {
+          key: choice.value,
+          className: 'crop-persona-option',
+          'data-active': choice.value === value ? '' : undefined,
+        },
+          h('input', {
+            type: 'radio',
+            name: 'crop-persona',
+            value: choice.value,
+            checked: choice.value === value,
+            onChange: () => choose(choice.value),
+          }),
+          h('span', { className: 'crop-persona-body' },
+            h('b', null, choice.label),
+            h('span', { className: 'crop-config-hint' }, choice.hint))))),
+        h('div', { className: 'crop-config-hint' },
+          '提醒里的具体台词用 Markdown 覆盖 ~/.agentcrop/templates/voice/*.md，改完即时生效；常驻协议模板要重启宿主。'),
+        note ? h('div', { className: 'crop-config-note' }, note) : null);
+    }
+
     function installStyles() {
       const existing = document.getElementById(STYLE_ID);
       if (existing) return existing;
@@ -1786,6 +1865,13 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         name: 'main',
         key: PANEL_ID,
       }, GlobalPanel)), 'crop: global panel page');
+      // The bundle's own row is `agent-crop-dsh` in its patch; the Plugins
+      // page keys a row page as `<bundle>#<rowId>` and supplies the form for
+      // the profile entry whose id is the row id.
+      ctx.effect(() => ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+        name: 'plugins.row.config',
+        key: 'agent-crop-dsh#agent-crop-dsh',
+      }, PersonaSettings)), 'crop: nudge voice settings');
     }
 
     exports.apply = apply;

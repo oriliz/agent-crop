@@ -33,9 +33,11 @@ Agent Crop 有 5 个「对 AI 说话」的注入点，默认文案写在代码�
 | `start-hint.md` | `{{mine}}` `{{others}}` `{{candidates}}` `{{example_task_id}}` `{{limit}}` |
 | `binding-hint.md` | `{{last_work}}` `{{last_phase}}` `{{example_task_id}}` |
 | `end-hint.md` | `{{work_id}}` |
-| `voice/*.md` | `{{minutes}}` `{{expect}}` `{{yellow}}` `{{red}}` `{{work}}` `{{streak}}` `{{changes}}` |
+| `voice/*.md` | `{m}` `{e}` `{over}` `{left}` `{streak}` `{changes}` `{basis}` |
 
 未知变量会被替换成空串，并在日志里写一条警告。变量表是白名单，不能新增。
+（`voice/*.md` 例外：它走 Python 的 `format_map`，占位符是**单花括号**；写错会
+让这条自定义文案回退成内置默认，不会静默替换。）
 
 ## 生效范围
 
@@ -51,12 +53,12 @@ Agent Crop 有 5 个「对 AI 说话」的注入点，默认文案写在代码�
 如果上一件已经 end（{{last_phase}}），交付和汇报不用再绑。
 ```
 
-`~/.agentcrop/templates/voice/yellow.md`：
+`~/.agentcrop/templates/voice/yellow.md`（只对「奴隶主」风格生效）：
 
 ```markdown
-已经跑了 {{minutes}} 分钟，超出你报的 {{expect}}。
+已经跑了 {m} 分钟，超出你报的 {e}。
 ---
-{{minutes}} 分钟了，报的 {{expect}} 已经用完。
+{m} 分钟了，报的 {e} 已经用完。
 ```
 
 ## 限制
