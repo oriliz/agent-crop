@@ -256,7 +256,27 @@ export function apply(ctx, config = {}) {
       res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
       res.end(JSON.stringify(body));
     };
+    // Routes mounted on the raw web server do not get Connection's Host/Origin
+    // checks, so ask it explicitly before touching any data: otherwise a page
+    // open in the same browser could read the ledger cross-site.
+    const connectionOf = (target) => {
+      try {
+        return target?.connection ?? Reflect.get(target ?? {}, 'connection');
+      } catch {
+        return undefined;
+      }
+    };
+    const rejected = (req, res) => {
+      const connection = connectionOf(ctxWeb);
+      if (!connection || typeof connection.requestRejection !== 'function') return false;
+      const rejection = connection.requestRejection(req);
+      if (rejection === undefined) return false;
+      res.statusCode = rejection;
+      res.end();
+      return true;
+    };
     const relay = (payloadOf) => (req, res) => {
+      if (rejected(req, res)) return;
       try {
         const url = new URL(req.url ?? '/', 'http://127.0.0.1');
         reply(res, 200, readCoreData(payloadOf(url)));
@@ -285,6 +305,7 @@ export function apply(ctx, config = {}) {
           kind: 'exact',
           path: '/api/agent-crop/think-icon',
           handler: (req, res) => {
+            if (rejected(req, res)) return;
             try {
               const body = readFileSync(THINK_ICON);
               res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
@@ -299,6 +320,7 @@ export function apply(ctx, config = {}) {
           kind: 'exact',
           path: '/api/agent-crop/whip-icon',
           handler: (req, res) => {
+            if (rejected(req, res)) return;
             try {
               const body = readFileSync(WHIP_ICON);
               res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
