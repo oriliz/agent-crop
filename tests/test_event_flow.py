@@ -246,6 +246,22 @@ class EventFlowTest(unittest.TestCase):
         self.assertTrue(record.get("retro_due"))
         self.assertEqual(record.get("nudge_count"), 2)
 
+    def test_retro_pending_closes_when_an_adjustment_lands(self):
+        self.report(phase="start")
+        self.core.append_event({"ev": "reminder", "work_id": "flow-work", "tier": "red"})
+        self.core.append_event({"ev": "reminder", "work_id": "flow-work", "tier": "red"})
+        record = self.report(phase="end", what="完")
+        pending = record.get("retro_pending")
+        self.assertTrue(pending)
+        self.assertIn("被鞭策 2 次", pending["problem"])
+        adjusted = self.core.record_adjustment(
+            {"metric": "work_minutes", "evidence": "PR #1",
+             "note": "拆任务后更稳", "work_id": "flow-work"},
+            {"sid": self.sid},
+        )
+        self.assertTrue(adjusted.get("retro_resolved"))
+        self.assertTrue([e for e in self.core.load_events() if e.get("ev") == "retro_resolved"])
+
     def test_a_nudge_free_work_gets_a_success_retro(self):
         self.report(phase="start")
         record = self.report(phase="end", what="完")

@@ -491,8 +491,15 @@ export function apply(ctx, config = {}) {
         const { from, to, count } = result.estimate_revised;
         extra.push(`[crop] 改口：${from} → ${to} 分钟（第 ${count} 次）。新预期从现在重新起算，改小不会立刻算超时；次数会计入估准率。`);
       }
-      if (result.retro_due) {
-        extra.push(`[crop] 这个工作累计被鞭策 ${Number(result.nudge_count) || 0} 次，但没写改进。补一句 improve=下次怎么更好，别只交结果。`);
+      if (result.retro_pending) {
+        const pending = result.retro_pending;
+        extra.push(
+          `[crop] 这个工作被鞭策 ${Number(result.nudge_count) || 0} 次，已记为待复盘：`
+          + `问题=${pending.problem}；建议方向=${pending.suggested_fix}。\n`
+          + `现在就把实际改进写进本次 end 的 improve=…；再调用 crop_adjust(action="record", `
+          + `metric="work_minutes", evidence=…, note=…, work_id="${pending.work_id}") 建档。`
+          + `建档后这条待复盘会自动关闭——只提醒不留意见，等于没复盘。`,
+        );
       }
       if (result.retro_smooth) {
         extra.push('[crop] 这次挺顺利，花一行说为什么顺利（用了什么方法/前提），别让经验白白流走。');
