@@ -874,7 +874,8 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                           "sediment": report["sediment"]})
         append_event({"ev": "work_close", "sid": sid, "work_id": report["task_id"],
                       "verdict": report.get("verdict", "")})
-        release_binding(sid)
+        # #43：收尾不立刻解绑——下一轮开头不该再被催 start，墙钟也要能跨轮累计。
+        mark_binding_ended(sid, report["task_id"])
         close_task(report["task_id"])
     else:
         _upsert_task(record, workspace)
@@ -1043,7 +1044,7 @@ def miss_nudge(streak: int, sid: str | None = None) -> str:
     binding hint already covers.  Nagging here was the "上一轮没登记" noise
     (card 0f9927d4).
     """
-    if sid and not resolve_binding(sid):
+    if sid and (not resolve_binding(sid) or binding_ended(sid)):
         return ""
     tier = "miss_streak" if int(streak or 0) >= 2 else "miss"
     if voice is not None:
@@ -1242,6 +1243,9 @@ def maybe_work_reminder(sid: str) -> str:
     task_id = _latest_work_for_session(sid)
     if not task_id:
         return ""
+    # 已收尾但仍保留的绑定（#43）：交付、汇报阶段不该再抽鞭子。
+    if binding_ended(sid):
+        return ""
     health = work_health(task_id)
     if not health:
         return ""
@@ -1284,9 +1288,10 @@ def maybe_reminder(sid: str) -> str:
     health = work_health(task_id) if task_id else None
     has_estimate = bool(health and health.get("expect_min"))
     start = current_block_start(sid)
-    if start and not has_estimate:
+    if start:
         minutes = active_minutes(sid, start, now_ms())
-        red = float(config["red_min"])
+        # 有预估时别把块时钟整段跳过：用墙钟兜底，防报个 3 分钟就永久关掉红线（#43）。
+        red = 60.0 if has_estimate else float(config["red_min"])
         if minutes >= red and not _cooldown_active(sid, float(config["remind_min"]), "red"):
             persona = str(config.get("persona") or "owner")
             if persona == "free":
@@ -1582,6 +1587,9 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
     """Turn-start line: plain prose when bound, candidate list when ambiguous."""
     tasks = open_tasks(workspace, 3, sid)
     bound_id = resolve_binding(sid) if sid else ""
+    if bound_id and binding_ended(sid):
+        return (f"[crop] 上一件工作（{bound_id}）已经收尾，本会话继续聊或交付都不用重新绑定；"
+                "确实是新工作，再 crop_update(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\")。")
     claimed = None
     if bound_id:
         # Read the bound task directly: it does not have to be a top-3 candidate.
@@ -2836,6 +2844,34 @@ def release_binding(sid: str) -> None:
     value["bindings"] = [item for item in value.get("bindings", [])
                          if not (item.get("sid") == sid and float(item.get("expires_at") or 0) > now)]
     save_bindings(value)
+
+
+def mark_binding_ended(sid: str, work_id: str) -> None:
+    """Keep the binding, flag it as ended.
+
+    Releasing it at ``end`` made the next turn look unbound, so the host nudged
+    the agent to start again — a start→end→start loop with empty check-ins
+    (issue #43).  Keeping the row also lets the wall clock keep accumulating
+    across turns instead of restarting from zero.
+    """
+    value = load_bindings()
+    now = now_ms()
+    for item in value.get("bindings", []):
+        if item.get("sid") == sid and float(item.get("expires_at") or 0) > now:
+            item["ended_at"] = now
+            if work_id:
+                item["work_id"] = work_id
+    save_bindings(value)
+
+
+def binding_ended(sid: str) -> bool:
+    """True when the session's live binding points at a work that already ended."""
+    value = load_bindings()
+    now = now_ms()
+    for item in value.get("bindings", []):
+        if item.get("sid") == sid and float(item.get("expires_at") or 0) > now:
+            return bool(item.get("ended_at"))
+    return False
 
 
 def migrate_bindings() -> int:
