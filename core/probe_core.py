@@ -3507,11 +3507,11 @@ def _ledger_row(event: dict, end: int) -> dict:
     sigma = _stdev(baseline_values) if len(baseline_values) >= 2 else 0.0
 
     after_weeks = _weekly_values(metric, adopted, end, work_type)
-    after_values = [week["value"] for week in after_weeks if week["value"] is not None]
     after_samples = sum(week["samples"] for week in after_weeks)
     complete_after = [week for week in after_weeks
                       if week["complete"] and week["value"] is not None]
-    latest_after = after_values[-1] if after_values else None
+    # 判定只用完整周：不满一周的桶样本少，容易被一两件事带偏。
+    judged_after = complete_after[-1]["value"] if complete_after else None
     age_days = (end - adopted) / 86400000
 
     # 改善阈值：基线 10% 与 4 周周间波动 1σ 取大者（卡片 0edeaa8c 的口径）
@@ -3539,7 +3539,7 @@ def _ledger_row(event: dict, end: int) -> dict:
 
     if baseline_median is None:
         status = "no-baseline"
-    elif age_days < LEDGER_OBSERVE_DAYS and after_samples == 0:
+    elif not complete_after:
         status = "observing"
     elif min(baseline_samples, after_samples) < LEDGER_MIN_SAMPLE:
         status = "insufficient"
@@ -3547,14 +3547,14 @@ def _ledger_row(event: dict, end: int) -> dict:
         status = "guardrail"
     elif len(complete_after) >= 3 and all(good(week["value"]) for week in complete_after[-3:]):
         status = "met"
-    elif good(latest_after):
+    elif good(judged_after):
         status = "improving"
     else:
         status = "not-improved"
 
     delta = None
-    if latest_after is not None and baseline_median:
-        delta = (latest_after - baseline_median) / abs(baseline_median)
+    if judged_after is not None and baseline_median:
+        delta = (judged_after - baseline_median) / abs(baseline_median)
 
     return {
         "work_id": work_id,
@@ -3564,7 +3564,7 @@ def _ledger_row(event: dict, end: int) -> dict:
         "adopted_at": adopted,
         # 兼容旧字段名：before/after 现在是派生值，不是调用方塞的
         "before": baseline_median,
-        "after": latest_after,
+        "after": judged_after,
         "samples": {"before": baseline_samples, "after": after_samples},
         "weeks": {
             "baseline": len(baseline_weeks),
