@@ -473,7 +473,16 @@ export function apply(ctx, config = {}) {
           block_start: state.blockStart,
         },
       });
-      if (!result) throw new Error('crop_update could not be recorded');
+      if (!result) {
+        const missing = ['phase', 'task_id', 'summary']
+          .filter((key) => !String(args?.[key] ?? '').trim());
+        const detail = missing.length ? ` (missing: ${missing.join(', ')})` : '';
+        throw new Error(
+          `crop_update could not be recorded${detail}. `
+          + 'crop_update 只收 phase / task_id / summary 等工作字段；'
+          + '读改进台账请用 crop_adjust(action="ledger")。',
+        );
+      }
       state.reported = true;
       state.everReported = true;
       // 收尾后进入 120 秒冷静期：交付、汇报、截图都算收尾，不必重新绑定。
