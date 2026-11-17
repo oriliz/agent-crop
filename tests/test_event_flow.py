@@ -164,6 +164,23 @@ class EventFlowTest(unittest.TestCase):
         self.assertIn("side_issue", self.kinds())
         self.assertEqual(self.core.load_open()["tasks"]["flow-work"].get("state", "open"), "open")
 
+    def test_switching_work_leaves_a_switch_event_and_warns(self):
+        self.report(phase="start", task_id="old-work", summary="旧")
+        record = self.report(phase="start", task_id="new-work", summary="新")
+        self.assertEqual(record.get("switched_from"), "old-work")
+        switches = [e for e in self.events() if e.get("ev") == "work_switch"]
+        self.assertEqual(len(switches), 1)
+        self.assertEqual(switches[0]["from"], "old-work")
+        self.assertEqual(switches[0]["to"], "new-work")
+
+    def test_miss_nudge_stays_quiet_after_end(self):
+        self.report(phase="start", summary="做")
+        self.report(phase="end", summary="完", what="完")
+        self.assertEqual(self.core.miss_nudge(2, self.sid), "")
+        # 有绑定时照常催：真正漏报的长回合不能静音
+        self.report(phase="start", summary="又开一件")
+        self.assertNotEqual(self.core.miss_nudge(2, self.sid), "")
+
     def test_end_report_writes_summary_and_closes(self):
         self.report(phase="start")
         self.report(phase="end", what="做完了", cost="查资料", next_time="先画图", verdict="justified")

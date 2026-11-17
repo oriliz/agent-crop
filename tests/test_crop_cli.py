@@ -115,7 +115,7 @@ class StatusViewTest(unittest.TestCase):
         self.assertIn("把探针开源", line)
         # 只有一条活跃工作时不存在“选哪个”，直接继承（例如重启/换会话）
         self.assertIn("上个会话认领", line)
-        self.assertNotIn("哪个属于本会话", line)
+        self.assertNotIn("先选一条", line)
 
     def test_record_report_syncs_runtime_sid(self):
         core = self.core
@@ -135,7 +135,7 @@ class StatusViewTest(unittest.TestCase):
         # 别的会话看到的是“上个会话认领”，不是认领提示
         other = core.work_status_line("/tmp/ws", "s2")
         self.assertIn("上个会话认领", other)
-        self.assertNotIn("哪个属于本会话", other)
+        self.assertNotIn("先选一条", other)
 
     def test_work_status_line_lists_candidates_when_ambiguous(self):
         core = self.core
@@ -144,10 +144,11 @@ class StatusViewTest(unittest.TestCase):
         core.record_report({"phase": "start", "task_id": "a2", "summary": "乙", "goal": "乙"},
                            {"sid": "s2", "workspace": "/tmp/ws"})
         line = core.work_status_line("/tmp/ws", "s3")
-        self.assertIn("未完成的工作", line)
+        self.assertIn("本会话还没有绑定工作", line)
+        self.assertIn("其他会话有 2 条", line)
         self.assertIn("a1", line)
         self.assertIn("a2", line)
-        self.assertIn("哪个属于本会话", line)
+        self.assertIn("先选一条", line)
 
     def test_work_status_line_prefers_recent(self):
         core = self.core
@@ -180,7 +181,7 @@ class StatusViewTest(unittest.TestCase):
                            {"sid": "s1", "workspace": "/tmp/ws"})
         hint = core.format_start_hint(core.open_tasks("/tmp/ws", 3, "s1"), core.open_works_count(), "s1")
         self.assertIn("当前工作", hint)
-        self.assertNotIn("哪个属于本会话", hint)
+        self.assertNotIn("先选一条", hint)
 
     def test_start_hint_honors_a_binding_outside_the_candidates(self):
         core = self.core
@@ -206,7 +207,7 @@ class StatusViewTest(unittest.TestCase):
         self.assertIn("当前工作", hint)
         self.assertIn("甲目标", hint)
         self.assertIn("t0", hint)
-        self.assertNotIn("哪个属于本会话", hint)
+        self.assertNotIn("先选一条", hint)
 
     def test_start_hint_requires_binding(self):
         core = self.core

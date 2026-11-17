@@ -419,9 +419,15 @@ def _upsert_task(report: dict, workspace: str) -> None:
                 "ev": "estimate_revised", "sid": report.get("sid", ""),
                 "work_id": task_id, "from": previous, "to": current, "reason": reason,
             })
+        # 改口不回溯：新预期从改口这一刻重新给一个冷静窗口，别让“把预期改小”
+        # 立刻把已经跑了 25 分钟的工作判成 overdue（卡片 82f42c50）。
+        # 普通 progress 报同一个数字不算改口，不刷新时间点。
+        if previous is None or (previous and abs(previous - current) > 0.01):
+            task["expect_set_at"] = report["t"]
+            if previous is not None:
+                task["expect_revised_at"] = report["t"]
         task["expect_min"] = current
         task["expect_why"] = report.get("expect_why") or task.get("expect_why", "")
-        task["expect_set_at"] = report["t"]
     if not task.get("title") or task["title"] == task_id:
         task["title"] = report.get("summary") or task_id
     task["status"] = "open"
@@ -743,6 +749,20 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         block_start = runtime.get("block_start")
     block_start = _valid_block_start(sid, block_start)
     minutes = active_minutes(sid, block_start, now_ms()) if block_start else 0.0
+    # Capture what the work looked like before this report mutates it: the
+    # estimate revision note and the work-switch warning both need the old value.
+    previous_open = load_open().get("tasks", {}) or {}
+    previous_task = previous_open.get(report["task_id"]) or {}
+    previous_expect = previous_task.get("expect_min")
+    previous_changes = len(previous_task.get("expect_history") or [])
+    switched_from = ""
+    if report["phase"] == "start":
+        old_binding = resolve_binding(sid)
+        if old_binding and old_binding != report["task_id"]:
+            old_task = previous_open.get(old_binding) or {}
+            if (old_task.get("status", "open") == "open"
+                    and old_task.get("state", "open") == "open"):
+                switched_from = old_binding
     record = {
         "t": now_ms(),
         "host": host(),
@@ -799,6 +819,15 @@ def record_report(args: dict, context: dict | None = None) -> dict:
     except Exception:
         pass
     record["origin"] = "reminder" if record.get("reply_to") else "self"
+    if (report.get("expect_min") and previous_expect is not None
+            and abs(float(previous_expect) - float(report["expect_min"])) > 0.01):
+        record["estimate_revised"] = {
+            "from": float(previous_expect),
+            "to": float(report["expect_min"]),
+            "count": previous_changes + 1,
+        }
+    if switched_from:
+        record["switched_from"] = switched_from
 
     already_closed = (report["phase"] == "end"
                       and report["task_id"] not in (load_open().get("tasks") or {}))
@@ -847,6 +876,10 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         bind_session(sid, report["task_id"])
         if report["phase"] == "start":
             append_event({"ev": "work_claim", "sid": sid, "work_id": report["task_id"]})
+            if switched_from:
+                # 切工作不能让旧工作“静默失联”：留一条可追溯事件，工具结果里也会警告。
+                append_event({"ev": "work_switch", "sid": sid,
+                              "from": switched_from, "to": report["task_id"]})
             append_event({"ev": "work_open", "sid": sid, "work_id": report["task_id"],
                           "goal": report.get("goal", ""), "type": report.get("type", ""),
                           "difficulty": report.get("difficulty", "")})
@@ -997,14 +1030,50 @@ def record_stop(sid: str) -> None:
     write_runtime(sid, read_runtime().get("workspace", ""), None)
 
 
-def miss_nudge(streak: int) -> str:
-    """Missing-report nudge; streaks of 2+ switch to the harsher pool."""
+def miss_nudge(streak: int, sid: str | None = None) -> str:
+    """Missing-report nudge; streaks of 2+ switch to the harsher pool.
+
+    With no live binding there is no work to补记: the situation is either the
+    post-end cool-down (交付/汇报动作) or a session that never bound, which the
+    binding hint already covers.  Nagging here was the "上一轮没登记" noise
+    (card 0f9927d4).
+    """
+    if sid and not resolve_binding(sid):
+        return ""
     if voice is not None:
         try:
             return voice.miss(int(streak or 0), paths().get("voice"))
         except Exception:
             pass
     return "[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_update 写一行。"
+
+
+def binding_hint(sid: str) -> str:
+    """What to say when a session used tools without a live binding.
+
+    After an end, "bind before you work" is the wrong instruction: delivery,
+    screenshots and the final report are follow-up, not a new work.  Give the
+    two real exits — side-issue or a new start — instead of a blanket nag
+    (cards d0007eaf / 9d5ee6b0).
+    """
+    last_report = None
+    for event in reversed(load_events(sid=sid)):
+        if event.get("ev") == "probe_report":
+            last_report = event
+            break
+    if last_report and last_report.get("phase") == "end":
+        work_id = last_report.get("task_id") or "上一件工作"
+        return (
+            f'[crop] 上一件工作（{work_id}）已经收尾，当前没有绑定。'
+            "交付、汇报、截图这类收尾动作不用再绑；只是收尾追问就记 "
+            'category="side-issue"；确实是新工作，再 crop_update(phase="start", '
+            'task_id="<短名>", summary="<一句话>", expect_min=预估分钟)。'
+        )
+    return (
+        '[crop] 你已经在调用工具，但还没有绑定任何工作。先调 crop_update(phase="start", '
+        'task_id="<2-3 个词的短名>", summary="<一句话>", expect_min=预估分钟) 再继续，'
+        "这样这段时间才有归属；顺手报个预期时长，鞭子就按你的数字算。"
+    )
 
 
 def record_session_end(sid: str) -> None:
@@ -1060,19 +1129,18 @@ def _nudge(tier: str, meta: dict) -> str:
     return format_reminder(float(meta.get("m") or 0), load_config())
 
 
-def _cooldown_active(sid: str, minutes: float, tier: str, work_id: str = "") -> bool:
-    """Same tier inside remind_min stays quiet; the next tier is a new contract.
+def _cooldown_active(sid: str, minutes: float, tier: str = "", work_id: str = "") -> bool:
+    """One nudge per remind_min window per work, whatever the tier.
 
-    Legacy reminder events carry no tier, so they match any tier — an upgrade
-    does not double-nudge just because the field is new.
+    A tier upgrade used to bypass the cooldown, which is how one minute could
+    produce both a yellow and an overdue (card 82f42c50).  ``tier`` is kept in
+    the signature for callers, but only the window and the work matter.
     """
     window = float(minutes) * 60000
     for event in reversed(load_events(sid=sid)):
         if event.get("ev") != "reminder":
             continue
-        if event.get("tier") not in (None, tier):
-            continue
-        if work_id and event.get("work_id") != work_id:
+        if work_id and event.get("work_id") not in (None, work_id):
             continue
         return now_ms() - int(event.get("t") or 0) < window
     return False
@@ -1133,6 +1201,14 @@ def maybe_work_reminder(sid: str) -> str:
     health = work_health(task_id)
     if not health:
         return ""
+    # 刚刚改口：先按新数字重新起算，别在同一分钟里把旧预期攒下的超时全砸出来。
+    revised_at = health.get("expect_revised_at")
+    if revised_at:
+        try:
+            if now_ms() - int(revised_at) < float(config["remind_min"]) * 60000:
+                return ""
+        except Exception:
+            pass
     tier = reminder_tier(health, config)
     if not tier:
         return ""
@@ -1221,6 +1297,48 @@ ESTIMATE_HINT = (
 )
 
 
+def _session_work_counts(sid: str | None) -> tuple[int, int]:
+    """(本会话的未完成工作数, 其他会话的未完成工作数)。"""
+    rows = [
+        task for task in load_open().get("tasks", {}).values()
+        if task.get("status", "open") == "open" and task.get("state", "open") == "open"
+    ]
+    if not sid:
+        return len(rows), 0
+    mine = sum(1 for task in rows if task.get("last_sid") == sid)
+    return mine, len(rows) - mine
+
+
+def format_candidates(tasks: list[dict], total: int | None = None,
+                      sid: str | None = None) -> str:
+    """Unbound session: one imperative action first, then at most three candidates.
+
+    本会话 / 其他会话分开数，别把全局待办当成“本会话的活”（card 9da932ed）。
+    """
+    count = total if total is not None else len(tasks)
+    mine, others = _session_work_counts(sid)
+    if sid and mine == 0:
+        lines = [f"[crop] 本会话还没有绑定工作；其他会话有 {others or count} 条在跑。候选（最多 3 条）："]
+    elif sid:
+        lines = [f"[crop] 未完成的工作：本会话 {mine} 条 / 其他会话 {others} 条。最近活跃的是："]
+    else:
+        lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
+    for task in tasks:
+        lines.append(
+            f"- {task.get('task_id')} — {task.get('goal') or task.get('title') or ''}"
+            f"（{ago(task.get('last_seen_at', 0))}）"
+        )
+    extra = count - len(tasks)
+    if extra > 0:
+        lines.append(f"另有 {extra} 条，用 crop_works 查看或筛选。")
+    example = tasks[0].get("task_id")
+    lines.append(
+        "先选一条，再动手：接着做用 "
+        f'crop_update(phase="start", task_id="{example}")；新开用 2-3 个词的短名。'
+    )
+    return "\n".join(lines)
+
+
 def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
     # A live binding decides the first-turn line: the bound work may have
     # dropped out of the three candidates (another session touched it, or newer
@@ -1237,24 +1355,11 @@ def format_open_tasks(tasks: list[dict], total: int | None = None, sid: str | No
     claimed = next((task for task in tasks if sid and task.get("last_sid") == sid), None)
     if claimed:
         return work_status_line(None, sid)
-    count = total if total is not None else len(tasks)
-    lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
-    for task in tasks:
-        lines.append(
-            f"- {task.get('task_id')} — {task.get('goal') or task.get('title') or ''}"
-            f"（{ago(task.get('last_seen_at', 0))}）"
-        )
-    extra = count - len(tasks)
-    if extra > 0:
-        lines.append(f"另有 {extra} 条，用 crop_works 查看或筛选。")
-    example = tasks[0].get("task_id")
-    lines.append(
-        "哪个属于本会话？先判断是接着做还是新开（先绑定，再干活）：接着做用 "
-        f'crop_update(phase="start", task_id="{example}")；新开用 2-3 个词的短名。'
-    )
-    lines.append(ESTIMATE_HINT)
-    lines.append("尽量让一个会话只对应一件工作；要做的其实是几件事就拆开，一件一件来。")
-    return "\n".join(lines)
+    return "\n".join([
+        format_candidates(tasks, total, sid),
+        ESTIMATE_HINT,
+        "尽量让一个会话只对应一件工作；要做的其实是几件事就拆开，一件一件来。",
+    ])
 
 
 def format_start_hint(tasks: list[dict], total: int | None = None, sid: str | None = None) -> str:
@@ -1439,23 +1544,11 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
             f"{clock}；上次更新 {ago(current.get('last_seen_at', 0))}。{tail}"
         )
     count = open_works_count(workspace)
-    lines = [f"[crop] 未完成的工作有 {count} 条，最近活跃的是："]
-    for task in tasks:
-        lines.append(
-            f"- {task.get('task_id')} — {task.get('goal') or task.get('title') or ''}"
-            f"（{ago(task.get('last_seen_at', 0))}）"
-        )
-    extra = count - len(tasks)
-    if extra > 0:
-        lines.append(f"另有 {extra} 条，用 crop_works 查看或筛选。")
-    example = tasks[0].get("task_id")
-    lines.append(
-        "哪个属于本会话？先绑定再干活：接着做用 "
-        f'crop_update(phase="start", task_id="{example}")；'
-        "新开用 2-3 个词的短名。尽量一个会话只对应一件工作。"
-    )
-    lines.append(ESTIMATE_HINT)
-    return "\n".join(lines)
+    return "\n".join([
+        format_candidates(tasks, count, sid),
+        ESTIMATE_HINT,
+        "尽量让一个会话只对应一件工作；要做的其实是几件事就拆开，一件一件来。",
+    ])
 
 
 # ---------------------------------------------------------------------------
@@ -2529,6 +2622,8 @@ def work_health(work_id: str | None = None) -> dict | None:
         "expect_min": expect,
         "expect_why": task.get("expect_why") or "",
         "expect_changes": len(task.get("expect_history") or []),
+        "expect_set_at": task.get("expect_set_at"),
+        "expect_revised_at": task.get("expect_revised_at"),
     }
 
 

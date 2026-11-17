@@ -44,6 +44,8 @@ def dispatch(payload: dict):
         return core.mark_stale_works()
     if op == "binding":
         return core.resolve_binding(sid)
+    if op == "binding_hint":
+        return core.binding_hint(sid)
     if op == "health_text":
         args = payload.get("args") or {}
         summary = core.health_summary(
@@ -91,7 +93,7 @@ def dispatch(payload: dict):
         return core.maybe_reminder(sid)
 
     if op == "miss_nudge":
-        return core.miss_nudge(int(payload.get("streak") or 1))
+        return core.miss_nudge(int(payload.get("streak") or 1), sid)
     if op == "work_status":
         return core.work_status_line(workspace, sid)
     if op == "work_suspend":

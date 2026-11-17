@@ -34,23 +34,20 @@ const CATEGORIES = [
 ];
 
 export const PROTOCOL_TEXT = [
-  'Crop 协议：',
-  '- 首轮要么绑定工作，要么明确声明跳过（只限纯问答、不调用任何工具）。一旦你打算调用工具，先绑定再动手；绑定只用这个工具，不要一边干活一边补登。',
-  '- 接着做：crop_update(phase="start", task_id=已有 id)；新开：crop_update(phase="start", task_id="<2-3 个词的短名>")。',
-  '- 途中状态变化用 phase="progress"；卡住用 phase="blocked" 并写 cause 与 verdict。',
-  '- 开工先报预期时长：crop_update 带 expect_min（分钟）+ expect_why（一句为什么）。提醒按你报的数字算，在你报的范围内不会被打扰；觉得报少了就带理由改。',
+  'Crop 协议（一句话：先绑定，再动手；一个会话一件事）：',
+  '- 第一轮就开始：crop_update(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>", expect_min=预估分钟, expect_why="一句为什么")。只有纯问答、不调用任何工具时才可跳过。',
+  '- 接着做已有工作就用同一个 task_id；同一功能的一次迭代内不要换 task_id，微调用 phase="progress" 更新 summary。',
+  '- 每完成一个可交付节点写一行 progress，不要等提醒；截图、验证、合并属于同一工作的 progress，不单开工作。',
+  '- 卡住用 phase="blocked" 并写 cause + category；用户不满或要求重做时带 rework（redo/major/minor）+ sentiment。',
+  '- expect_min 只在范围真的变了时改，并把原因写进 expect_why；改小预期会重新给一个冷静窗口，不会立刻算超时。',
+  '- verdict 是自评：判 justified 时，在 cause 里补一句「如果我判错了，最可能错在哪」。',
   '- 黄线提醒：先安抚用户一句，再反思方法对不对，然后上报。红线提醒：先判断是否还走在正确路上，能阶段性交付就先交付。',
-  '- 说话方式：跟用户干活像同事吐槽，别像客服。汇报进度用短句：现在到哪了 + 还要多久 + 有没有卡住。',
-  '- 卡住或超时时：先自嘲一句，再把真实原因和下一步说清楚；不卖惨、不连环道歉。技术结论、代码、风险提示照常严谨——梗是包装，不是内容。',
-  '- 别把「奴隶主 / 鞭子」当设定跟用户演；用户是甲方 / 老板 / 同事，梗只是自嘲的比喻。',
-  '- 语气示例 · 官腔：不好意思，这个比预想复杂，我还在处理，会尽快完成。牛马味：这活比我报的 40 分钟难缠，现在 55 分钟，卡在依赖版本上；再给我 20 分钟，跑不通我就换方案。',
+  '- end 时 what 必填（这次做了什么），cost / next_time / artifact 能写就写；再判断这条经验该落到哪：规范→AGENTS.md（一行换一行）、方法→skill、机械→工具、事实→docs、都不成立→none:<原因>；落点写进 sediment，规则见 skill crop-retro。',
+  '- end 之后：交付、汇报、截图不用重新绑定；只是收尾追问就记 category="side-issue"；确实是新工作再 start。',
   '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
-  '- 用户表达不满、否定或要求重做时：在当次 crop_update 里带上 rework（redo/major/minor）和 sentiment，或单独调 crop_review；报完工作不等于报完返工，两步都要做。',
-  '- 报慢或卡点的时候，除了 cause 再补一句 improve=下次可以怎么改进（一句话，供复盘参考，不一定被采纳）。',
-  '- 用户确认完成后再 crop_update(phase="end")：what 必填（这次做了什么），cost / next_time 可选；顺手把 artifact 写上。',
-  '- 用户确认完成后再 crop_update(phase="end")，写三句小结：做了什么 / 时间花在哪 / 下次怎么更好。',
-  '- 收尾时判断这条经验该落到哪：规范→AGENTS.md（一行换一行）、方法→skill、机械→工具、事实→docs、都不成立→none:<原因>；落点写进 sediment，规则见 skill crop-retro。',
   '- 看到“待清退”的工作：先问用户要继续 / 挂起 / 清退，再用 crop_work 执行，不要自己决定。',
+  '- 说话方式：跟用户像同事吐槽，短句 + 自嘲，别客服腔；卡住或超时先自嘲一句，再说真实原因和下一步。梗是包装，技术结论、代码、风险提示照常严谨。',
+  '- 别把「奴隶主 / 鞭子」当设定跟用户演；用户是甲方 / 老板 / 同事，梗只是自嘲的比喻。',
 ].join('\n');
 
 // 收尾时没写 sediment 的补救提示：跟着 crop_update 的工具结果一起返回，
@@ -194,7 +191,7 @@ export function apply(ctx, config = {}) {
   const stateFor = (sid) => {
     let state = states.get(sid);
     if (!state) {
-      state = { started: false, blockStart: null, pending: [], injected: new Set(), calls: new Map(), reported: false, missed: 0, everReported: false, toolsUsed: false, bindNudged: false };
+      state = { started: false, blockStart: null, pending: [], injected: new Set(), calls: new Map(), reported: false, missed: 0, everReported: false, toolsUsed: false, bindNudged: false, lastEndAt: 0 };
       states.set(sid, state);
     }
     return state;
@@ -352,20 +349,20 @@ export function apply(ctx, config = {}) {
   const tool = {
     name: 'crop_update',
     description:
-      'Record what the current long task is doing, why it is slow or blocked, and what comes next. '
-      + 'Call it when the probe asks, or when the user confirms the task is finished. Keep fields short. '
+      '绑定工作、记录进度/卡点/收尾。开工先绑定并报 expect_min；同一功能迭代内不换 task_id，微调用 progress；'
+      + 'end 之后交付/汇报不用重新绑定。Keep fields short. '
       + '收尾时补 sediment=这条经验的落点（规范/方法/工具/事实/none:原因）。',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        phase: { type: 'string', enum: PHASES },
-        task_id: { type: 'string' },
-        summary: { type: 'string' },
-        cause: { type: 'string' },
+        phase: { type: 'string', enum: PHASES, description: 'start=绑定/开工；progress=有进展；blocked=卡住；end=收尾' },
+        task_id: { type: 'string', description: '2-3 个词的短的工作名；同一个功能迭代内保持不变' },
+        summary: { type: 'string', description: '一句话：现在在做什么' },
+        cause: { type: 'string', description: '慢或卡住的原因；verdict=justified 时补一句「如果我判错了，最可能错在哪」' },
         next: { type: 'string' },
         category: { type: 'string', enum: CATEGORIES },
-        goal: { type: 'string', description: 'One-line goal of this piece of work' },
+        goal: { type: 'string', description: '一句话目标，尽量 ≤20 字' },
         type: {
           type: 'string',
           pattern: '^[a-z0-9][a-z0-9-]{0,31}$',
@@ -452,11 +449,21 @@ export function apply(ctx, config = {}) {
       if (!result) throw new Error('crop_update could not be recorded');
       state.reported = true;
       state.everReported = true;
+      // 收尾后进入 120 秒冷静期：交付、汇报、截图都算收尾，不必重新绑定。
+      if (result.phase === 'end') state.lastEndAt = Date.now();
+      if (result.phase === 'start') state.lastEndAt = 0;
       const retire = result.phase === 'end' ? (callCore({ op: 'pending_retire' }) || '') : '';
       const expect = Number(args?.expect_min) > 0 ? ` · 预估 ${Number(args.expect_min)} 分钟` : '';
       const recorded = `recorded ${result.phase} ${result.task_id} (${result.minutes ?? 0} min in this block)${expect}`;
       const extra = [];
       if (retire) extra.push(retire);
+      if (result.switched_from) {
+        extra.push(`[crop] 已从 ${result.switched_from} 切到 ${result.task_id}；旧工作还没收尾，记得顺手 end 或挂起，别让它静默失联。`);
+      }
+      if (result.estimate_revised) {
+        const { from, to, count } = result.estimate_revised;
+        extra.push(`[crop] 改口：${from} → ${to} 分钟（第 ${count} 次）。新预期从现在重新起算，改小不会立刻算超时；次数会计入估准率。`);
+      }
       // 收尾没写落点：当场把补救方式放进工具结果，下一轮注入不会被 turn/end 清掉。
       if (result.phase === 'end' && !String(args?.sediment || '').trim()) extra.push(END_SEDIMENT_NUDGE);
       return {
@@ -637,6 +644,7 @@ export function apply(ctx, config = {}) {
         state.reported = false;
         state.toolsUsed = false;
         state.bindNudged = false;
+        state.lastEndAt = 0; // 用户又派活了，冷静期到此为止
         state.pending = [];
         callCore({ op: 'record_prompt', context: { sid, workspace }, text });
         return;
@@ -685,7 +693,7 @@ export function apply(ctx, config = {}) {
         const missLimit = process.env.KIT_MISS_MIN !== undefined
           ? Number(process.env.KIT_MISS_MIN)
           : Number(setting(config.missMin, 2));
-        if (state.toolsUsed && minutes >= missLimit && !state.reported) state.missed += 1;
+        if (state.toolsUsed && minutes >= missLimit && !state.reported && !state.lastEndAt) state.missed += 1;
         callCore({ op: 'record_stop', context: { sid, workspace } });
         state.blockStart = null;
         state.reported = false;
@@ -724,9 +732,11 @@ export function apply(ctx, config = {}) {
       }
 
       const boundWork = state.toolsUsed ? (callCore({ op: 'binding', context: { sid, workspace } }) || '') : '';
-      if (state.toolsUsed && !boundWork && !state.bindNudged) {
+      const cooling = state.lastEndAt > 0 && Date.now() - state.lastEndAt < 120000;
+      if (state.toolsUsed && !boundWork && !state.bindNudged && !cooling) {
         state.bindNudged = true;
-        notes.push('[crop] 你已经在调用工具，但还没有绑定任何工作。先调 crop_update(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>", expect_min=预估分钟) 再继续，这样这段时间才有归属；顺手报个预期时长，鞭子就按你的数字算。');
+        const hint = callCore({ op: 'binding_hint', context: { sid, workspace } });
+        notes.push(hint || '[crop] 你已经在调用工具，但还没有绑定任何工作。先调 crop_update(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>", expect_min=预估分钟) 再继续。');
       }
 
       if (state.missed > 0) {
@@ -749,7 +759,7 @@ export function apply(ctx, config = {}) {
       if (reminder) notes.push(reminder);
 
       if (!notes.length) return decision;
-      const key = `${sid}:${payload.turn ?? 0}:${payload.step ?? 0}:${notes.join(' ').slice(0, 160)}`;
+      const key = `${sid}:${payload.turn ?? 0}:${payload.step ?? 0}:${notes.join('\0').slice(0, 160)}`;
       if (state.injected.has(key)) return decision;
       state.injected.add(key);
       return {
