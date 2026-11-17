@@ -131,7 +131,8 @@ def dispatch(payload: dict):
         core.record_prompt(sid, payload.get("text") or "", workspace)
         return True
     if op == "record_tool":
-        core.record_tool(sid, payload.get("name") or "unknown", bool(payload.get("is_error")))
+        core.record_tool(sid, payload.get("name") or "unknown", bool(payload.get("is_error")),
+                         payload.get("target") or None)
         return True
     if op == "record_stop":
         core.record_stop(sid)

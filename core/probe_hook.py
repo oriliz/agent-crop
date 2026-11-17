@@ -88,7 +88,24 @@ def main() -> None:
         is_error = False
         if isinstance(response, dict):
             is_error = bool(response.get("is_error") or response.get("isError"))
-        core.record_tool(sid, name, is_error)
+        tool_input = data.get("tool_input") or data.get("toolInput") or {}
+        target = ""
+        if isinstance(tool_input, dict):
+            lowered = str(name).lower()
+            if lowered in ("read", "read_file", "view", "open", "cat"):
+                keys = ("file_path", "filePath", "path", "file")
+            elif lowered == "skill":
+                keys = ("name", "skill")
+            elif lowered in ("grep", "search"):
+                keys = ("path", "file_path")
+            else:
+                keys = ()
+            for key in keys:
+                value = tool_input.get(key)
+                if isinstance(value, str) and value.strip():
+                    target = value.strip()
+                    break
+        core.record_tool(sid, name, is_error, target or None)
         output_post_tool(core.maybe_reminder(sid))
         return
 

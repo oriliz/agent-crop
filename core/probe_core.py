@@ -12,6 +12,7 @@ Data location, in order:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -1058,18 +1059,31 @@ def current_block_start(sid: str) -> int | None:
 REPEAT_TOOL_THRESHOLD = int(os.environ.get("KIT_REPEAT_TOOL", "5"))
 
 
-def record_tool(sid: str, name: str, is_error: bool) -> None:
+def record_tool(sid: str, name: str, is_error: bool, target: str | None = None) -> None:
     tool = str(name or "")[:80]
     work_id = resolve_binding(sid) or ""
-    event = {"ev": "tool", "sid": sid, "name": tool, "is_error": bool(is_error)}
+    event = {"ev": "tool", "sid": sid, "name": tool, "is_error": bool(is_error), "t": now_ms()}
     if work_id:
         event["work_id"] = work_id
+    # 产物归因与重复检测共用一次读取：target 只在读取类工具上有值，
+    # 命中是历史台账与本次 target 的比对，结果落 artifact_hit 事件。
+    history: list[dict] = []
+    try:
+        history = load_events(limit=0) if target else load_events(sid=sid)
+    except Exception:
+        history = []
+    if target:
+        try:
+            _record_artifact_hits(sid, work_id, tool, target, history)
+        except Exception:
+            pass
     append_event(event)
     try:
         start = current_block_start(sid)
+        base = [item for item in history if item.get("sid") == sid]
         recent = [
-            event for event in load_events(sid=sid)
-            if event.get("ev") == "tool" and (not start or int(event.get("t") or 0) >= start)
+            item for item in (base + [event])
+            if item.get("ev") == "tool" and (not start or int(item.get("t") or 0) >= start)
         ]
         tail = recent[-REPEAT_TOOL_THRESHOLD:]
         if len(tail) >= REPEAT_TOOL_THRESHOLD and all(event.get("name") == tool for event in tail):
@@ -3520,6 +3534,182 @@ def format_health(summary: dict) -> str:
 # 判定交给确定性规则（样本量、方向、护栏不劣化），报表与周报复用同一份数据。
 # 指标值从原始事件派生，不为 ledger 新增快照事件（EVENTS.md §1.3）。
 
+ARTIFACT_KINDS = ("file", "skill", "hook")
+ARTIFACT_DELIVERIES = ("read", "injected")
+ARTIFACT_STATUS_LABEL = {
+    "unregistered": "未登记产物，无法验证",
+    "missing": "产物文件不存在",
+    "not-read": "产物存在，但还没有会话读到",
+    "injected": "结构性注入（每会话自动加载）",
+}
+
+
+def _norm_path(path: str, workspace: str = "") -> str:
+    text = str(path or "").strip()
+    if not text:
+        return ""
+    text = os.path.expanduser(text)
+    if not os.path.isabs(text) and workspace:
+        text = os.path.join(os.path.expanduser(str(workspace)), text)
+    # realpath 解析 /tmp → /private/tmp 这类符号链接，否则同一个文件会被当成两个路径。
+    return os.path.realpath(os.path.normpath(text))
+
+
+def _same_key(left: str, right: str) -> bool:
+    a = str(left or "").strip().lower()
+    b = str(right or "").strip().lower()
+    if not a or not b:
+        return False
+    return a == b or os.path.basename(a) == os.path.basename(b)
+
+
+def _parse_artifact(value) -> dict | None:
+    """Accept an object, or "kind:path#anchor" (optionally "@injected")."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, str):
+        text = str(value).strip()
+        if not text:
+            return None
+        kind = "file"
+        head, sep, tail = text.partition(":")
+        if sep and head.strip() in ARTIFACT_KINDS:
+            kind, text = head.strip(), tail
+        anchor = ""
+        if "#" in text:
+            text, anchor = text.split("#", 1)
+        delivery = "read"
+        path = text.strip()
+        if path.endswith("@injected"):
+            path = path[:-len("@injected")].rstrip()
+            delivery = "injected"
+        if not path:
+            raise ValueError("artifact path is required")
+        return {"kind": kind, "path": path[:500],
+                "anchor": anchor.strip()[:120], "delivery": delivery}
+    if isinstance(value, dict):
+        kind = str(value.get("kind") or "file").strip().lower()
+        delivery = str(value.get("delivery") or "read").strip().lower()
+        path = str(value.get("path") or "").strip()
+        if kind not in ARTIFACT_KINDS:
+            raise ValueError("artifact.kind must be one of: " + ", ".join(ARTIFACT_KINDS))
+        if delivery not in ARTIFACT_DELIVERIES:
+            raise ValueError("artifact.delivery must be one of: " + ", ".join(ARTIFACT_DELIVERIES))
+        if not path:
+            raise ValueError("artifact.path is required")
+        return {"kind": kind, "path": path[:500],
+                "anchor": str(value.get("anchor") or "").strip()[:120],
+                "delivery": delivery}
+    raise ValueError('artifact must be a string ("kind:path#anchor") or an object')
+
+
+def _adjustment_id(adopted_at: int, metric: str, evidence: str, note: str) -> str:
+    raw = f"{adopted_at}|{metric}|{evidence}|{note}".encode("utf-8")
+    return "adj-" + hashlib.sha1(raw).hexdigest()[:12]
+
+
+def _artifact_hit_ids(target: str, events: list[dict]) -> list[tuple[dict, dict]]:
+    """Which registered artifacts does this tool target correspond to?"""
+    text = str(target or "").strip()
+    if not text:
+        return []
+    target_norm = _norm_path(text)
+    found: list[tuple[dict, dict]] = []
+    seen: set[str] = set()
+    for event in events:
+        if event.get("ev") != "adjustment":
+            continue
+        artifact = event.get("artifact")
+        if not isinstance(artifact, dict):
+            continue
+        if str(artifact.get("delivery") or "read") == "injected":
+            continue
+        key = str(event.get("adjustment_id") or event.get("t") or "")
+        if key in seen:
+            continue
+        kind = str(artifact.get("kind") or "file")
+        path = str(artifact.get("path") or "")
+        if kind == "skill":
+            match = _same_key(text, path)
+        else:
+            artifact_norm = _norm_path(path, str(event.get("workspace") or ""))
+            match = bool(artifact_norm) and (
+                target_norm == artifact_norm
+                or target_norm.startswith(artifact_norm + os.sep)
+            )
+        if match:
+            seen.add(key)
+            found.append((event, artifact))
+    return found
+
+
+def _record_artifact_hits(sid: str, work_id: str, tool: str, target: str,
+                          events: list[dict]) -> None:
+    for adjustment, artifact in _artifact_hit_ids(target, events):
+        hit = {
+            "ev": "artifact_hit",
+            "sid": sid,
+            "tool": str(tool or "")[:80],
+            "target": str(target or "")[:500],
+            "adjustment_id": str(adjustment.get("adjustment_id") or ""),
+            "artifact": dict(artifact),
+        }
+        if work_id:
+            hit["work_id"] = work_id
+        append_event(hit)
+
+
+def _artifact_report(artifact: dict | None, event: dict, events: list[dict]) -> dict:
+    report = {
+        "status": "unregistered", "label": ARTIFACT_STATUS_LABEL["unregistered"],
+        "path": "", "anchor": "", "kind": "", "delivery": "", "exists": None,
+        "hits": 0, "sessions": [], "first_hit": None, "last_hit": None,
+    }
+    if not isinstance(artifact, dict):
+        return report
+    path = str(artifact.get("path") or "")
+    report.update({
+        "path": path,
+        "anchor": str(artifact.get("anchor") or ""),
+        "kind": str(artifact.get("kind") or "file"),
+        "delivery": str(artifact.get("delivery") or "read"),
+    })
+    adjustment_id = str(event.get("adjustment_id") or "")
+    adopted = int(event.get("adopted_at") or event.get("t") or 0)
+    hits = [
+        item for item in events
+        if item.get("ev") == "artifact_hit"
+        and (str(item.get("adjustment_id") or "") == adjustment_id if adjustment_id
+             else int(item.get("t") or 0) >= adopted)
+    ]
+    hits.sort(key=lambda item: int(item.get("t") or 0))
+    sessions: list[str] = []
+    for item in hits:
+        sid = str(item.get("sid") or "")
+        if sid and sid not in sessions:
+            sessions.append(sid)
+    report["hits"] = len(hits)
+    report["sessions"] = sessions
+    report["first_hit"] = int(hits[0].get("t") or 0) if hits else None
+    report["last_hit"] = int(hits[-1].get("t") or 0) if hits else None
+
+    if report["delivery"] == "injected":
+        report["status"] = "injected"
+    elif report["kind"] == "file" and path:
+        workspace = str(event.get("workspace") or "")
+        report["exists"] = os.path.exists(_norm_path(path, workspace))
+        if not report["exists"]:
+            report["status"] = "missing"
+        else:
+            report["status"] = "verified" if hits else "not-read"
+    else:
+        report["status"] = "verified" if hits else "not-read"
+    report["label"] = ARTIFACT_STATUS_LABEL.get(report["status"], report["status"])
+    if report["status"] == "verified":
+        report["label"] = f"已读到（{len(hits)} 次 / {len(sessions)} 个会话）"
+    return report
+
+
 ADJUSTMENT_METRICS = {
     "work_minutes": "同类工作中位活跃分钟",
     "reminder_per_turn": "每回合提醒次数",
@@ -3560,6 +3750,7 @@ def record_adjustment(args: dict, context: dict | None = None) -> dict:
     """
     context = context or {}
     sid = str(context.get("sid") or "unknown")
+    workspace = str(context.get("workspace") or context.get("cwd") or "").strip()
     metric = str(args.get("metric") or "").strip().lower()
     if metric not in ADJUSTMENT_METRICS:
         raise ValueError(
@@ -3572,15 +3763,19 @@ def record_adjustment(args: dict, context: dict | None = None) -> dict:
     note = str(args.get("note") or "").strip()
     if not note:
         raise ValueError("note is required: 一句话说明你为什么认为这条改动会改善指标（这就是 AI 该提供的主观判断）")
+    artifact = _parse_artifact(args.get("artifact"))
     adopted_at = int(args.get("adopted_at") or now_ms())
     event = {
         "ev": "adjustment",
         "t": now_ms(),
         "host": host(),
         "sid": sid,
+        "workspace": workspace,
         "work_id": normalize_task_id(str(args.get("work_id") or "")) or "",
+        "adjustment_id": _adjustment_id(adopted_at, metric, evidence, note),
         "metric": metric,
         "direction": "lower",  # 四个内置指标都是越低越好
+        "artifact": artifact,
         "evidence": evidence,
         "window": str(args.get("window") or "").strip(),
         "adopted_at": adopted_at,
@@ -3681,7 +3876,7 @@ def _weekly_values(metric: str, start: int, end: int,
     return out
 
 
-def _ledger_row(event: dict, end: int) -> dict:
+def _ledger_row(event: dict, end: int, events: list[dict] | None = None) -> dict:
     adopted = int(event.get("adopted_at") or event.get("t") or 0)
     metric = str(event.get("metric") or "")
     work_id = str(event.get("work_id") or "")
@@ -3770,6 +3965,7 @@ def _ledger_row(event: dict, end: int) -> dict:
         "evidence": str(event.get("evidence") or ""),
         "window": str(event.get("window") or ""),
         "note": str(event.get("note") or ""),
+        "artifact": _artifact_report(event.get("artifact"), event, events or []),
         "age_days": round(age_days, 1),
         "rollback": status != "met" and age_days > LEDGER_WEEKS * 7,
     }
@@ -3779,11 +3975,12 @@ def improvement_ledger(days: float = 180.0, limit: int = 20) -> dict:
     """Recent adjustments, judged by data — not by the AI's own verdict."""
     end = now_ms()
     start = end - int(float(days) * 86400000)
+    all_events = load_events(limit=0)
     events = [
-        event for event in load_events()
+        event for event in all_events
         if event.get("ev") == "adjustment" and start <= int(event.get("t") or 0) <= end
     ]
-    rows = [_ledger_row(event, end) for event in events]
+    rows = [_ledger_row(event, end, all_events) for event in events]
     rows.sort(key=lambda row: row["adopted_at"], reverse=True)
 
     return {
@@ -3795,6 +3992,13 @@ def improvement_ledger(days: float = 180.0, limit: int = 20) -> dict:
         "total": len(rows),
         "rollback_hints": [row for row in rows if row.get("rollback")][:5],
     }
+
+
+def _fmt_short(ms: int | None) -> str:
+    try:
+        return datetime.fromtimestamp(int(ms or 0) / 1000).strftime("%m-%d %H:%M")
+    except Exception:
+        return "未知"
 
 
 def format_ledger(ledger: dict) -> str:
@@ -3822,6 +4026,17 @@ def format_ledger(ledger: dict) -> str:
                 lines.append("  护栏变差：" + "、".join(worse) + "（任一项变差即不算改进）")
         if row.get("evidence"):
             lines.append(f"  证据：{row['evidence']}")
+        artifact = row.get("artifact") or {}
+        if artifact.get("status"):
+            where = artifact.get("path") or "（未登记）"
+            if artifact.get("anchor"):
+                where += "#" + artifact["anchor"]
+            lines.append(f"  产物：{where} —— {artifact.get('label')}")
+            if artifact.get("sessions"):
+                shown = "、".join(str(sid)[:8] for sid in artifact["sessions"][:5])
+                more = "" if len(artifact["sessions"]) <= 5 else f" 等 {len(artifact['sessions'])} 个会话"
+                first = _fmt_short(artifact.get("first_hit")) if artifact.get("first_hit") else "未知"
+                lines.append(f"  读到会话：{shown}{more}（首次 {first}）")
     for row in ledger.get("rollback_hints") or []:
         lines.append(
             f"- 回滚提示：{row.get('metric_label')}（{row.get('work_id') or '未挂工作'}）"

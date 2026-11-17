@@ -65,6 +65,86 @@ class AdjustmentTest(unittest.TestCase):
         self.assertEqual(event["direction"], "lower")
         self.assertEqual(event["note"], "少一轮提醒，同类工作应该更快收尾")
 
+    # -- 产物：采纳之后落点是什么、有没有被读到 ---------------------------
+    def test_record_stores_artifact_and_stable_id(self):
+        event = self.record(artifact="file:docs/FOO.md#§1")
+        self.assertEqual(event["artifact"], {
+            "kind": "file", "path": "docs/FOO.md", "anchor": "§1", "delivery": "read",
+        })
+        self.assertTrue(event["adjustment_id"].startswith("adj-"))
+        self.assertEqual(event["adjustment_id"],
+                         self.record(artifact="file:docs/FOO.md#§1")["adjustment_id"])
+
+    def test_record_rejects_unknown_artifact_kind(self):
+        with self.assertRaises(ValueError):
+            self.record(artifact={"kind": "spreadsheet", "path": "x"})
+
+    def test_read_of_artifact_creates_a_hit(self):
+        path = os.path.join(self.data, "spec.md")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("# spec")
+        event = self.record(artifact={"kind": "file", "path": path})
+        self.core.record_tool("reader-session", "read", False, target=path)
+        hits = [item for item in self.core.load_events(limit=0)
+                if item.get("ev") == "artifact_hit"]
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["adjustment_id"], event["adjustment_id"])
+        self.assertEqual(hits[0]["target"], path)
+
+    def test_unrelated_read_does_not_create_a_hit(self):
+        path = os.path.join(self.data, "spec.md")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("# spec")
+        self.record(artifact={"kind": "file", "path": path})
+        self.core.record_tool("reader-session", "read", False, target="/tmp/other.md")
+        hits = [item for item in self.core.load_events(limit=0)
+                if item.get("ev") == "artifact_hit"]
+        self.assertEqual(hits, [])
+
+    def test_injected_artifact_is_structural_not_hit_tracked(self):
+        self.record(artifact={"kind": "file", "path": "AGENTS.md", "delivery": "injected"})
+        self.core.record_tool("reader-session", "read", False, target="AGENTS.md")
+        hits = [item for item in self.core.load_events(limit=0)
+                if item.get("ev") == "artifact_hit"]
+        self.assertEqual(hits, [])
+
+    def test_ledger_marks_unregistered_artifact(self):
+        self.record()
+        row = self.core.improvement_ledger()["rows"][0]
+        self.assertEqual(row["artifact"]["status"], "unregistered")
+
+    def test_ledger_marks_missing_artifact_file(self):
+        self.record(artifact={"kind": "file", "path": "/tmp/crop-does-not-exist.md"})
+        row = self.core.improvement_ledger()["rows"][0]
+        self.assertEqual(row["artifact"]["status"], "missing")
+        self.assertFalse(row["artifact"]["exists"])
+
+    def test_ledger_marks_not_read_until_a_session_reads_it(self):
+        path = os.path.join(self.data, "spec.md")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("# spec")
+        self.record(artifact={"kind": "file", "path": path})
+        self.assertEqual(self.core.improvement_ledger()["rows"][0]["artifact"]["status"], "not-read")
+
+        self.core.record_tool("reader-session", "read", False, target=path)
+        artifact = self.core.improvement_ledger()["rows"][0]["artifact"]
+        self.assertEqual(artifact["status"], "verified")
+        self.assertEqual(artifact["sessions"], ["reader-session"])
+        self.assertEqual(artifact["hits"], 1)
+
+    def test_skill_artifact_is_matched_by_name(self):
+        self.record(artifact={"kind": "skill", "path": "grillme"})
+        self.core.record_tool("reader-session", "skill", False, target="grillme")
+        artifact = self.core.improvement_ledger()["rows"][0]["artifact"]
+        self.assertEqual(artifact["status"], "verified")
+        self.assertEqual(artifact["sessions"], ["reader-session"])
+
+    def test_format_ledger_shows_artifact_status(self):
+        self.record(artifact={"kind": "file", "path": "/tmp/crop-does-not-exist.md"})
+        text = self.core.format_ledger(self.core.improvement_ledger())
+        self.assertIn("产物", text)
+        self.assertIn("产物文件不存在", text)
+
     # -- 判定：数值从事件派生 ---------------------------------------------
     def test_ledger_derives_baseline_and_current(self):
         now = self.core.now_ms()
