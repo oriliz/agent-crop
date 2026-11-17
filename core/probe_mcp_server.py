@@ -130,8 +130,22 @@ ADJUST_TOOL = {
             "note": {"type": "string", "description": "Record, required: one-line subjective reason why this change should help."},
             "work_id": {"type": "string"},
             "window": {"type": "string", "description": "Sampling window, e.g. 2026-10-20~11-03."},
-            "note": {"type": "string"},
             "days": {"type": "number", "description": "Ledger window in days (default 180)."},
+            "artifact": {
+                "type": "object",
+                "description": (
+                    "Record: where the adopted change actually landed, so the ledger can "
+                    "verify it (file exists + sessions that read it). kind=file/skill/hook; "
+                    "delivery=read (on demand) or injected (auto-loaded every session, e.g. AGENTS.md)."
+                ),
+                "properties": {
+                    "kind": {"type": "string", "enum": ["file", "skill", "hook"]},
+                    "path": {"type": "string", "description": "Repo-relative or absolute path; skill name for kind=skill."},
+                    "anchor": {"type": "string", "description": "Optional section or line anchor, e.g. #§1."},
+                    "delivery": {"type": "string", "enum": ["read", "injected"], "description": "Default read."},
+                },
+                "required": ["path"],
+            },
         },
         "required": ["action"],
     },
@@ -223,7 +237,7 @@ def main() -> None:
                         ledger = core.improvement_ledger(float(arguments.get("days") or 180.0))
                         text = core.format_ledger(ledger)
                     else:
-                        event = core.record_adjustment(arguments, context={})
+                        event = core.record_adjustment(arguments, context={"workspace": os.getcwd()})
                         text = f"recorded adjustment {event['metric']} (numbers are derived by the ledger)"
                     respond(request_id, {"content": [{"type": "text", "text": text}], "isError": False})
                 except Exception as exc:
