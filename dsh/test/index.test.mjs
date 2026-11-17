@@ -483,8 +483,8 @@ test('crop_adjust records an improvement and reads the ledger', async (t) => {
   apply(ctx, { python: 'python3' });
   const tool = ctx.registered.find((item) => item.name === 'crop_adjust');
   const recorded = await tool.execute({
-    action: 'record', metric: 'work_minutes', before: 40, after: 30,
-    evidence: 'crop report --days 7',
+    action: 'record', metric: 'work_minutes',
+    evidence: 'PR #29', note: '少一轮提醒应该更快',
   });
   assert.match(recorded.text, /recorded adjustment/);
   const ledger = await tool.execute({ action: 'ledger' });

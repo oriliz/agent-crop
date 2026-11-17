@@ -3353,42 +3353,48 @@ LEDGER_MIN_SAMPLE = 20
 LEDGER_GOOD_DELTA = -0.10
 LEDGER_GUARDRAIL_SLACK = 0.10
 LEDGER_WEEKS = 4
+LEDGER_OBSERVE_DAYS = 7
 
 LEDGER_STATUS_LABEL = {
-    "met": "达标（连续 3 次改善）",
-    "improving": "改善中（需连续 3 次确认）",
+    "met": "达标（连续 3 周改善）",
+    "improving": "改善中（单周已改善，等连续 3 周）",
     "not-improved": "未改善",
     "insufficient": "样本不足",
     "no-baseline": "没有基线",
-    "pending": "待验证",
+    "observing": "观察中（还没攒够一周数据）",
     "guardrail": "护栏劣化，不算改进",
 }
 
 
-def _adjustment_number(value, field: str) -> float | None:
-    if value is None or str(value).strip() == "":
-        return None
-    try:
-        return round(float(value), 3)
-    except Exception:
-        raise ValueError(f"{field} must be a number")
+def _stdev(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = sum(values) / len(values)
+    return (sum((value - mean) ** 2 for value in values) / (len(values) - 1)) ** 0.5
 
 
 def record_adjustment(args: dict, context: dict | None = None) -> dict:
-    """Record one adopted improvement with before/after and evidence."""
+    """Record one adopted improvement — the claim, not the numbers.
+
+    数值（before/after）一律由报表从事件日志派生；这里只收三样东西：
+    选哪个指标、改动证据、以及 AI/人为什么认为它会改善的**主观判断**。
+    指标不在派生表里就拒收——要加新指标，先在 core 写派生口径，
+    而不是让调用方随手塞一个数字。
+    """
     context = context or {}
     sid = str(context.get("sid") or "unknown")
     metric = str(args.get("metric") or "").strip().lower()
-    if not re.match(r"^[a-z][a-z0-9_]{0,39}$", metric):
-        raise ValueError("metric must be a short lowercase slug, e.g. work_minutes")
-    before = _adjustment_number(args.get("before"), "before")
-    if before is None:
-        raise ValueError("before is required")
-    after = _adjustment_number(args.get("after"), "after")
+    if metric not in ADJUSTMENT_METRICS:
+        raise ValueError(
+            "metric must be one of: " + ", ".join(sorted(ADJUSTMENT_METRICS))
+            + "（指标值由事件派生；新指标需要先在 core 加派生口径）"
+        )
     evidence = str(args.get("evidence") or "").strip()
     if not evidence:
-        # 没有证据的「改进」只是口头决定，进台账会污染后面的判定。
-        raise ValueError("evidence is required: command / event id / link")
+        raise ValueError("evidence is required: commit / PR / file / command，说明改了什么")
+    note = str(args.get("note") or "").strip()
+    if not note:
+        raise ValueError("note is required: 一句话说明你为什么认为这条改动会改善指标（这就是 AI 该提供的主观判断）")
     adopted_at = int(args.get("adopted_at") or now_ms())
     event = {
         "ev": "adjustment",
@@ -3397,12 +3403,11 @@ def record_adjustment(args: dict, context: dict | None = None) -> dict:
         "sid": sid,
         "work_id": normalize_task_id(str(args.get("work_id") or "")) or "",
         "metric": metric,
-        "before": before,
-        "after": after,
-        "window": str(args.get("window") or "").strip(),
+        "direction": "lower",  # 四个内置指标都是越低越好
         "evidence": evidence,
+        "window": str(args.get("window") or "").strip(),
         "adopted_at": adopted_at,
-        "note": str(args.get("note") or "").strip(),
+        "note": note,
     }
     append_event(event)
     return event
@@ -3429,7 +3434,7 @@ def _find_work_record(work_id: str) -> dict | None:
 
 
 def _metric_value(metric: str, start: int, end: int, work_type: str = "") -> tuple[float | None, int]:
-    """(值, 样本量)；未知指标返回 (None, 0)，由调用方退回自报值。"""
+    """(值, 样本量)；指标值只从原始事件派生，未知指标返回 (None, 0)。"""
     events = _events_between(start, end)
     if metric == "work_minutes":
         works = _closed_works_between(start, end)
@@ -3469,6 +3474,23 @@ def _metric_value(metric: str, start: int, end: int, work_type: str = "") -> tup
     return None, 0
 
 
+def _weekly_values(metric: str, start: int, end: int,
+                   work_type: str = "") -> list[dict]:
+    """把 [start, end) 按 7 天切桶；指标值逐周派生，最后不满一周的桶标 complete=False。"""
+    out: list[dict] = []
+    week = 7 * 86400000
+    cursor = start
+    while cursor < end:
+        stop = min(cursor + week, end)
+        value, samples = _metric_value(metric, cursor, stop - 1, work_type)
+        out.append({
+            "start": cursor, "end": stop, "value": value, "samples": samples,
+            "complete": stop - cursor >= week,
+        })
+        cursor = stop
+    return out
+
+
 def _ledger_row(event: dict, end: int) -> dict:
     adopted = int(event.get("adopted_at") or event.get("t") or 0)
     metric = str(event.get("metric") or "")
@@ -3477,17 +3499,29 @@ def _ledger_row(event: dict, end: int) -> dict:
     work_type = str((work or {}).get("type") or "")
     span = LEDGER_WEEKS * 7 * 86400000
     baseline_start = adopted - span
-    derived_before, before_n = _metric_value(metric, baseline_start, adopted, work_type)
-    derived_after, after_n = _metric_value(metric, adopted, end, work_type)
-    supplied_before = float(event.get("before") or 0)
-    after_raw = event.get("after")
-    supplied_after = float(after_raw) if after_raw is not None else None
-    before_value = derived_before if derived_before is not None else supplied_before
-    after_value = derived_after if derived_after is not None else supplied_after
-    known = metric in ADJUSTMENT_METRICS
-    delta = None
-    if after_value is not None and before_value:
-        delta = (after_value - before_value) / abs(before_value)
+
+    baseline_weeks = _weekly_values(metric, baseline_start, adopted, work_type)
+    baseline_values = [week["value"] for week in baseline_weeks if week["value"] is not None]
+    baseline_samples = sum(week["samples"] for week in baseline_weeks)
+    baseline_median = _median(baseline_values) if baseline_values else None
+    sigma = _stdev(baseline_values) if len(baseline_values) >= 2 else 0.0
+
+    after_weeks = _weekly_values(metric, adopted, end, work_type)
+    after_values = [week["value"] for week in after_weeks if week["value"] is not None]
+    after_samples = sum(week["samples"] for week in after_weeks)
+    complete_after = [week for week in after_weeks
+                      if week["complete"] and week["value"] is not None]
+    latest_after = after_values[-1] if after_values else None
+    age_days = (end - adopted) / 86400000
+
+    # 改善阈值：基线 10% 与 4 周周间波动 1σ 取大者（卡片 0edeaa8c 的口径）
+    threshold = 0.0
+    if baseline_median:
+        threshold = max(abs(baseline_median) * abs(LEDGER_GOOD_DELTA), sigma)
+
+    def good(value: float | None) -> bool:
+        return (baseline_median is not None and value is not None
+                and value <= baseline_median - threshold)
 
     guardrails = {}
     for name in ("reminder_per_turn", "report_latency_min", "unowned_tool_share"):
@@ -3503,30 +3537,42 @@ def _ledger_row(event: dict, end: int) -> dict:
             "samples": [before_gn, after_gn], "worse": worse,
         }
 
-    status = "pending"
-    if after_value is None:
-        status = "pending"
-    elif not before_value:
+    if baseline_median is None:
         status = "no-baseline"
-    elif known and min(before_n, after_n) < LEDGER_MIN_SAMPLE:
+    elif age_days < LEDGER_OBSERVE_DAYS and after_samples == 0:
+        status = "observing"
+    elif min(baseline_samples, after_samples) < LEDGER_MIN_SAMPLE:
         status = "insufficient"
     elif any(item.get("worse") for item in guardrails.values()):
         status = "guardrail"
-    elif delta is not None and delta <= LEDGER_GOOD_DELTA:
+    elif len(complete_after) >= 3 and all(good(week["value"]) for week in complete_after[-3:]):
+        status = "met"
+    elif good(latest_after):
         status = "improving"
     else:
         status = "not-improved"
+
+    delta = None
+    if latest_after is not None and baseline_median:
+        delta = (latest_after - baseline_median) / abs(baseline_median)
 
     return {
         "work_id": work_id,
         "metric": metric,
         "metric_label": ADJUSTMENT_METRICS.get(metric, metric),
+        "direction": str(event.get("direction") or "lower"),
         "adopted_at": adopted,
-        "before": supplied_before,
-        "after": supplied_after,
-        "derived_before": derived_before,
-        "derived_after": derived_after,
-        "samples": {"before": before_n, "after": after_n},
+        # 兼容旧字段名：before/after 现在是派生值，不是调用方塞的
+        "before": baseline_median,
+        "after": latest_after,
+        "samples": {"before": baseline_samples, "after": after_samples},
+        "weeks": {
+            "baseline": len(baseline_weeks),
+            "after": len(after_weeks),
+            "complete_after": len(complete_after),
+        },
+        "sigma": round(sigma, 3),
+        "threshold": round(threshold, 3),
         "delta": None if delta is None else round(delta, 3),
         "status": status,
         "status_label": LEDGER_STATUS_LABEL.get(status, status),
@@ -3534,9 +3580,8 @@ def _ledger_row(event: dict, end: int) -> dict:
         "evidence": str(event.get("evidence") or ""),
         "window": str(event.get("window") or ""),
         "note": str(event.get("note") or ""),
-        "known_metric": known,
-        "age_days": round((end - adopted) / 86400000, 1),
-        "rollback": status != "met" and (end - adopted) > LEDGER_WEEKS * 7 * 86400000,
+        "age_days": round(age_days, 1),
+        "rollback": status != "met" and age_days > LEDGER_WEEKS * 7,
     }
 
 
@@ -3550,17 +3595,6 @@ def improvement_ledger(days: float = 180.0, limit: int = 20) -> dict:
     ]
     rows = [_ledger_row(event, end) for event in events]
     rows.sort(key=lambda row: row["adopted_at"], reverse=True)
-
-    # 连续 3 次改善才算达标：同一 work+metric 的最近三条都在 improving/met。
-    groups: dict[tuple[str, str], list[dict]] = {}
-    for row in rows:
-        groups.setdefault((row["work_id"], row["metric"]), []).append(row)
-    for group in groups.values():
-        group.sort(key=lambda row: row["adopted_at"])
-        recent = group[-3:]
-        if len(recent) == 3 and all(item["status"] in ("improving", "met") for item in recent):
-            recent[-1]["status"] = "met"
-            recent[-1]["status_label"] = LEDGER_STATUS_LABEL["met"]
 
     return {
         "generated_at": end,
@@ -3582,13 +3616,16 @@ def format_ledger(ledger: dict) -> str:
     if not rows:
         return "\n".join(lines + ["还没有 adjustment 记录。采纳改进时用 crop adjust 记一条。"])
     for row in rows:
-        after = "待验证" if row.get("after") is None else row.get("after")
+        before = "无基线" if row.get("before") is None else row.get("before")
+        after = "暂无数据" if row.get("after") is None else row.get("after")
         delta = "" if row.get("delta") is None else f"，变化 {row['delta']:+.0%}"
         lines.append(
-            f"- [{row.get('status_label')}] {row.get('metric_label')}：{row.get('before')} → {after}{delta}"
+            f"- [{row.get('status_label')}] {row.get('metric_label')}：基线 {before} → 当前 {after}{delta}"
             f"（样本 {row.get('samples', {}).get('before', 0)}/{row.get('samples', {}).get('after', 0)}，"
-            f"{row.get('age_days')} 天前）"
+            f"观察 {row.get('age_days')} 天）"
         )
+        if row.get("note"):
+            lines.append(f"  假设：{row['note']}")
         if row.get("guardrails"):
             worse = [name for name, item in row["guardrails"].items() if item.get("worse")]
             if worse:

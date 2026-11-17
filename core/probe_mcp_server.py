@@ -111,10 +111,10 @@ TOOL = {
 ADJUST_TOOL = {
     "name": "crop_adjust",
     "description": (
-        "Improvement ledger. action=record stores one adopted change with metric, "
-        "before/after and evidence (evidence is required); action=ledger reads the "
-        "before/after, sample sizes, guardrails and status. The status is derived by "
-        "rules from the event log, not from the model's claim."
+        "Improvement ledger. action=record stores one adopted change: metric, evidence "
+        "and the subjective note why it should help. Do NOT supply before/after numbers — "
+        "the ledger derives them from the event log. action=ledger reads baseline/current, "
+        "sample sizes, guardrails and status; the status is computed by rules, not by the model."
     ),
     "inputSchema": {
         "type": "object",
@@ -123,11 +123,11 @@ ADJUST_TOOL = {
             "action": {"type": "string", "enum": ["record", "ledger"]},
             "metric": {
                 "type": "string",
-                "description": "work_minutes / reminder_per_turn / report_latency_min / unowned_tool_share, or your own slug.",
+                "enum": ["work_minutes", "reminder_per_turn", "report_latency_min", "unowned_tool_share"],
+                "description": "Metric derived from the event log; add a new derivation in core for a new metric.",
             },
-            "before": {"type": "number", "description": "Value before the change (record)."},
-            "after": {"type": "number", "description": "Value after the change; omit while pending verification."},
-            "evidence": {"type": "string", "description": "Command / event id / link (record, required)."},
+            "evidence": {"type": "string", "description": "Commit / PR / file / command (record, required)."},
+            "note": {"type": "string", "description": "Record, required: one-line subjective reason why this change should help."},
             "work_id": {"type": "string"},
             "window": {"type": "string", "description": "Sampling window, e.g. 2026-10-20~11-03."},
             "note": {"type": "string"},
@@ -224,8 +224,7 @@ def main() -> None:
                         text = core.format_ledger(ledger)
                     else:
                         event = core.record_adjustment(arguments, context={})
-                        after = "pending" if event.get("after") is None else event["after"]
-                        text = f"recorded adjustment {event['metric']}: {event['before']} -> {after}"
+                        text = f"recorded adjustment {event['metric']} (numbers are derived by the ledger)"
                     respond(request_id, {"content": [{"type": "text", "text": text}], "isError": False})
                 except Exception as exc:
                     respond(request_id, {"content": [{"type": "text", "text": f"crop_adjust failed: {exc}"}], "isError": True})
