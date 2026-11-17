@@ -1045,12 +1045,17 @@ def miss_nudge(streak: int, sid: str | None = None) -> str:
     """
     if sid and not resolve_binding(sid):
         return ""
+    tier = "miss_streak" if int(streak or 0) >= 2 else "miss"
     if voice is not None:
         try:
-            return voice.miss(int(streak or 0), paths().get("voice"))
+            text = voice.miss(int(streak or 0), paths().get("voice"))
+            _record_nudge(sid or "unknown", "miss", tier, text, streak=int(streak or 0))
+            return text
         except Exception:
             pass
-    return "[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_update 写一行。"
+    fallback = "[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_update 写一行。"
+    _record_nudge(sid or "unknown", "miss", tier, fallback, streak=int(streak or 0))
+    return fallback
 
 
 def binding_hint(sid: str) -> str:
@@ -1163,6 +1168,28 @@ def _cooldown_active(sid: str, minutes: float, tier: str = "", work_id: str = ""
     return False
 
 
+def _voice_template_active(tier: str) -> bool:
+    """True when voice/<tier>.md overrides the built-in pool."""
+    if crop_templates is None:
+        return False
+    try:
+        return bool(crop_templates.voice_lines(tier))
+    except Exception:
+        return False
+
+
+def _record_nudge(sid: str, strategy: str, tier: str, text: str, **extra) -> None:
+    """Audit what a nudge actually injected: tier, metric and the text itself."""
+    try:
+        row = {"ev": "nudge", "sid": sid, "strategy": strategy, "tier": tier,
+               "source": "template" if _voice_template_active(tier) else "builtin",
+               "text": str(text or "")[:500]}
+        row.update(extra)
+        append_event(row)
+    except Exception:
+        pass
+
+
 def reminder_tier(health: dict, config: dict) -> str | None:
     """Which notch of the contract this work is at (None = stay quiet).
 
@@ -1241,7 +1268,11 @@ def maybe_work_reminder(sid: str) -> str:
         "persona": persona,
         "kind": "work",
     })
-    return _nudge(tier, _nudge_meta(health, config))
+    text = _nudge(tier, _nudge_meta(health, config))
+    _record_nudge(sid, "timeout", tier, text, work_id=task_id, kind="work",
+                  minutes=round(float(health.get("minutes") or 0), 1),
+                  expect_min=health.get("expect_min"))
+    return text
 
 
 def maybe_reminder(sid: str) -> str:
@@ -1264,10 +1295,13 @@ def maybe_reminder(sid: str) -> str:
                 "ev": "reminder", "sid": sid, "block_start": start, "tier": "red",
                 "minutes": round(minutes, 1), "persona": persona, "kind": "block",
             })
-            return _nudge("red", {
+            text = _nudge("red", {
                 "m": minutes, "e": None, "goal": "",
                 "default": red, "line": "红线", "no_expect": True,
             })
+            _record_nudge(sid, "timeout", "red", text, kind="block",
+                          minutes=round(minutes, 1))
+            return text
     return maybe_work_reminder(sid)
 
 
@@ -3682,4 +3716,54 @@ def format_ledger(ledger: dict) -> str:
             f"- 回滚提示：{row.get('metric_label')}（{row.get('work_id') or '未挂工作'}）"
             f"已满 {LEDGER_WEEKS} 周仍未达标，可以回滚；回滚前先看证据：{row.get('evidence')}"
         )
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Injection preview (`crop preview`)
+
+_PREVIEW_VARS = {
+    "protocol": {"persona": "owner"},
+    "start-hint": {
+        "mine": "1", "others": "2",
+        "candidates": "- demo-work — 示例工作（3 分钟前）",
+        "example_task_id": "demo-work", "limit": "3",
+    },
+    "binding-hint": {"last_work": "demo-work", "last_phase": "end", "example_task_id": "<短名>"},
+    "end-hint": {"work_id": "demo-work"},
+}
+
+
+def preview_injections() -> str:
+    """Render every injection point with sample variables.
+
+    Used by `crop preview` so a user can see exactly what would be injected
+    before and after editing a template.  A point without a template file is
+    reported as using the built-in default (the CLI cannot reproduce the full
+    runtime text because some of it is assembled by the host).
+    """
+    lines = ["# 注入预览（示例变量）", ""]
+    for name in ("protocol", "start-hint", "binding-hint", "end-hint"):
+        body = None
+        if crop_templates is not None:
+            try:
+                body = crop_templates.render(name, _PREVIEW_VARS.get(name, {}))
+            except Exception:
+                body = None
+        if body is None:
+            lines.extend([f"## {name}（内置默认，未覆盖）", ""])
+        elif body == "":
+            lines.extend([f"## {name}（已关闭：none）", ""])
+        else:
+            lines.extend([f"## {name}", "", _template_prefix(body), ""])
+    if crop_templates is not None:
+        for tier in crop_templates.VOICE_TIERS:
+            try:
+                custom = crop_templates.voice_lines(tier)
+            except Exception:
+                custom = None
+            if custom:
+                lines.extend([f"## voice/{tier}（自定义，{len(custom)} 条）", "", custom[0], ""])
+            else:
+                lines.extend([f"## voice/{tier}（内置文案池）", ""])
     return "\n".join(lines)
