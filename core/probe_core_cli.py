@@ -22,6 +22,44 @@ except Exception:  # pragma: no cover
     core = None
 
 
+
+_DEFAULT_START_HINT = """[crop] 未完成的工作：本会话 {{mine}} 条 / 其他会话 {{others}} 条。最近活跃的是：
+{{candidates}}
+先选一条，再动手：接着做用 crop_update(phase="start", task_id="{{example_task_id}}")；新开用 2-3 个词的短名。"""
+
+_DEFAULT_BINDING_HINT = """[crop] 你已经在调用工具，但还没有绑定任何工作。先调 crop_update(phase="start", task_id="<2-3 个词的短名>", summary="<一句话>", expect_min=预估分钟) 再继续，这样这段时间才有归属；顺手报个预期时长，鞭子就按你的数字算。"""
+
+
+def _write_template_defaults(args: dict) -> dict:
+    """Write built-in defaults into the template directory (opt-in)."""
+    templates = getattr(core, "crop_templates", None)
+    if templates is None:
+        return {"written": [], "error": "templates module unavailable"}
+    files = {
+        "start-hint": _DEFAULT_START_HINT,
+        "binding-hint": _DEFAULT_BINDING_HINT,
+    }
+    files.update({str(k): str(v) for k, v in (args.get("files") or {}).items()})
+    voice = getattr(core, "voice", None)
+    pools = getattr(voice, "POOLS", {}) if voice is not None else {}
+    for tier, lines in pools.items():
+        files[f"voice:{tier}"] = "\n---\n".join(str(line) for line in lines)
+    root = templates.templates_dir()
+    written = []
+    for name, body in files.items():
+        relative = templates._FILES.get(name)  # noqa: SLF001 - single writer by design
+        if not relative:
+            continue
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            continue  # never clobber what the user already edited
+        path.write_text(body.strip() + "\n", encoding="utf-8")
+        written.append(name)
+    templates.clear_cache()
+    return {"written": written, "dir": str(root)}
+
+
 def dispatch(payload: dict):
     op = payload.get("op")
     context = payload.get("context") or {}
@@ -31,6 +69,23 @@ def dispatch(payload: dict):
     if core is None:
         raise RuntimeError("probe core unavailable")
 
+    if op == "template_render":
+        args = payload.get("args") or {}
+        templates = getattr(core, "crop_templates", None)
+        if templates is None:
+            return None
+        variables = {str(k): str(v) for k, v in (args.get("variables") or {}).items()}
+        return templates.render(str(args.get("name") or ""), variables)
+    if op == "template_get":
+        args = payload.get("args") or {}
+        templates = getattr(core, "crop_templates", None)
+        if templates is None:
+            return None
+        name = str(args.get("name") or "")
+        body = templates.load(name)
+        return {"name": name, "body": body, "overridden": body is not None}
+    if op == "template_defaults":
+        return _write_template_defaults(payload.get("args") or {})
     if op == "record_human_wait":
         return core.record_human_wait(
             sid,
