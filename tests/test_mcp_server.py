@@ -75,7 +75,7 @@ class McpServerContractTest(unittest.TestCase):
         self.initialize()
         reply = self.rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         names = [tool["name"] for tool in reply["result"]["tools"]]
-        self.assertEqual(names, ["crop_update", "crop_health"])
+        self.assertEqual(names, ["crop_update", "crop_health", "crop_adjust"])
 
     def test_crop_tool_records_a_report(self):
         self.initialize()
@@ -174,6 +174,35 @@ class McpServerContractTest(unittest.TestCase):
         self.assertFalse(reply["result"]["isError"])
         text = reply["result"]["content"][0]["text"]
         self.assertIn("Crop 健康度", text)
+
+    def test_crop_adjust_records_and_reads_the_ledger(self):
+        self.initialize()
+        record = self.rpc({
+            "jsonrpc": "2.0", "id": 21, "method": "tools/call",
+            "params": {"name": "crop_adjust", "arguments": {
+                "action": "record", "metric": "work_minutes", "before": 40,
+                "after": 30, "evidence": "crop report --days 7",
+            }},
+        })
+        self.assertFalse(record["result"]["isError"])
+        self.assertIn("recorded adjustment", record["result"]["content"][0]["text"])
+        ledger = self.rpc({
+            "jsonrpc": "2.0", "id": 22, "method": "tools/call",
+            "params": {"name": "crop_adjust", "arguments": {"action": "ledger"}},
+        })
+        self.assertFalse(ledger["result"]["isError"])
+        self.assertIn("改进台账", ledger["result"]["content"][0]["text"])
+
+    def test_crop_adjust_requires_evidence(self):
+        self.initialize()
+        reply = self.rpc({
+            "jsonrpc": "2.0", "id": 23, "method": "tools/call",
+            "params": {"name": "crop_adjust", "arguments": {
+                "action": "record", "metric": "work_minutes", "before": 40,
+            }},
+        })
+        self.assertTrue(reply["result"]["isError"])
+        self.assertIn("evidence", reply["result"]["content"][0]["text"])
 
     def test_unknown_tool_is_rejected(self):
         self.initialize()

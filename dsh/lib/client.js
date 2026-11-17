@@ -1259,6 +1259,26 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       return state;
     }
 
+    function useLedger(days) {
+      const [state, setState] = React.useState({ data: null, error: null, at: 0 });
+      React.useEffect(() => {
+        let alive = true;
+        const tick = async () => {
+          try {
+            const response = await fetch(`${API}/ledger?days=${days}`, { cache: 'no-store' });
+            const data = await response.json();
+            if (alive) setState({ data, error: null, at: Date.now() });
+          } catch (error) {
+            if (alive) setState({ data: null, error: String(error), at: Date.now() });
+          }
+        };
+        tick();
+        const timer = setInterval(tick, 5000);
+        return () => { alive = false; clearInterval(timer); };
+      }, [days]);
+      return state;
+    }
+
     function GlobalPanel() {
       const [days, setDays] = React.useState(7);
       const [selected, setSelected] = React.useState(null);
@@ -1267,6 +1287,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const global = useGlobal(days);
       const [mode, setMode] = React.useState('overview');
       const health = useHealth(days);
+      const ledger = useLedger(days);
 
       React.useEffect(() => {
         if (!selected) { setDetail(null); return undefined; }
@@ -1680,9 +1701,38 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         ];
       })();
 
+      const ledgerCard = (() => {
+        const rows = (ledger.data && ledger.data.rows) || [];
+        if (!ledger.data && !ledger.error) return null;
+        return h('div', { key: 'ledger', className: 'crop-card' }, [
+          h('div', { key: 'c', className: 'crop-muted', style: S.caption }, '改进台账（前后值 + 证据；状态由数据算，不靠自评）'),
+          ledger.error
+            ? h('div', { key: 'e', className: 'crop-muted', style: S.quiet }, '台账读不到：检查 dsh 日志里的 crop 报错。')
+            : rows.length
+              ? h('div', { key: 'l', className: 'crop-improve-list' }, rows.slice(0, 6).map((row) => h('div', {
+                  key: `${row.work_id || 'no-work'}-${row.metric}-${row.adopted_at}`,
+                  className: 'crop-improve-row',
+                }, [
+                  h('i', { key: 'd', className: 'crop-improve-dot' }),
+                  h('div', { key: 'b', className: 'crop-improve-body' }, [
+                    h('div', { key: 'q', className: 'crop-improve-quote' },
+                      `${row.metric_label}：${row.before} → ${row.after == null ? '待验证' : row.after}`
+                      + (row.delta == null ? '' : `（${Math.round(row.delta * 100)}%）`)),
+                    h('div', { key: 'm', className: 'crop-improve-tags' }, [
+                      h('span', { key: 's', className: 'crop-chip-sm' }, row.status_label),
+                      h('span', { key: 'n', className: 'crop-chip-sm' }, `样本 ${row.samples ? row.samples.before : 0}/${row.samples ? row.samples.after : 0}`),
+                      row.work_id ? h('span', { key: 'w', className: 'crop-chip-sm' }, row.work_id) : null,
+                    ]),
+                    row.evidence ? h('div', { key: 'e', className: 'crop-mini' }, row.evidence) : null,
+                  ]),
+                ])))
+              : h('div', { key: 'e', className: 'crop-muted', style: S.quiet }, '还没有改进记录。采纳改进时记一条 adjustment。'),
+        ]);
+      })();
+
       return h('div', { className: 'crop-global' }, mode === 'health'
         ? [head, ...healthNodes]
-        : [head, loadingCard, metrics, chart, improvements, pitfalls, works]);
+        : [head, loadingCard, metrics, chart, improvements, ledgerCard, pitfalls, works]);
     }
 
     /** Sidebar glyph for the global panel row; the shell owns the row itself. */

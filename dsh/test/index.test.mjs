@@ -65,6 +65,7 @@ test('registers probe_report with the documented schema', async (t) => {
   assert.ok(ctx.registered.some((item) => item.name === 'crop_works'));
   assert.ok(ctx.registered.some((item) => item.name === 'crop_review'));
   assert.ok(ctx.registered.some((item) => item.name === 'crop_work'));
+  assert.ok(ctx.registered.some((item) => item.name === 'crop_adjust'));
   assert.deepEqual(tool.parameters.required, ['phase', 'task_id', 'summary']);
   assert.ok(tool.parameters.properties.phase.enum.includes('blocked'));
   for (const field of ['what', 'cost', 'next_time', 'artifact', 'expect_min', 'verdict', 'sediment']) {
@@ -470,4 +471,22 @@ test('a revised estimate returns a calm note instead of an instant overdue', asy
   );
   assert.match(record.recorded, /改口：40 → 2 分钟/);
   assert.match(record.recorded, /不会立刻算超时/);
+});
+
+
+test('crop_adjust records an improvement and reads the ledger', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const tool = ctx.registered.find((item) => item.name === 'crop_adjust');
+  const recorded = await tool.execute({
+    action: 'record', metric: 'work_minutes', before: 40, after: 30,
+    evidence: 'crop report --days 7',
+  });
+  assert.match(recorded.text, /recorded adjustment/);
+  const ledger = await tool.execute({ action: 'ledger' });
+  assert.match(ledger.text, /改进台账/);
 });

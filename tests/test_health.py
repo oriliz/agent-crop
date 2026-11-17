@@ -140,13 +140,19 @@ class HealthSummaryTest(unittest.TestCase):
         self.assertEqual(row["scope"], "收尾")
         self.assertAlmostEqual(row["session_coverage"], 0.5, places=3)
 
-    def test_not_shipped_tool_is_gray(self):
+    def test_adjustment_tool_is_live_and_counts_records(self):
         self.seed_normal()
         payload = core.health_summary(days=7)
         row = next(item for item in payload["active"] if item["tool"] == "adjustment")
-        self.assertEqual(row["status"], "not-shipped")
-        self.assertEqual(row["lamp"], "gray")
-        self.assertIn("改进记录还没上线", [diag["title"] for diag in payload["diagnostics"]])
+        self.assertNotEqual(row.get("status"), "not-shipped")
+        self.assertNotIn("改进记录还没上线", [diag["title"] for diag in payload["diagnostics"]])
+        core.record_adjustment(
+            {"metric": "work_minutes", "before": 40, "after": 30, "evidence": "test"},
+            {"sid": "s1"},
+        )
+        payload = core.health_summary(days=7)
+        row = next(item for item in payload["active"] if item["tool"] == "adjustment")
+        self.assertEqual(row["events"], 1)
 
     def test_empty_window_is_honest(self):
         payload = core.health_summary(days=7)

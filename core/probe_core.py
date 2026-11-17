@@ -2875,7 +2875,7 @@ _HEALTH_ACTIVE = (
     ("work_close", "工作关闭", "work", ("work_id",), "", True),
     ("work_summary", "收尾小结", "ended", ("what",), "42ae110d", True),
     ("side_issue", "枝节记录", "on_demand", ("work_id", "note"), "", True),
-    ("adjustment", "改进记录", "work", ("metric", "before", "after"), "fd0acdc3", False),
+    ("adjustment", "改进记录", "work", ("metric", "before", "after"), "fd0acdc3", True),
 )
 
 # 只有这些宿主会发对应事件；别的宿主的会话不该算进分母，否则永远显示「没采到」。
@@ -2978,6 +2978,46 @@ def _work_keys(event: dict) -> tuple[str, str]:
     )
 
 
+def _binding_latency_stats(events: list[dict], eligible: set[str]) -> dict:
+    """首次绑定之前就动手的会话比例——衡量「主动绑定」而不是靠提醒。
+
+    每会话从第一条事件看到第一个 start/work_claim；之前的 tool 调用与 end 过的回合
+    都算「先动手」。没有绑定记录的会话不进入分母（那是另一类问题）。
+    """
+    by_sid: dict[str, list[dict]] = {}
+    for event in events:
+        sid = str(event.get("sid") or "")
+        if sid in eligible:
+            by_sid.setdefault(sid, []).append(event)
+    tools_before: list[float] = []
+    blocks_before: list[float] = []
+    for rows in by_sid.values():
+        tools = 0
+        blocks = 0
+        bound = False
+        for event in rows:
+            kind = event.get("ev")
+            if kind == "work_claim" or (kind == "probe_report" and event.get("phase") == "start"):
+                bound = True
+                break
+            if kind == "tool":
+                tools += 1
+            if kind == "stop":
+                blocks += 1
+        if bound:
+            tools_before.append(float(tools))
+            blocks_before.append(float(blocks))
+    sessions = len(tools_before)
+    early = sum(1 for tools, blocks in zip(tools_before, blocks_before) if tools or blocks)
+    return {
+        "sessions": sessions,
+        "median_tools_before": round(_median(tools_before), 1) if tools_before else None,
+        "median_blocks_before": round(_median(blocks_before), 1) if blocks_before else None,
+        "sessions_with_early_work": early,
+        "early_rate": round(early / sessions, 3) if sessions else None,
+    }
+
+
 def health_summary(
     days: float = 7.0, now: int | None = None, start: int | None = None,
     host_filter: str | None = None,
@@ -2996,6 +3036,7 @@ def health_summary(
     previous = [event for event in raw_events if previous_start <= int(event.get("t") or 0) < start]
 
     eligible = _eligible_sessions(events)
+    binding = _binding_latency_stats(events, eligible)
     all_sessions = {str(event.get("sid")) for event in events if event.get("sid")}
     host_of: dict[str, str] = {}
     for event in events:
@@ -3186,10 +3227,15 @@ def health_summary(
                  f"{entry['tool']}：0 条，但这类事件本应有 {denominators[entry['class']]} 个锚点",
                  "采集没上线，或这个宿主没有对应 hook", entry["card"])
     adjustment_row = next((row for row in active if row["tool"] == "adjustment"), None)
-    if adjustment_row is not None and adjustment_row.get("status") == "not-shipped":
-        diag("info", "adjustment", "改进记录还没上线",
-             "事件已设计（work_id/metric/before/after/evidence），代码未实现",
-             "改进点目前只能靠对话里的口头决定", adjustment_row["card"])
+    if adjustment_row is not None and adjustment_row["events"] == 0 and len(works_ended) >= 5:
+        diag("info", "adjustment", "还没有改进记录",
+             f"{len(works_ended)} 个工作收尾，0 条 adjustment",
+             "改进只停留在对话里，事后无法核对有没有效", adjustment_row["card"])
+    if binding.get("sessions") and (binding.get("early_rate") or 0) > 0.5:
+        diag("warn", "probe_report", "多数会话先动手后绑定",
+             f"{binding.get('sessions_with_early_work', 0)}/{binding['sessions']} 个会话在首次绑定前"
+             f"用过工具或结束过回合，中位 {binding.get('median_tools_before')} 次工具",
+             "首轮提示是列表型，绑定动作排在候选后面", "e94d70d5")
     if len(eligible) < 3:
         diag("info", "all", "样本太少，先别下结论",
              f"有效会话只有 {len(eligible)} 个",
@@ -3215,6 +3261,7 @@ def health_summary(
         "sessions": {"total": len(all_sessions), "eligible": len(eligible)},
         "works": {"started": len(works_started), "ended": len(works_ended)},
         "sediment": sediment_block,
+        "binding": binding,
         "hosts": hosts,
         "passive": passive,
         "active": active,
@@ -3258,6 +3305,12 @@ def format_health(summary: dict) -> str:
         rate = sediment.get("rate")
         suffix = f"（{float(rate):.0%}）" if rate is not None else ""
         lines.append(f"沉淀闭合：{sediment.get('with_sediment', 0)}/{sediment.get('ended', 0)}{suffix}")
+    binding = summary.get("binding") or {}
+    if binding.get("sessions"):
+        lines.append(
+            f"绑定前动手：{binding.get('sessions_with_early_work', 0)}/{binding['sessions']} 个会话"
+            f"在首次绑定前用过工具或结束过回合（中位 {binding.get('median_tools_before')} 次工具）"
+        )
     problems = [d for d in summary.get("diagnostics") or [] if d.get("severity") != "info"]
     for item in problems:
         card = f"（卡 {item['card']}）" if item.get("card") else ""
@@ -3281,3 +3334,270 @@ def format_health(summary: dict) -> str:
         note = f"（{row['note']}）" if row.get("note") else ""
         lines.append(f"  [{mark}] {row.get('label')} {row.get('tool')}：{detail}{note}")
     return "\n".join(line for line in lines if line)
+
+
+# ---------------------------------------------------------------------------
+# Improvement ledger: adjustment events
+#
+# 「改进有没有效」不由 AI 自评：这里只记录「采纳了什么、前后值、证据」，
+# 判定交给确定性规则（样本量、方向、护栏不劣化），报表与周报复用同一份数据。
+# 指标值从原始事件派生，不为 ledger 新增快照事件（EVENTS.md §1.3）。
+
+ADJUSTMENT_METRICS = {
+    "work_minutes": "同类工作中位活跃分钟",
+    "reminder_per_turn": "每回合提醒次数",
+    "report_latency_min": "提醒到上报的中位延迟（分钟）",
+    "unowned_tool_share": "未归属工作的工具调用占比",
+}
+LEDGER_MIN_SAMPLE = 20
+LEDGER_GOOD_DELTA = -0.10
+LEDGER_GUARDRAIL_SLACK = 0.10
+LEDGER_WEEKS = 4
+
+LEDGER_STATUS_LABEL = {
+    "met": "达标（连续 3 次改善）",
+    "improving": "改善中（需连续 3 次确认）",
+    "not-improved": "未改善",
+    "insufficient": "样本不足",
+    "no-baseline": "没有基线",
+    "pending": "待验证",
+    "guardrail": "护栏劣化，不算改进",
+}
+
+
+def _adjustment_number(value, field: str) -> float | None:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return round(float(value), 3)
+    except Exception:
+        raise ValueError(f"{field} must be a number")
+
+
+def record_adjustment(args: dict, context: dict | None = None) -> dict:
+    """Record one adopted improvement with before/after and evidence."""
+    context = context or {}
+    sid = str(context.get("sid") or "unknown")
+    metric = str(args.get("metric") or "").strip().lower()
+    if not re.match(r"^[a-z][a-z0-9_]{0,39}$", metric):
+        raise ValueError("metric must be a short lowercase slug, e.g. work_minutes")
+    before = _adjustment_number(args.get("before"), "before")
+    if before is None:
+        raise ValueError("before is required")
+    after = _adjustment_number(args.get("after"), "after")
+    evidence = str(args.get("evidence") or "").strip()
+    if not evidence:
+        # 没有证据的「改进」只是口头决定，进台账会污染后面的判定。
+        raise ValueError("evidence is required: command / event id / link")
+    adopted_at = int(args.get("adopted_at") or now_ms())
+    event = {
+        "ev": "adjustment",
+        "t": now_ms(),
+        "host": host(),
+        "sid": sid,
+        "work_id": normalize_task_id(str(args.get("work_id") or "")) or "",
+        "metric": metric,
+        "before": before,
+        "after": after,
+        "window": str(args.get("window") or "").strip(),
+        "evidence": evidence,
+        "adopted_at": adopted_at,
+        "note": str(args.get("note") or "").strip(),
+    }
+    append_event(event)
+    return event
+
+
+def load_adjustments(limit: int = 50, work_id: str | None = None) -> list[dict]:
+    rows = [event for event in load_events() if event.get("ev") == "adjustment"]
+    if work_id:
+        rows = [row for row in rows if row.get("work_id") == work_id]
+    rows.sort(key=lambda row: int(row.get("adopted_at") or row.get("t") or 0), reverse=True)
+    return rows[:limit] if limit else rows
+
+
+def _find_work_record(work_id: str) -> dict | None:
+    task = load_open().get("tasks", {}).get(work_id)
+    if task:
+        return task
+    if not work_id:
+        return None
+    for task in _closed_works_between(0, now_ms()):
+        if task.get("task_id") == work_id:
+            return task
+    return None
+
+
+def _metric_value(metric: str, start: int, end: int, work_type: str = "") -> tuple[float | None, int]:
+    """(值, 样本量)；未知指标返回 (None, 0)，由调用方退回自报值。"""
+    events = _events_between(start, end)
+    if metric == "work_minutes":
+        works = _closed_works_between(start, end)
+        samples = [
+            float(task.get("total_minutes") or 0) for task in works
+            if (not work_type or task.get("type") == work_type)
+        ]
+        samples = [value for value in samples if value > 0]
+        return (round(_median(samples), 1) if samples else None), len(samples)
+    if metric == "reminder_per_turn":
+        turns = sum(1 for event in events if event.get("ev") == "prompt")
+        reminders = sum(1 for event in events if event.get("ev") == "reminder")
+        return (round(reminders / turns, 2) if turns else None), turns
+    if metric == "report_latency_min":
+        by_sid: dict[str, list[dict]] = {}
+        for event in events:
+            if event.get("ev") in ("reminder", "probe_report"):
+                by_sid.setdefault(str(event.get("sid") or ""), []).append(event)
+        latencies: list[float] = []
+        for rows in by_sid.values():
+            pending = None
+            for row in rows:
+                if row.get("ev") == "reminder":
+                    pending = row
+                elif pending is not None:
+                    delta = (int(row.get("t") or 0) - int(pending.get("t") or 0)) / 60000.0
+                    if 0 <= delta <= 120:
+                        latencies.append(delta)
+                    pending = None
+        return (round(_median(latencies), 1) if latencies else None), len(latencies)
+    if metric == "unowned_tool_share":
+        tools = [event for event in events if event.get("ev") == "tool"]
+        if not tools:
+            return None, 0
+        missing = sum(1 for event in tools if not str(event.get("work_id") or ""))
+        return round(missing / len(tools), 3), len(tools)
+    return None, 0
+
+
+def _ledger_row(event: dict, end: int) -> dict:
+    adopted = int(event.get("adopted_at") or event.get("t") or 0)
+    metric = str(event.get("metric") or "")
+    work_id = str(event.get("work_id") or "")
+    work = _find_work_record(work_id) if work_id else None
+    work_type = str((work or {}).get("type") or "")
+    span = LEDGER_WEEKS * 7 * 86400000
+    baseline_start = adopted - span
+    derived_before, before_n = _metric_value(metric, baseline_start, adopted, work_type)
+    derived_after, after_n = _metric_value(metric, adopted, end, work_type)
+    supplied_before = float(event.get("before") or 0)
+    after_raw = event.get("after")
+    supplied_after = float(after_raw) if after_raw is not None else None
+    before_value = derived_before if derived_before is not None else supplied_before
+    after_value = derived_after if derived_after is not None else supplied_after
+    known = metric in ADJUSTMENT_METRICS
+    delta = None
+    if after_value is not None and before_value:
+        delta = (after_value - before_value) / abs(before_value)
+
+    guardrails = {}
+    for name in ("reminder_per_turn", "report_latency_min", "unowned_tool_share"):
+        if name == metric:
+            continue
+        before_g, before_gn = _metric_value(name, baseline_start, adopted)
+        after_g, after_gn = _metric_value(name, adopted, end)
+        worse = None
+        if (before_g is not None and after_g is not None and before_g > 0 and after_gn):
+            worse = after_g > before_g * (1 + LEDGER_GUARDRAIL_SLACK)
+        guardrails[name] = {
+            "before": before_g, "after": after_g,
+            "samples": [before_gn, after_gn], "worse": worse,
+        }
+
+    status = "pending"
+    if after_value is None:
+        status = "pending"
+    elif not before_value:
+        status = "no-baseline"
+    elif known and min(before_n, after_n) < LEDGER_MIN_SAMPLE:
+        status = "insufficient"
+    elif any(item.get("worse") for item in guardrails.values()):
+        status = "guardrail"
+    elif delta is not None and delta <= LEDGER_GOOD_DELTA:
+        status = "improving"
+    else:
+        status = "not-improved"
+
+    return {
+        "work_id": work_id,
+        "metric": metric,
+        "metric_label": ADJUSTMENT_METRICS.get(metric, metric),
+        "adopted_at": adopted,
+        "before": supplied_before,
+        "after": supplied_after,
+        "derived_before": derived_before,
+        "derived_after": derived_after,
+        "samples": {"before": before_n, "after": after_n},
+        "delta": None if delta is None else round(delta, 3),
+        "status": status,
+        "status_label": LEDGER_STATUS_LABEL.get(status, status),
+        "guardrails": guardrails,
+        "evidence": str(event.get("evidence") or ""),
+        "window": str(event.get("window") or ""),
+        "note": str(event.get("note") or ""),
+        "known_metric": known,
+        "age_days": round((end - adopted) / 86400000, 1),
+        "rollback": status != "met" and (end - adopted) > LEDGER_WEEKS * 7 * 86400000,
+    }
+
+
+def improvement_ledger(days: float = 180.0, limit: int = 20) -> dict:
+    """Recent adjustments, judged by data — not by the AI's own verdict."""
+    end = now_ms()
+    start = end - int(float(days) * 86400000)
+    events = [
+        event for event in load_events()
+        if event.get("ev") == "adjustment" and start <= int(event.get("t") or 0) <= end
+    ]
+    rows = [_ledger_row(event, end) for event in events]
+    rows.sort(key=lambda row: row["adopted_at"], reverse=True)
+
+    # 连续 3 次改善才算达标：同一 work+metric 的最近三条都在 improving/met。
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for row in rows:
+        groups.setdefault((row["work_id"], row["metric"]), []).append(row)
+    for group in groups.values():
+        group.sort(key=lambda row: row["adopted_at"])
+        recent = group[-3:]
+        if len(recent) == 3 and all(item["status"] in ("improving", "met") for item in recent):
+            recent[-1]["status"] = "met"
+            recent[-1]["status_label"] = LEDGER_STATUS_LABEL["met"]
+
+    return {
+        "generated_at": end,
+        "window": {"days": int(float(days)), "start": start, "end": end},
+        "min_sample": LEDGER_MIN_SAMPLE,
+        "good_delta": LEDGER_GOOD_DELTA,
+        "rows": rows[:limit],
+        "total": len(rows),
+        "rollback_hints": [row for row in rows if row.get("rollback")][:5],
+    }
+
+
+def format_ledger(ledger: dict) -> str:
+    rows = ledger.get("rows") or []
+    lines = [
+        f"改进台账 · 近 {ledger.get('window', {}).get('days', 0)} 天 · {ledger.get('total', 0)} 条"
+        f"（样本 <{ledger.get('min_sample')} 只给数字，不下结论）",
+    ]
+    if not rows:
+        return "\n".join(lines + ["还没有 adjustment 记录。采纳改进时用 crop adjust 记一条。"])
+    for row in rows:
+        after = "待验证" if row.get("after") is None else row.get("after")
+        delta = "" if row.get("delta") is None else f"，变化 {row['delta']:+.0%}"
+        lines.append(
+            f"- [{row.get('status_label')}] {row.get('metric_label')}：{row.get('before')} → {after}{delta}"
+            f"（样本 {row.get('samples', {}).get('before', 0)}/{row.get('samples', {}).get('after', 0)}，"
+            f"{row.get('age_days')} 天前）"
+        )
+        if row.get("guardrails"):
+            worse = [name for name, item in row["guardrails"].items() if item.get("worse")]
+            if worse:
+                lines.append("  护栏变差：" + "、".join(worse) + "（任一项变差即不算改进）")
+        if row.get("evidence"):
+            lines.append(f"  证据：{row['evidence']}")
+    for row in ledger.get("rollback_hints") or []:
+        lines.append(
+            f"- 回滚提示：{row.get('metric_label')}（{row.get('work_id') or '未挂工作'}）"
+            f"已满 {LEDGER_WEEKS} 周仍未达标，可以回滚；回滚前先看证据：{row.get('evidence')}"
+        )
+    return "\n".join(lines)
