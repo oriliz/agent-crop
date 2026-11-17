@@ -147,7 +147,7 @@ class HealthSummaryTest(unittest.TestCase):
         self.assertNotEqual(row.get("status"), "not-shipped")
         self.assertNotIn("改进记录还没上线", [diag["title"] for diag in payload["diagnostics"]])
         core.record_adjustment(
-            {"metric": "work_minutes", "before": 40, "after": 30, "evidence": "test"},
+            {"metric": "work_minutes", "evidence": "test", "note": "少一轮提醒"},
             {"sid": "s1"},
         )
         payload = core.health_summary(days=7)

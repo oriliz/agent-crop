@@ -49,15 +49,14 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("--days", type=float, default=7.0)
     report.add_argument("--json", action="store_true")
 
-    adjust = sub.add_parser("adjust", help="记一条采纳的改进（前后值 + 证据）")
+    adjust = sub.add_parser("adjust", help="记一条采纳的改进（数值由台账派生，只收证据和主观判断）")
     adjust.add_argument("--metric", required=True,
-                        help="work_minutes / reminder_per_turn / report_latency_min / unowned_tool_share，或自定义 slug")
-    adjust.add_argument("--before", type=float, required=True, help="改前值")
-    adjust.add_argument("--after", type=float, default=None, help="改后值；先不填就是待验证")
-    adjust.add_argument("--evidence", required=True, help="命令 / 事件 id / 链接，缺证据不算调整")
+                        choices=["work_minutes", "reminder_per_turn", "report_latency_min", "unowned_tool_share"],
+                        help="指标由系统从事件派生；要加新指标先在 core 写口径")
+    adjust.add_argument("--evidence", required=True, help="commit / PR / 文件 / 命令，说明改了什么")
+    adjust.add_argument("--note", required=True, help="一句话主观判断：为什么认为它会改善指标")
     adjust.add_argument("--work-id", default="", help="这条改进挂在哪个工作上（可选）")
     adjust.add_argument("--window", default="", help="采样窗口说明，如 2026-10-20~11-03")
-    adjust.add_argument("--note", default="")
 
     ledger = sub.add_parser("ledger", help="改进台账：前后值、样本量、护栏、回滚提示")
     ledger.add_argument("--days", type=float, default=180.0)
@@ -116,15 +115,13 @@ def main(argv: list[str] | None = None) -> int:
         sid = (core.read_runtime() or {}).get("sid") or "cli"
         try:
             event = core.record_adjustment({
-                "metric": args.metric, "before": args.before, "after": args.after,
-                "evidence": args.evidence, "work_id": args.work_id,
+                "metric": args.metric, "evidence": args.evidence, "work_id": args.work_id,
                 "window": args.window, "note": args.note,
             }, {"sid": sid})
         except ValueError as exc:
             print(f"error: {exc}")
             return 2
-        after = "待验证" if event.get("after") is None else event["after"]
-        print(f"recorded adjustment {event['metric']}: {event['before']} → {after}")
+        print(f"recorded adjustment {event['metric']}（数值由 crop ledger 从事件派生）")
         return 0
 
     if args.command == "ledger":

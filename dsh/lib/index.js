@@ -593,21 +593,23 @@ export function apply(ctx, config = {}) {
   const adjustTool = {
     name: 'crop_adjust',
     description:
-      '改进台账：action="record" 记一条采纳的改进（metric + before/after + evidence，缺证据不收）；'
-      + 'action="ledger" 读台账，看每条改动的前后值、样本量、护栏与达成状态。'
-      + '判定是规则算的，不是 AI 说有效就算有效。',
+      '改进台账。action="record"：只交三样东西——选哪个指标、改动证据、以及你判断它会改善的**主观理由**；'
+      + '数值（基线/当前/样本量）由台账从事件日志派生，不要自己填数字。'
+      + 'action="ledger"：读每条改动的前后值、样本量、护栏与达成状态；判定是规则算的。',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
         action: { type: 'string', enum: ['record', 'ledger'] },
-        metric: { type: 'string', description: 'record 必填：work_minutes / reminder_per_turn / report_latency_min / unowned_tool_share，或自定义 slug' },
-        before: { type: 'number', description: 'record 必填：改前值' },
-        after: { type: 'number', description: '可选：改后值；先不填就是待验证' },
-        evidence: { type: 'string', description: 'record 必填：命令 / 事件 id / 链接' },
+        metric: {
+          type: 'string',
+          enum: ['work_minutes', 'reminder_per_turn', 'report_latency_min', 'unowned_tool_share'],
+          description: 'record 必填：指标由系统派生；要加新指标先在 core 写口径',
+        },
+        evidence: { type: 'string', description: 'record 必填：commit / PR / 文件 / 命令，说明改了什么' },
+        note: { type: 'string', description: 'record 必填：一句话主观判断——为什么认为这条改动会改善指标' },
         work_id: { type: 'string', description: '可选：这条改进挂在哪个工作上' },
         window: { type: 'string', description: '可选：采样窗口，如 2026-10-20~11-03' },
-        note: { type: 'string' },
         days: { type: 'number', description: 'ledger 可选：窗口天数，默认 180' },
       },
       required: ['action'],
@@ -630,14 +632,12 @@ export function apply(ctx, config = {}) {
       const result = callCore({
         op: 'record_adjustment',
         args: {
-          metric: args?.metric, before: args?.before, after: args?.after,
-          evidence: args?.evidence, work_id: args?.work_id, window: args?.window,
-          note: args?.note,
+          metric: args?.metric, evidence: args?.evidence,
+          work_id: args?.work_id, window: args?.window, note: args?.note,
         },
       });
-      if (!result) throw new Error('crop_adjust could not be recorded (evidence and before are required)');
-      const after = result.after === null || result.after === undefined ? '待验证' : result.after;
-      return { ok: true, text: `recorded adjustment ${result.metric}: ${result.before} → ${after}` };
+      if (!result) throw new Error('crop_adjust could not be recorded (metric / evidence / note are required)');
+      return { ok: true, text: `recorded adjustment ${result.metric}（数值由 crop ledger 从事件派生）` };
     },
   };
 

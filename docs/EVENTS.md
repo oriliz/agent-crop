@@ -53,7 +53,7 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `user_wait` | 从回合结束到用户回话 | `sid` `waiting_ms` `within_work_hours` `active_work_id` | D2 |
 | `idle_gap` | 用户回话间隔超阈值 | `sid` `gap_ms` `reason`(idle/off-hours) | D2 |
 | `side_issue` | 发现主线外的枝节 | `work_id` `note` `suggest`(new_session/later) | D4 / D10 |
-| `adjustment` | 采纳了一个改进 | `work_id` `before` `after` `evidence` | D13 |
+| `adjustment` | 采纳了一个改进（只记声明，不记数值） | `work_id` `metric` `direction` `evidence` `window` `adopted_at` `note`（`before`/`after` 由报表从事件派生，不落盘） | D13 |
 | `tool_churn` | 工具层的重复/失败（事实信号，**不是返工**） | `kind`(repeat-tool) `tool` `count` `failures` | D3 |
 | `self_review` | AI 判断的返工档次（redo/major/minor/none） | `work_id` `rework` `sentiment` `reason` | D3 / D5 |
 | `work_summary` | 工作结束时趁记忆热写的复盘 | `work_id` `what` `cost` `next_time` `artifact` | D1 / D13 |

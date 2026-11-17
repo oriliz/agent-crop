@@ -180,8 +180,8 @@ class McpServerContractTest(unittest.TestCase):
         record = self.rpc({
             "jsonrpc": "2.0", "id": 21, "method": "tools/call",
             "params": {"name": "crop_adjust", "arguments": {
-                "action": "record", "metric": "work_minutes", "before": 40,
-                "after": 30, "evidence": "crop report --days 7",
+                "action": "record", "metric": "work_minutes",
+                "evidence": "PR #29", "note": "少一轮提醒应该更快",
             }},
         })
         self.assertFalse(record["result"]["isError"])
@@ -198,7 +198,8 @@ class McpServerContractTest(unittest.TestCase):
         reply = self.rpc({
             "jsonrpc": "2.0", "id": 23, "method": "tools/call",
             "params": {"name": "crop_adjust", "arguments": {
-                "action": "record", "metric": "work_minutes", "before": 40,
+                "action": "record", "metric": "work_minutes",
+                "note": "少一轮提醒应该更快",
             }},
         })
         self.assertTrue(reply["result"]["isError"])

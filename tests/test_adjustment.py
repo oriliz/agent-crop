@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""改进台账：记录要有证据，判定看数据，不靠 AI 自评。"""
+"""改进台账：AI 只交声明与主观判断，数值由事件派生、状态由规则算。"""
 
-import json
 import os
 import sys
 import tempfile
@@ -25,57 +24,20 @@ class AdjustmentTest(unittest.TestCase):
         os.environ.pop("KIT_HOST", None)
 
     def record(self, **extra):
-        args = {"metric": "work_minutes", "before": 40, "evidence": "crop report --days 7",
-                "work_id": "adj-work"}
+        args = {"metric": "work_minutes",
+                "evidence": "PR #29 改了收尾路径",
+                "note": "少一轮提醒，同类工作应该更快收尾"}
         args.update(extra)
         return self.core.record_adjustment(args, {"sid": "adj-s"})
 
-    def test_record_requires_evidence(self):
-        with self.assertRaises(ValueError):
-            self.record(evidence="")
+    def ledger_with(self, adopted_at, values):
+        """values[metric] = ((基线值, 基线样本), (当前值, 当前样本))"""
+        self.record(adopted_at=adopted_at)
 
-    def test_record_requires_before(self):
-        with self.assertRaises(ValueError):
-            self.record(before=None)
+        def fake(metric, start, end, work_type=""):
+            before, after = values.get(metric, ((None, 0), (None, 0)))
+            return before if end <= adopted_at else after
 
-    def test_record_writes_an_adjustment_event(self):
-        event = self.record(after=32)
-        self.assertEqual(event["metric"], "work_minutes")
-        rows = [e for e in self.core.load_events() if e.get("ev") == "adjustment"]
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["evidence"], "crop report --days 7")
-        self.assertEqual(rows[0]["after"], 32.0)
-
-    def test_pending_when_after_is_missing(self):
-        self.record(after=None)
-        ledger = self.core.improvement_ledger()
-        self.assertEqual(ledger["rows"][0]["status"], "pending")
-
-    def test_unknown_metric_uses_supplied_values(self):
-        event = self.record(metric="my_custom_metric", before=10, after=8)
-        self.assertEqual(event["metric"], "my_custom_metric")
-        ledger = self.core.improvement_ledger()
-        row = ledger["rows"][0]
-        self.assertEqual(row["status"], "improving")
-        self.assertAlmostEqual(row["delta"], -0.2, places=3)
-        self.assertFalse(row["known_metric"])
-
-    def test_small_sample_only_reports_insufficient(self):
-        self.record(after=30)
-        ledger = self.core.improvement_ledger()
-        self.assertEqual(ledger["rows"][0]["status"], "insufficient")
-
-    def ledger_with(self, rows_after, guardrail_after=None):
-        """把派生指标换成一个可控的假函数：before 窗口返回 rows_after[0]。"""
-        values = {
-            "work_minutes": ((40.0, 30), rows_after),
-            "reminder_per_turn": ((0.5, 30), guardrail_after or (0.5, 30)),
-            "report_latency_min": ((5.0, 30), (5.0, 30)),
-            "unowned_tool_share": ((0.1, 30), (0.1, 30)),
-        }
-        adopted = {row["adopted_at"] for row in self.core.load_adjustments()}
-        fake = lambda metric, start, end, work_type="": (
-            values[metric][0] if int(end) in adopted else values[metric][1])
         old = self.core._metric_value
         self.core._metric_value = fake
         try:
@@ -83,24 +45,90 @@ class AdjustmentTest(unittest.TestCase):
         finally:
             self.core._metric_value = old
 
+    # -- 写入：只收声明与主观判断 -----------------------------------------
+    def test_record_requires_a_known_metric(self):
+        with self.assertRaises(ValueError):
+            self.record(metric="whatever_i_like")
+
+    def test_record_requires_evidence(self):
+        with self.assertRaises(ValueError):
+            self.record(evidence="")
+
+    def test_record_requires_a_subjective_note(self):
+        with self.assertRaises(ValueError):
+            self.record(note="")
+
+    def test_event_stores_no_numbers(self):
+        event = self.record()
+        self.assertNotIn("before", event)
+        self.assertNotIn("after", event)
+        self.assertEqual(event["direction"], "lower")
+        self.assertEqual(event["note"], "少一轮提醒，同类工作应该更快收尾")
+
+    # -- 判定：数值从事件派生 ---------------------------------------------
+    def test_ledger_derives_baseline_and_current(self):
+        now = self.core.now_ms()
+        ledger = self.ledger_with(now - 30 * 86400000, {
+            "work_minutes": ((40.0, 30), (30.0, 30)),
+        })
+        row = ledger["rows"][0]
+        self.assertEqual(row["before"], 40.0)
+        self.assertEqual(row["after"], 30.0)
+        self.assertEqual(row["samples"], {"before": 120, "after": 150})
+        self.assertEqual(row["status"], "met")
+
+    def test_small_sample_only_reports_insufficient(self):
+        now = self.core.now_ms()
+        ledger = self.ledger_with(now - 30 * 86400000, {
+            "work_minutes": ((40.0, 2), (30.0, 2)),
+        })
+        self.assertEqual(ledger["rows"][0]["status"], "insufficient")
+
     def test_guardrail_worse_is_not_an_improvement(self):
         now = self.core.now_ms()
-        self.record(after=30, adopted_at=now - 1000)
-        ledger = self.ledger_with((30.0, 30), guardrail_after=(1.0, 30))
+        ledger = self.ledger_with(now - 30 * 86400000, {
+            "work_minutes": ((40.0, 30), (30.0, 30)),
+            "reminder_per_turn": ((0.5, 30), (1.0, 30)),
+        })
         self.assertEqual(ledger["rows"][0]["status"], "guardrail")
 
-    def test_three_improving_measurements_reach_met(self):
+    def test_single_week_only_counts_as_improving(self):
         now = self.core.now_ms()
-        for index in range(3):
-            self.record(after=30, adopted_at=now - (30 - index * 10) * 86400000)
-        ledger = self.ledger_with((30.0, 30))
-        statuses = [row["status"] for row in ledger["rows"]]
-        self.assertIn("met", statuses)
+        ledger = self.ledger_with(now - 10 * 86400000, {
+            "work_minutes": ((40.0, 30), (30.0, 30)),
+        })
+        self.assertEqual(ledger["rows"][0]["status"], "improving")
 
-    def test_format_ledger_is_readable(self):
-        self.record(after=32)
-        text = self.core.format_ledger(self.core.improvement_ledger())
-        self.assertIn("改进台账", text)
+    def test_fresh_adjustment_is_observing(self):
+        now = self.core.now_ms()
+        ledger = self.ledger_with(now - 2 * 86400000, {
+            "work_minutes": ((40.0, 30), (None, 0)),
+        })
+        self.assertEqual(ledger["rows"][0]["status"], "observing")
+
+    def test_no_baseline_is_stated_not_judged(self):
+        now = self.core.now_ms()
+        ledger = self.ledger_with(now - 30 * 86400000, {
+            "work_minutes": ((None, 0), (30.0, 30)),
+        })
+        self.assertEqual(ledger["rows"][0]["status"], "no-baseline")
+
+    def test_flat_metric_is_not_improved(self):
+        now = self.core.now_ms()
+        ledger = self.ledger_with(now - 30 * 86400000, {
+            "work_minutes": ((40.0, 30), (40.0, 30)),
+        })
+        self.assertEqual(ledger["rows"][0]["status"], "not-improved")
+
+    def test_format_ledger_shows_baseline_current_and_hypothesis(self):
+        now = self.core.now_ms()
+        ledger = self.ledger_with(now - 30 * 86400000, {
+            "work_minutes": ((40.0, 30), (30.0, 30)),
+        })
+        text = self.core.format_ledger(ledger)
+        self.assertIn("基线 40.0", text)
+        self.assertIn("当前 30.0", text)
+        self.assertIn("假设", text)
         self.assertIn("证据", text)
 
 
@@ -119,13 +147,11 @@ class BindingMetricTest(unittest.TestCase):
 
     def test_early_tools_before_binding_are_measured(self):
         core = self.core
-        # A：先调工具、后绑定
         core.record_prompt("sid-a", "干活", "/tmp/ws")
         core.record_tool("sid-a", "Read", False)
         core.record_prompt("sid-a", "继续", "/tmp/ws")
         core.record_report({"task_id": "a-work", "summary": "做", "phase": "start"},
                            {"sid": "sid-a", "workspace": "/tmp/ws"})
-        # B：先绑定、后调工具
         core.record_prompt("sid-b", "干活", "/tmp/ws")
         core.record_report({"task_id": "b-work", "summary": "做", "phase": "start"},
                            {"sid": "sid-b", "workspace": "/tmp/ws"})
