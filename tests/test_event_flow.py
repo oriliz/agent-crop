@@ -236,7 +236,17 @@ class EventFlowTest(unittest.TestCase):
         self.assertEqual(self.core.resolve_binding(self.sid), "flow-work")
         self.report(phase="end", what="完")
         self.assertIn("work_close", self.kinds())
-        self.assertEqual(self.core.resolve_binding(self.sid), "")
+        # #43：绑定保留但标记已收尾，下一轮不再被催 start。
+        self.assertEqual(self.core.resolve_binding(self.sid), "flow-work")
+        self.assertTrue(self.core.binding_ended(self.sid))
+
+    def test_end_turn_does_not_nag_a_new_start(self):
+        self.report(phase="start", goal="甲")
+        self.report(phase="end", what="完")
+        hint = self.core.format_open_tasks([], 0, self.sid)
+        self.assertIn("已经收尾", hint)
+        self.assertIn("不用重新绑定", hint)
+        self.assertEqual(self.core.maybe_work_reminder(self.sid), "")
 
     def test_repeated_nudges_force_a_retro(self):
         self.report(phase="start")
