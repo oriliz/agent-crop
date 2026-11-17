@@ -2,7 +2,7 @@
 
 # Agent Crop
 
-![An angry hand holding a long horsewhip points at a kneeling blue-haired whale-girl maid, with a half-built aircraft carrier in a shipyard behind; the speech bubbles read "I only said I wanted to get to the other side — why did you build an aircraft carrier?" and "You told me to build a boat..."](docs/assets/banner.jpg)
+![An angry hand holding a long horsewhip points at a kneeling blue-haired whale-girl maid, with a half-built aircraft carrier in a shipyard behind; the speech bubbles read "I just wanted to get to the other side — why did you build an aircraft carrier?" and "You told me to build a boat..."](docs/assets/banner-en.jpg)
 
 > *"My tokens!!!"*
 
@@ -45,7 +45,7 @@ The workplace has the same structure, under the name **retrospective**: what did
 
 Agent Crop swaps the subject to "a human and an AI working together":
 
-![Traditional backend performance tuning vs. agent workflow tuning: the top half is a request's span waterfall with the database query longest; the bottom half is where one work block's time went, with waiting for your answer longest](docs/assets/paradigm.jpg)
+![Traditional backend performance tuning vs. agent workflow tuning: the top half is a request's span waterfall with the database query longest; the bottom half is where one work block's time went, with waiting for your answer longest](docs/assets/paradigm-en.svg)
 
 The top is a request's spans; the bottom is where one work block's time went. The four steps don't change: measure, attribute, optimize, verify.
 
@@ -103,7 +103,7 @@ Its core is a single line: remind → reflect → change the way it works → ge
 
 Lay one conversation out from left to right:
 
-![Timeline of one conversation: the top half is automatic collection, the bottom half is the AI's judgments and actions; blue is active, yellow is your side's time](docs/assets/probe-timeline.svg)
+![Timeline of one conversation: the top half is automatic collection, the bottom half is the AI's judgments and actions; blue is active, yellow is your side's time](docs/assets/probe-timeline-en.svg)
 
 - **Start**: the session begins. The probe first injects one line into context — **create / bind a work item** — and only then starts recording.
 - **Every working turn**: each tool call records its name and whether it passed.
@@ -138,6 +138,8 @@ In one line: **the probe records facts, the AI fills in judgments** — stored s
 ## Panel
 
 Two entry points: **the Crop tab on the session page** for how one session ran, and **Crop global in the sidebar** for cross-session friction metrics and collector health.
+
+> The panel UI is Chinese-first for now, so the screenshots below show the real interface as shipped. The English captions and bullets around them explain what each view contains.
 
 **Session-page Crop** — how this session is going:
 
