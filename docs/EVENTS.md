@@ -48,6 +48,7 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `work_update` | 工作推进/挂起/恢复 | `work_id` `state` `summary` | D8 |
 | `work_close` | 判定完成 | `work_id` `difficulty_actual` `summary` | D1 / D7 / D8 |
 | `work_sediment` | 收尾时登记这条经验的落点 | `work_id` `sediment`(`agents:`/`skill:`/`tool:`/`hook:`/`docs:`/`none:`) | 复盘沉淀；二次收尾补记时只发这个事件 |
+| `retro_due` | 收尾时该工作累计鞭策 ≥2 次但没写 `improve` | `work_id` `nudges` | 主动复盘：收尾必须给改进，不留空 |
 | `work_archive` | 挂起超期归档 | `work_id` `archived_at` | D8 / D9 |
 | `turn_end` | 回合结束（替代/补充 `stop`） | `sid` `block_start` `minutes` | D2 |
 | `user_wait` | 从回合结束到用户回话 | `sid` `waiting_ms` `within_work_hours` `active_work_id` | D2 |

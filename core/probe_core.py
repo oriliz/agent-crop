@@ -55,6 +55,8 @@ CLAIM_TTL_MIN = float(os.environ.get("KIT_CLAIM_TTL_MIN", "120"))
 VERDICTS = ("justified", "not-justified", "unknown")
 REVIEW_LEVELS = ("redo", "major", "minor", "none")
 SENTIMENTS = ("pos", "neu", "neg")
+# 一个工作被鞭策这么多次后，收尾必须给改进（issue #43 / 主动复盘）。
+RETRO_FORCE_NUDGES = 2
 # Built-in types keep their own calibration history.  The list is not a closed
 # enum: users can define their own short slug, and `explore` is first-class
 # because research/triage estimates behave differently from implementation.
@@ -735,6 +737,14 @@ def _close_dangling(sid: str, end: int | None = None,
 # Report recording
 
 
+def _work_signal_count(work_id: str, kinds: tuple[str, ...]) -> int:
+    """Events of these kinds attributed to one work (issue #43 / proactive retro)."""
+    if not work_id:
+        return 0
+    return sum(1 for event in load_events()
+               if event.get("ev") in kinds and str(event.get("work_id") or "") == work_id)
+
+
 def record_report(args: dict, context: dict | None = None) -> dict:
     context = context or {}
     report = validate_report(args)
@@ -895,6 +905,18 @@ def record_report(args: dict, context: dict | None = None) -> dict:
             )
         except ValueError:
             pass
+    # 主动复盘：多次鞭策后必须给出改进；一路顺利则提示复盘「为什么顺利」。
+    if report["phase"] == "end":
+        nudges = _work_signal_count(report["task_id"], ("reminder", "nudge"))
+        reworks = _work_signal_count(report["task_id"], ("self_review", "rework_signal"))
+        has_improve = bool(str(report.get("improve") or "").strip())
+        record["nudge_count"] = nudges
+        if nudges >= RETRO_FORCE_NUDGES and not has_improve:
+            record["retro_due"] = True
+            append_event({"ev": "retro_due", "sid": sid, "work_id": report["task_id"],
+                          "nudges": nudges})
+        elif nudges == 0 and reworks == 0 and not has_improve:
+            record["retro_smooth"] = True
     return record
 
 
