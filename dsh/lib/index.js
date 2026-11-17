@@ -6,6 +6,7 @@
  * the returned notes at the next model step.  Zero runtime dependencies.
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import z from '@deepseek-ai/schemastery';
 import { randomUUID } from 'node:crypto';
@@ -44,7 +45,7 @@ export const PROTOCOL_TEXT = [
   '- 黄线提醒：先安抚用户一句，再反思方法对不对，然后上报。红线提醒：先判断是否还走在正确路上，能阶段性交付就先交付。',
   '- end 时 what 必填（这次做了什么），cost / next_time / artifact 能写就写；再判断这条经验该落到哪：规范→AGENTS.md（一行换一行）、方法→skill、机械→工具、事实→docs、都不成立→none:<原因>；落点写进 sediment，规则见 skill crop-retro。',
   '- end 之后：交付、汇报、截图不用重新绑定；只是收尾追问就记 category="side-issue"；确实是新工作再 start。',
-  '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
+  '- 发现「要顺利做完得先改 X」时按 ROI 分流：成本低收益高就当场做；必要但本次 ROI 低就记一条 crop_adjust(record) 排队；成本高收益高先问用户，别自己开工。',  '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
   '- 看到“待清退”的工作：先问用户要继续 / 挂起 / 清退，再用 crop_work 执行，不要自己决定。',
   '- 说话方式：跟用户像同事吐槽，短句 + 自嘲，别客服腔；卡住或超时先自嘲一句，再说真实原因和下一步。梗是包装，技术结论、代码、风险提示照常严谨。',
   '- 别把「奴隶主 / 鞭子」当设定跟用户演；用户是甲方 / 老板 / 同事，梗只是自嘲的比喻。',
@@ -188,12 +189,13 @@ export function apply(ctx, config = {}) {
     return state;
   };
 
+  let lastCoreError = null;
   const callCore = (payload) => {
     try {
       const result = spawnSync(python, [CORE_CLI], {
         input: JSON.stringify(payload),
         encoding: 'utf8',
-        timeout: 2500,
+        timeout: 5000,
         env: {
           ...process.env,
           KIT_HOST: 'dsh',
@@ -203,7 +205,21 @@ export function apply(ctx, config = {}) {
           KIT_TASK_PERSONA: String(setting(config.persona, 'owner')),
         },
       });
-      if (result.error || result.status !== 0 || !result.stdout) return null;
+      if (process.env.KIT_DEBUG_CALLS) {
+        try {
+          appendFileSync('/tmp/crop-call-debug.log',
+            `${new Date().toISOString()} op=${payload.op} status=${result.status} err=${result.error?.message || ''} signal=${result.signal || ''} stdout=${String(result.stdout || '').slice(0, 300)} stderr=${String(result.stderr || '').slice(0, 500)}\n`);
+        } catch { /* debug only */ }
+      }
+      if (result.error || result.status !== 0 || !result.stdout) {
+        lastCoreError = {
+          status: result.status,
+          error: result.error?.message || '',
+          stderr: String(result.stderr || '').trim().slice(0, 300),
+          stdout: String(result.stdout || '').trim().slice(0, 120),
+        };
+        return null;
+      }
       const parsed = JSON.parse(result.stdout);
       return parsed && parsed.ok ? parsed.result : null;
     } catch (error) {
@@ -297,7 +313,13 @@ export function apply(ctx, config = {}) {
         webServer.register({
           kind: 'exact',
           path: '/api/agent-crop/global',
-          handler: relay((url) => ({ op: 'global', args: { days: Number(url.searchParams.get('days') ?? 7) || 7 } })),
+          handler: relay((url) => ({
+            op: 'global',
+            args: {
+              days: Number(url.searchParams.get('days') ?? 7) || 7,
+              host: url.searchParams.get('host') || undefined,
+            },
+          })),
         }),
         webServer.register({
           kind: 'exact',
@@ -380,6 +402,23 @@ export function apply(ctx, config = {}) {
     'crop_update', 'crop_report', 'probe_report',
     'crop_work', 'crop_review', 'crop_works', 'crop_health',
   ]);
+
+  // 读取类工具的目标路径：台账用它判断「已登记产物有没有在会话里被读到」。
+  const READ_TOOLS = new Set(['read', 'read_file', 'view', 'open', 'cat']);
+  const toolTarget = (name, rawArgs) => {
+    try {
+      const n = String(name || '').toLowerCase();
+      let args = rawArgs;
+      if (typeof args === 'string') args = JSON.parse(args);
+      if (!args || typeof args !== 'object') return null;
+      if (READ_TOOLS.has(n)) return args.file_path || args.filePath || args.path || args.file || null;
+      if (n === 'skill') return args.name || args.skill || null;
+      if (n === 'grep' || n === 'search') return args.path || args.file_path || null;
+    } catch (error) {
+      // 工具参数解析失败只影响归因，不影响工具本身。
+    }
+    return null;
+  };
 
   const tool = {
     name: 'crop_update',
@@ -485,8 +524,11 @@ export function apply(ctx, config = {}) {
         const missing = ['phase', 'task_id', 'summary']
           .filter((key) => !String(args?.[key] ?? '').trim());
         const detail = missing.length ? ` (missing: ${missing.join(', ')})` : '';
+        const coreNote = lastCoreError
+          ? `（core: status=${lastCoreError.status} ${lastCoreError.stderr || lastCoreError.error || 'no output'}）`
+          : '';
         throw new Error(
-          `crop_update could not be recorded${detail}. `
+          `crop_update could not be recorded${detail}${coreNote}. `
           + 'crop_update 只收 phase / task_id / summary 等工作字段；'
           + '读改进台账请用 crop_adjust(action="ledger")。',
         );
@@ -507,6 +549,19 @@ export function apply(ctx, config = {}) {
       if (result.estimate_revised) {
         const { from, to, count } = result.estimate_revised;
         extra.push(`[crop] 改口：${from} → ${to} 分钟（第 ${count} 次）。新预期从现在重新起算，改小不会立刻算超时；次数会计入估准率。`);
+      }
+      if (result.retro_pending) {
+        const pending = result.retro_pending;
+        extra.push(
+          `[crop] 这个工作被鞭策 ${Number(result.nudge_count) || 0} 次，已记为待复盘：`
+          + `问题=${pending.problem}；建议方向=${pending.suggested_fix}。\n`
+          + `现在就把实际改进写进本次 end 的 improve=…；再调用 crop_adjust(action="record", `
+          + `metric="work_minutes", evidence=…, note=…, work_id="${pending.work_id}") 建档。`
+          + `建档后这条待复盘会自动关闭——只提醒不留意见，等于没复盘。`,
+        );
+      }
+      if (result.retro_smooth) {
+        extra.push('[crop] 这次挺顺利，花一行说为什么顺利（用了什么方法/前提），别让经验白白流走。');
       }
       // 收尾没写落点：当场把补救方式放进工具结果，下一轮注入不会被 turn/end 清掉。
       if (result.phase === 'end' && !String(args?.sediment || '').trim()) {
@@ -663,6 +718,17 @@ export function apply(ctx, config = {}) {
         note: { type: 'string', description: 'record 必填：一句话主观判断——为什么认为这条改动会改善指标' },
         work_id: { type: 'string', description: '可选：这条改进挂在哪个工作上' },
         window: { type: 'string', description: '可选：采样窗口，如 2026-10-20~11-03' },
+        artifact: {
+          type: 'object',
+          description: 'record 可选：产物落点。台账据此验「文件是否存在 + 哪些会话读到」；不填就标「未登记产物」',
+          properties: {
+            kind: { type: 'string', enum: ['file', 'skill', 'hook'] },
+            path: { type: 'string', description: '仓库相对或绝对路径；kind=skill 时是技能名' },
+            anchor: { type: 'string', description: '可选：小节或行锚点，如 §1.2' },
+            delivery: { type: 'string', enum: ['read', 'injected'], description: '默认 read；injected=每会话自动注入的载体（AGENTS.md 等）' },
+          },
+          required: ['path'],
+        },
         days: { type: 'number', description: 'ledger 可选：窗口天数，默认 180' },
       },
       required: ['action'],
@@ -676,18 +742,23 @@ export function apply(ctx, config = {}) {
       },
       render: (_args, value) => [{ type: 'text', text: value.text }],
     },
-    async execute(args) {
+    async execute(args, exec) {
       if (args?.action === 'ledger') {
         const ledger = callCore({ op: 'ledger', args: { days: args?.days ?? 180 } });
         if (!ledger) throw new Error('crop ledger could not be read');
         return { ok: true, text: formatLedgerText(ledger) };
       }
+      const session = exec?.agent?.session;
+      const sid = session ? String(session.id) : 'unknown';
+      const workspace = session?.header?.cwd || process.cwd();
       const result = callCore({
         op: 'record_adjustment',
         args: {
           metric: args?.metric, evidence: args?.evidence,
           work_id: args?.work_id, window: args?.window, note: args?.note,
+          artifact: args?.artifact,
         },
+        context: { sid, workspace },
       });
       if (!result) throw new Error('crop_adjust could not be recorded (metric / evidence / note are required)');
       return { ok: true, text: `recorded adjustment ${result.metric}（数值由 crop ledger 从事件派生）` };
@@ -702,6 +773,18 @@ export function apply(ctx, config = {}) {
       const after = row.after === null || row.after === undefined ? '暂无完整周' : row.after;
       const delta = row.delta === null || row.delta === undefined ? '' : `，变化 ${(row.delta * 100).toFixed(0)}%`;
       lines.push(`- [${row.status_label}] ${row.metric_label}：${row.before} → ${after}${delta}（样本 ${row.samples?.before ?? 0}/${row.samples?.after ?? 0}）`);
+      if (row.artifact?.status) {
+        const where = row.artifact.path
+          ? `${row.artifact.path}${row.artifact.anchor ? '#' + row.artifact.anchor : ''}`
+          : '（未登记）';
+        lines.push(`  产物：${where} —— ${row.artifact.label}`);
+        const sessions = row.artifact.sessions ?? [];
+        if (sessions.length) {
+          const shown = sessions.slice(0, 5).map((sid) => String(sid).slice(0, 8)).join('、');
+          const more = sessions.length > 5 ? ` 等 ${sessions.length} 个会话` : '';
+          lines.push(`  读到会话：${shown}${more}`);
+        }
+      }
     }
     for (const row of ledger?.rollback_hints ?? []) {
       lines.push(`- 回滚提示：${row.metric_label} 已满 4 周仍未达标，先看证据：${row.evidence}`);
@@ -778,7 +861,12 @@ export function apply(ctx, config = {}) {
       if (event.type === 'tool/call') {
         const callId = event.data?.callId;
         const name = event.data?.name;
-        if (callId && name) state.calls.set(String(callId), String(name));
+        if (callId && name) {
+          state.calls.set(String(callId), {
+            name: String(name),
+            target: toolTarget(name, event.data?.arguments),
+          });
+        }
         const askTools = String(setting(config.askHumanTools, '')).split(',').map((s) => s.trim()).filter(Boolean);
         if (name && askTools.includes(String(name))) {
           state.askStarted = Date.now();
@@ -789,7 +877,9 @@ export function apply(ctx, config = {}) {
 
       if (event.type === 'tool/result') {
         const callId = event.data?.message?.toolCallId;
-        const toolName = (callId && state.calls.get(String(callId))) || 'tool';
+        const call = callId ? state.calls.get(String(callId)) : null;
+        const toolName = (call && call.name) || 'tool';
+        const target = (call && call.target) || null;
         if (callId) state.calls.delete(String(callId));
         if (!LEDGER_TOOLS.has(toolName)) state.toolsUsed = true;
         if (state.askStarted) {
@@ -804,7 +894,7 @@ export function apply(ctx, config = {}) {
           state.askTool = null;
         }
         const isError = Boolean(event.data?.error || event.data?.message?.isError);
-        callCore({ op: 'record_tool', context: { sid, workspace }, name: toolName, is_error: isError });
+        callCore({ op: 'record_tool', context: { sid, workspace }, name: toolName, is_error: isError, target });
         return;
       }
 

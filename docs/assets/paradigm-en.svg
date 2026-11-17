@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1066" viewBox="0 0 1600 1066" role="img" aria-labelledby="p1 p2">
+<title id="p1">Classic performance tuning vs. agent workflow tuning</title>
+<desc id="p2">Top: a request's span waterfall, where the database query is the longest stretch. Bottom: where one work block's time went, where waiting for your answer is the longest stretch.</desc>
+<rect width="1600" height="1066" fill="#f3f4f8"/>
+
+<!-- card 1 -->
+<rect x="44" y="44" width="1512" height="458" rx="16" fill="#fbfbfb" stroke="#e9eaee" stroke-width="1.5"/>
+<text x="84" y="126" font-family="'Helvetica Neue','Arial',sans-serif" font-size="44" font-weight="700" fill="#0e1629">Classic performance tuning</text>
+<text x="84" y="168" font-family="'Helvetica Neue','Arial',sans-serif" font-size="24" fill="#4b5563">Time-based analysis of a request</text>
+<text x="1516" y="118" text-anchor="end" font-family="'Helvetica Neue','Arial',sans-serif" font-size="20" fill="#6b7280">Identify bottlenecks, optimize precisely, improve overall performance</text>
+
+<!-- card 1 grid -->
+<g stroke="#ececee" stroke-width="1">
+<line x1="205" y1="210" x2="205" y2="510"/>
+<line x1="462" y1="210" x2="462" y2="510"/>
+<line x1="719" y1="210" x2="719" y2="510"/>
+<line x1="976" y1="210" x2="976" y2="510"/>
+<line x1="1233" y1="210" x2="1233" y2="510"/>
+<line x1="1490" y1="210" x2="1490" y2="510"/>
+</g>
+<g font-family="'Helvetica Neue','Arial',sans-serif" font-size="19" fill="#8a8f98" text-anchor="middle">
+<text x="205" y="200">0</text>
+<text x="462" y="200">100</text>
+<text x="719" y="200">200</text>
+<text x="976" y="200">300</text>
+<text x="1233" y="200">400</text>
+<text x="1490" y="200">500</text>
+</g>
+<text x="1524" y="200" font-family="'Helvetica Neue','Arial',sans-serif" font-size="19" fill="#8a8f98">(ms)</text>
+
+<g font-family="'Helvetica Neue','Arial',sans-serif" font-size="21" fill="#111827" text-anchor="end">
+<text x="188" y="248">Gateway</text>
+<text x="188" y="308">Auth</text>
+<text x="188" y="368">Business logic</text>
+<text x="188" y="428">DB query</text>
+<text x="188" y="488">Serialization</text>
+</g>
+
+<g>
+<rect x="205" y="223" width="308" height="34" rx="8" fill="#a5cefa"/>
+<rect x="205" y="283" width="154" height="34" rx="8" fill="#a5cefa"/>
+<rect x="205" y="343" width="719" height="34" rx="8" fill="#a5cefa"/>
+<rect x="205" y="403" width="1028" height="34" rx="8" fill="#1969e1"/>
+<rect x="205" y="463" width="206" height="34" rx="8" fill="#a5cefa"/>
+</g>
+<g font-family="'Helvetica Neue','Arial',sans-serif" font-size="22" font-weight="600" fill="#111827">
+<text x="537" y="248">120ms</text>
+<text x="383" y="308">60ms</text>
+<text x="948" y="368">280ms</text>
+<text x="1257" y="428" font-weight="700" fill="#1969e1">400ms</text>
+<text x="435" y="488">80ms</text>
+</g>
+
+<!-- card 2 -->
+<rect x="44" y="538" width="1512" height="470" rx="16" fill="#fbfbfb" stroke="#e9eaee" stroke-width="1.5"/>
+<text x="84" y="620" font-family="'Helvetica Neue','Arial',sans-serif" font-size="44" font-weight="700" fill="#0e1629">Agent workflow tuning</text>
+<text x="84" y="662" font-family="'Helvetica Neue','Arial',sans-serif" font-size="24" fill="#4b5563">Time-based analysis of one work block</text>
+<text x="1516" y="612" text-anchor="end" font-family="'Helvetica Neue','Arial',sans-serif" font-size="20" fill="#6b7280">Focus on the critical path, streamline collaboration, raise agent throughput</text>
+
+<g stroke="#ececee" stroke-width="1">
+<line x1="205" y1="704" x2="205" y2="1002"/>
+<line x1="462" y1="704" x2="462" y2="1002"/>
+<line x1="719" y1="704" x2="719" y2="1002"/>
+<line x1="976" y1="704" x2="976" y2="1002"/>
+<line x1="1233" y1="704" x2="1233" y2="1002"/>
+<line x1="1490" y1="704" x2="1490" y2="1002"/>
+</g>
+<g font-family="'Helvetica Neue','Arial',sans-serif" font-size="19" fill="#8a8f98" text-anchor="middle">
+<text x="205" y="694">0</text>
+<text x="462" y="694">10</text>
+<text x="719" y="694">20</text>
+<text x="976" y="694">30</text>
+<text x="1233" y="694">40</text>
+<text x="1490" y="694">50</text>
+</g>
+<text x="1524" y="694" font-family="'Helvetica Neue','Arial',sans-serif" font-size="19" fill="#8a8f98">(min)</text>
+
+<g font-family="'Helvetica Neue','Arial',sans-serif" font-size="21" fill="#111827" text-anchor="end">
+<text x="188" y="748">AI thinking</text>
+<text x="188" y="808">Tool calls</text>
+<text x="188" y="868">Waiting for you</text>
+<text x="188" y="928">Rework</text>
+<text x="188" y="988">Verification</text>
+</g>
+
+<g>
+<rect x="205" y="723" width="77" height="34" rx="8" fill="#a5cefa"/>
+<rect x="205" y="783" width="51" height="34" rx="8" fill="#a5cefa"/>
+<rect x="205" y="843" width="1028" height="34" rx="8" fill="#f6782b"/>
+<rect x="205" y="903" width="26" height="34" rx="8" fill="#a5cefa"/>
+<rect x="205" y="963" width="26" height="34" rx="8" fill="#a5cefa"/>
+</g>
+<g font-family="'Helvetica Neue','Arial',sans-serif" font-size="22" font-weight="600" fill="#111827">
+<text x="306" y="748">3min</text>
+<text x="280" y="808">2min</text>
+<text x="1257" y="868" font-weight="700" fill="#f6782b">40min</text>
+<text x="255" y="928">1min</text>
+<text x="255" y="988">1min</text>
+</g>
+</svg>

@@ -12,6 +12,7 @@ Data location, in order:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -60,6 +61,8 @@ CLAIM_TTL_MIN = float(os.environ.get("KIT_CLAIM_TTL_MIN", "120"))
 VERDICTS = ("justified", "not-justified", "unknown")
 REVIEW_LEVELS = ("redo", "major", "minor", "none")
 SENTIMENTS = ("pos", "neu", "neg")
+# 一个工作被鞭策这么多次后，收尾必须给改进（issue #43 / 主动复盘）。
+RETRO_FORCE_NUDGES = 2
 # Built-in types keep their own calibration history.  The list is not a closed
 # enum: users can define their own short slug, and `explore` is first-class
 # because research/triage estimates behave differently from implementation.
@@ -740,6 +743,50 @@ def _close_dangling(sid: str, end: int | None = None,
 # Report recording
 
 
+def _work_signal_count(work_id: str, kinds: tuple[str, ...]) -> int:
+    """Events of these kinds attributed to one work (issue #43 / proactive retro)."""
+    if not work_id:
+        return 0
+    return sum(1 for event in load_events()
+               if event.get("ev") in kinds and str(event.get("work_id") or "") == work_id)
+
+
+def _nudge_tiers(work_id: str) -> list[str]:
+    """Distinct nudge tiers recorded for one work (used to draft the retro)."""
+    tiers: list[str] = []
+    for event in load_events():
+        if event.get("ev") not in ("reminder", "nudge"):
+            continue
+        if str(event.get("work_id") or "") != work_id:
+            continue
+        tier = str(event.get("tier") or "").strip()
+        if tier and tier not in tiers:
+            tiers.append(tier)
+    return tiers
+
+
+def _retro_pending(work_id: str, nudges: int, tiers: list[str]) -> dict:
+    """A concrete retro record, not a reminder: problem + suggested direction + next step.
+
+    The point of the proactive retro is that the improvement actually lands
+    (improve field + crop_adjust ledger entry), so the system writes a pending
+    record the agent must resolve.  A pure nudge could be ignored; this row
+    stays visible until an adjustment closes it.
+    """
+    severe = any(tier in ("red", "overdue") for tier in tiers)
+    suggested = ("先拆任务或先交付一个可验证的阶段，别一口气拖到超时"
+                 if severe else
+                 "检查是否卡在循环里，或把重复动作换成一次性方案")
+    return {
+        "work_id": work_id,
+        "problem": f"被鞭策 {nudges} 次（{', '.join(tiers) or 'n/a'}）",
+        "suggested_fix": suggested,
+        "next": ("把这次的真实改进写进本次 end 的 improve，再调用 "
+                 'crop_adjust(action="record", metric="work_minutes", evidence=..., '
+                 "note=..., work_id=...) 建档；建档后这条待复盘会自动关闭。"),
+    }
+
+
 def record_report(args: dict, context: dict | None = None) -> dict:
     context = context or {}
     report = validate_report(args)
@@ -874,7 +921,8 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                           "sediment": report["sediment"]})
         append_event({"ev": "work_close", "sid": sid, "work_id": report["task_id"],
                       "verdict": report.get("verdict", "")})
-        release_binding(sid)
+        # #43：收尾不立刻解绑——下一轮开头不该再被催 start，墙钟也要能跨轮累计。
+        mark_binding_ended(sid, report["task_id"])
         close_task(report["task_id"])
     else:
         _upsert_task(record, workspace)
@@ -900,6 +948,22 @@ def record_report(args: dict, context: dict | None = None) -> dict:
             )
         except ValueError:
             pass
+    # 主动复盘：多次鞭策后必须给出改进；一路顺利则提示复盘「为什么顺利」。
+    if report["phase"] == "end":
+        nudges = _work_signal_count(report["task_id"], ("reminder", "nudge"))
+        reworks = _work_signal_count(report["task_id"], ("self_review", "rework_signal"))
+        has_improve = bool(str(report.get("improve") or "").strip())
+        record["nudge_count"] = nudges
+        if nudges >= RETRO_FORCE_NUDGES and not has_improve:
+            tiers = _nudge_tiers(report["task_id"])
+            pending = _retro_pending(report["task_id"], nudges, tiers)
+            record["retro_due"] = True
+            record["retro_pending"] = pending
+            append_event({"ev": "retro_due", "sid": sid, "work_id": report["task_id"],
+                          "nudges": nudges})
+            append_event({"ev": "retro_pending", "sid": sid, **pending})
+        elif nudges == 0 and reworks == 0 and not has_improve:
+            record["retro_smooth"] = True
     return record
 
 
@@ -995,18 +1059,31 @@ def current_block_start(sid: str) -> int | None:
 REPEAT_TOOL_THRESHOLD = int(os.environ.get("KIT_REPEAT_TOOL", "5"))
 
 
-def record_tool(sid: str, name: str, is_error: bool) -> None:
+def record_tool(sid: str, name: str, is_error: bool, target: str | None = None) -> None:
     tool = str(name or "")[:80]
     work_id = resolve_binding(sid) or ""
-    event = {"ev": "tool", "sid": sid, "name": tool, "is_error": bool(is_error)}
+    event = {"ev": "tool", "sid": sid, "name": tool, "is_error": bool(is_error), "t": now_ms()}
     if work_id:
         event["work_id"] = work_id
+    # 产物归因与重复检测共用一次读取：target 只在读取类工具上有值，
+    # 命中是历史台账与本次 target 的比对，结果落 artifact_hit 事件。
+    history: list[dict] = []
+    try:
+        history = load_events(limit=0) if target else load_events(sid=sid)
+    except Exception:
+        history = []
+    if target:
+        try:
+            _record_artifact_hits(sid, work_id, tool, target, history)
+        except Exception:
+            pass
     append_event(event)
     try:
         start = current_block_start(sid)
+        base = [item for item in history if item.get("sid") == sid]
         recent = [
-            event for event in load_events(sid=sid)
-            if event.get("ev") == "tool" and (not start or int(event.get("t") or 0) >= start)
+            item for item in (base + [event])
+            if item.get("ev") == "tool" and (not start or int(item.get("t") or 0) >= start)
         ]
         tail = recent[-REPEAT_TOOL_THRESHOLD:]
         if len(tail) >= REPEAT_TOOL_THRESHOLD and all(event.get("name") == tool for event in tail):
@@ -1043,7 +1120,7 @@ def miss_nudge(streak: int, sid: str | None = None) -> str:
     binding hint already covers.  Nagging here was the "上一轮没登记" noise
     (card 0f9927d4).
     """
-    if sid and not resolve_binding(sid):
+    if sid and (not resolve_binding(sid) or binding_ended(sid)):
         return ""
     tier = "miss_streak" if int(streak or 0) >= 2 else "miss"
     if voice is not None:
@@ -1242,6 +1319,9 @@ def maybe_work_reminder(sid: str) -> str:
     task_id = _latest_work_for_session(sid)
     if not task_id:
         return ""
+    # 已收尾但仍保留的绑定（#43）：交付、汇报阶段不该再抽鞭子。
+    if binding_ended(sid):
+        return ""
     health = work_health(task_id)
     if not health:
         return ""
@@ -1284,9 +1364,10 @@ def maybe_reminder(sid: str) -> str:
     health = work_health(task_id) if task_id else None
     has_estimate = bool(health and health.get("expect_min"))
     start = current_block_start(sid)
-    if start and not has_estimate:
+    if start:
         minutes = active_minutes(sid, start, now_ms())
-        red = float(config["red_min"])
+        # 有预估时别把块时钟整段跳过：用墙钟兜底，防报个 3 分钟就永久关掉红线（#43）。
+        red = 60.0 if has_estimate else float(config["red_min"])
         if minutes >= red and not _cooldown_active(sid, float(config["remind_min"]), "red"):
             persona = str(config.get("persona") or "owner")
             if persona == "free":
@@ -1582,6 +1663,9 @@ def work_status_line(workspace: str | None = None, sid: str | None = None) -> st
     """Turn-start line: plain prose when bound, candidate list when ambiguous."""
     tasks = open_tasks(workspace, 3, sid)
     bound_id = resolve_binding(sid) if sid else ""
+    if bound_id and binding_ended(sid):
+        return (f"[crop] 上一件工作（{bound_id}）已经收尾，本会话继续聊或交付都不用重新绑定；"
+                "确实是新工作，再 crop_update(phase=\"start\", task_id=\"<短名>\", summary=\"<一句话>\")。")
     claimed = None
     if bound_id:
         # Read the bound task directly: it does not have to be a top-3 candidate.
@@ -1727,9 +1811,11 @@ def works_needing_check(days: float = 1.0, now: int | None = None) -> list[dict]
 # Report (weekly / arbitrary window)
 
 
-def _events_between(start_ms: int, end_ms: int) -> list[dict]:
+def _events_between(start_ms: int, end_ms: int, host: str | None = None) -> list[dict]:
     events = load_events(limit=200000)
-    return [event for event in events if start_ms <= int(event.get("t") or 0) <= end_ms]
+    return [event for event in events
+            if start_ms <= int(event.get("t") or 0) <= end_ms
+            and (not host or event.get("host") == host)]
 
 
 def _closed_works_between(start_ms: int, end_ms: int) -> list[dict]:
@@ -1818,7 +1904,8 @@ def _work_list(events: list[dict], completed: list[dict], start_ms: int) -> list
 
 
 def period_summary(
-    days: float = 7.0, now: int | None = None, start: int | None = None
+    days: float = 7.0, now: int | None = None, start: int | None = None,
+    host: str | None = None,
 ) -> dict:
     """Range totals for the dashboard and the text report.
 
@@ -1827,7 +1914,7 @@ def period_summary(
     """
     end = now if now is not None else now_ms()
     start = int(start) if start is not None else end - int(days * 86400000)
-    events = _events_between(start, end)
+    events = _events_between(start, end, host)
     blocks = [event for event in events if event.get("ev") == "stop"]
     reports = [event for event in events if event.get("ev") == "probe_report"]
     waits = [event for event in events if event.get("ev") == "user_wait"]
@@ -1938,14 +2025,14 @@ def _natural_start(days: float) -> int:
     return start_of_today_ms() - int((max(1.0, float(days)) - 1) * 86400000)
 
 
-def _window_metrics(start_ms: int, end_ms: int) -> dict:
+def _window_metrics(start_ms: int, end_ms: int, host: str | None = None) -> dict:
     """Friction numbers for one window — the raw material of the global page.
 
     Only facts the event log already carries: no judgement, no inference. A
     metric whose denominator is 0 comes back as None so the panel can say
     "no sample" instead of drawing a fake trend.
     """
-    events = _events_between(start_ms, end_ms)
+    events = _events_between(start_ms, end_ms, host)
     blocks = [event for event in events if event.get("ev") == "stop"]
     waits = [event for event in events if event.get("ev") == "user_wait"]
     tools = [event for event in events if event.get("ev") == "tool"]
@@ -1985,7 +2072,7 @@ def _median(values: list[float]) -> float | None:
     return round((ordered[middle - 1] + ordered[middle]) / 2, 1)
 
 
-def improvement_summary(days: float = 7.0) -> dict:
+def improvement_summary(days: float = 7.0, host: str | None = None) -> dict:
     """Global page payload: friction this window against the one before it.
 
     The comparison window has the same length, so a 7-day panel compares with
@@ -1998,16 +2085,16 @@ def improvement_summary(days: float = 7.0) -> dict:
     start = _natural_start(days)
     previous_start = start - int(days * 86400000)
 
-    current = _window_metrics(start, end)
-    previous = _window_metrics(previous_start, start - 1)
+    current = _window_metrics(start, end, host)
+    previous = _window_metrics(previous_start, start - 1, host)
 
-    summary = period_summary(days, start=start)
+    summary = period_summary(days, start=start, host=host)
     works = summary.get("work_list") or []
     per_work = [float(row.get("minutes") or 0) for row in works if row.get("minutes")]
     current["works"] = len(works)
     current["median_active_per_work"] = _median(per_work)
 
-    events = _events_between(start, end)
+    events = _events_between(start, end, host)
     reports = [event for event in events if event.get("ev") == "probe_report"]
     improvements = []
     for report in reports:
@@ -2029,13 +2116,17 @@ def improvement_summary(days: float = 7.0) -> dict:
         if category:
             categories[category] = categories.get(category, 0) + 1
 
+    hosts = sorted({str(event.get("host"))
+                    for event in _events_between(start, end) if event.get("host")})
     return {
         "days": days,
         "start": start,
         "end": end,
+        "host": host or "",
+        "hosts": hosts,
         "current": current,
         "previous": previous,
-        "daily": daily_breakdown(days, start=start),
+        "daily": daily_breakdown(days, start=start, host=host),
         "work_list": works,
         "improvements": improvements,
         "categories": sorted(
@@ -2047,11 +2138,12 @@ def improvement_summary(days: float = 7.0) -> dict:
 
 
 def daily_breakdown(
-    days: float = 14.0, now: int | None = None, start: int | None = None
+    days: float = 14.0, now: int | None = None, start: int | None = None,
+    host: str | None = None,
 ) -> list[dict]:
     end = now if now is not None else now_ms()
     start = int(start) if start is not None else end - int(days * 86400000)
-    events = _events_between(start, end)
+    events = _events_between(start, end, host)
     buckets: dict[str, dict] = {}
     for event in events:
         stamp = int(event.get("t") or 0)
@@ -2838,6 +2930,34 @@ def release_binding(sid: str) -> None:
     save_bindings(value)
 
 
+def mark_binding_ended(sid: str, work_id: str) -> None:
+    """Keep the binding, flag it as ended.
+
+    Releasing it at ``end`` made the next turn look unbound, so the host nudged
+    the agent to start again — a start→end→start loop with empty check-ins
+    (issue #43).  Keeping the row also lets the wall clock keep accumulating
+    across turns instead of restarting from zero.
+    """
+    value = load_bindings()
+    now = now_ms()
+    for item in value.get("bindings", []):
+        if item.get("sid") == sid and float(item.get("expires_at") or 0) > now:
+            item["ended_at"] = now
+            if work_id:
+                item["work_id"] = work_id
+    save_bindings(value)
+
+
+def binding_ended(sid: str) -> bool:
+    """True when the session's live binding points at a work that already ended."""
+    value = load_bindings()
+    now = now_ms()
+    for item in value.get("bindings", []):
+        if item.get("sid") == sid and float(item.get("expires_at") or 0) > now:
+            return bool(item.get("ended_at"))
+    return False
+
+
 def migrate_bindings() -> int:
     """One-time: turn legacy last_sid into an active binding."""
     moved = 0
@@ -3422,6 +3542,182 @@ def format_health(summary: dict) -> str:
 # 判定交给确定性规则（样本量、方向、护栏不劣化），报表与周报复用同一份数据。
 # 指标值从原始事件派生，不为 ledger 新增快照事件（EVENTS.md §1.3）。
 
+ARTIFACT_KINDS = ("file", "skill", "hook")
+ARTIFACT_DELIVERIES = ("read", "injected")
+ARTIFACT_STATUS_LABEL = {
+    "unregistered": "未登记产物，无法验证",
+    "missing": "产物文件不存在",
+    "not-read": "产物存在，但还没有会话读到",
+    "injected": "结构性注入（每会话自动加载）",
+}
+
+
+def _norm_path(path: str, workspace: str = "") -> str:
+    text = str(path or "").strip()
+    if not text:
+        return ""
+    text = os.path.expanduser(text)
+    if not os.path.isabs(text) and workspace:
+        text = os.path.join(os.path.expanduser(str(workspace)), text)
+    # realpath 解析 /tmp → /private/tmp 这类符号链接，否则同一个文件会被当成两个路径。
+    return os.path.realpath(os.path.normpath(text))
+
+
+def _same_key(left: str, right: str) -> bool:
+    a = str(left or "").strip().lower()
+    b = str(right or "").strip().lower()
+    if not a or not b:
+        return False
+    return a == b or os.path.basename(a) == os.path.basename(b)
+
+
+def _parse_artifact(value) -> dict | None:
+    """Accept an object, or "kind:path#anchor" (optionally "@injected")."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, str):
+        text = str(value).strip()
+        if not text:
+            return None
+        kind = "file"
+        head, sep, tail = text.partition(":")
+        if sep and head.strip() in ARTIFACT_KINDS:
+            kind, text = head.strip(), tail
+        anchor = ""
+        if "#" in text:
+            text, anchor = text.split("#", 1)
+        delivery = "read"
+        path = text.strip()
+        if path.endswith("@injected"):
+            path = path[:-len("@injected")].rstrip()
+            delivery = "injected"
+        if not path:
+            raise ValueError("artifact path is required")
+        return {"kind": kind, "path": path[:500],
+                "anchor": anchor.strip()[:120], "delivery": delivery}
+    if isinstance(value, dict):
+        kind = str(value.get("kind") or "file").strip().lower()
+        delivery = str(value.get("delivery") or "read").strip().lower()
+        path = str(value.get("path") or "").strip()
+        if kind not in ARTIFACT_KINDS:
+            raise ValueError("artifact.kind must be one of: " + ", ".join(ARTIFACT_KINDS))
+        if delivery not in ARTIFACT_DELIVERIES:
+            raise ValueError("artifact.delivery must be one of: " + ", ".join(ARTIFACT_DELIVERIES))
+        if not path:
+            raise ValueError("artifact.path is required")
+        return {"kind": kind, "path": path[:500],
+                "anchor": str(value.get("anchor") or "").strip()[:120],
+                "delivery": delivery}
+    raise ValueError('artifact must be a string ("kind:path#anchor") or an object')
+
+
+def _adjustment_id(adopted_at: int, metric: str, evidence: str, note: str) -> str:
+    raw = f"{adopted_at}|{metric}|{evidence}|{note}".encode("utf-8")
+    return "adj-" + hashlib.sha1(raw).hexdigest()[:12]
+
+
+def _artifact_hit_ids(target: str, events: list[dict]) -> list[tuple[dict, dict]]:
+    """Which registered artifacts does this tool target correspond to?"""
+    text = str(target or "").strip()
+    if not text:
+        return []
+    target_norm = _norm_path(text)
+    found: list[tuple[dict, dict]] = []
+    seen: set[str] = set()
+    for event in events:
+        if event.get("ev") != "adjustment":
+            continue
+        artifact = event.get("artifact")
+        if not isinstance(artifact, dict):
+            continue
+        if str(artifact.get("delivery") or "read") == "injected":
+            continue
+        key = str(event.get("adjustment_id") or event.get("t") or "")
+        if key in seen:
+            continue
+        kind = str(artifact.get("kind") or "file")
+        path = str(artifact.get("path") or "")
+        if kind == "skill":
+            match = _same_key(text, path)
+        else:
+            artifact_norm = _norm_path(path, str(event.get("workspace") or ""))
+            match = bool(artifact_norm) and (
+                target_norm == artifact_norm
+                or target_norm.startswith(artifact_norm + os.sep)
+            )
+        if match:
+            seen.add(key)
+            found.append((event, artifact))
+    return found
+
+
+def _record_artifact_hits(sid: str, work_id: str, tool: str, target: str,
+                          events: list[dict]) -> None:
+    for adjustment, artifact in _artifact_hit_ids(target, events):
+        hit = {
+            "ev": "artifact_hit",
+            "sid": sid,
+            "tool": str(tool or "")[:80],
+            "target": str(target or "")[:500],
+            "adjustment_id": str(adjustment.get("adjustment_id") or ""),
+            "artifact": dict(artifact),
+        }
+        if work_id:
+            hit["work_id"] = work_id
+        append_event(hit)
+
+
+def _artifact_report(artifact: dict | None, event: dict, events: list[dict]) -> dict:
+    report = {
+        "status": "unregistered", "label": ARTIFACT_STATUS_LABEL["unregistered"],
+        "path": "", "anchor": "", "kind": "", "delivery": "", "exists": None,
+        "hits": 0, "sessions": [], "first_hit": None, "last_hit": None,
+    }
+    if not isinstance(artifact, dict):
+        return report
+    path = str(artifact.get("path") or "")
+    report.update({
+        "path": path,
+        "anchor": str(artifact.get("anchor") or ""),
+        "kind": str(artifact.get("kind") or "file"),
+        "delivery": str(artifact.get("delivery") or "read"),
+    })
+    adjustment_id = str(event.get("adjustment_id") or "")
+    adopted = int(event.get("adopted_at") or event.get("t") or 0)
+    hits = [
+        item for item in events
+        if item.get("ev") == "artifact_hit"
+        and (str(item.get("adjustment_id") or "") == adjustment_id if adjustment_id
+             else int(item.get("t") or 0) >= adopted)
+    ]
+    hits.sort(key=lambda item: int(item.get("t") or 0))
+    sessions: list[str] = []
+    for item in hits:
+        sid = str(item.get("sid") or "")
+        if sid and sid not in sessions:
+            sessions.append(sid)
+    report["hits"] = len(hits)
+    report["sessions"] = sessions
+    report["first_hit"] = int(hits[0].get("t") or 0) if hits else None
+    report["last_hit"] = int(hits[-1].get("t") or 0) if hits else None
+
+    if report["delivery"] == "injected":
+        report["status"] = "injected"
+    elif report["kind"] == "file" and path:
+        workspace = str(event.get("workspace") or "")
+        report["exists"] = os.path.exists(_norm_path(path, workspace))
+        if not report["exists"]:
+            report["status"] = "missing"
+        else:
+            report["status"] = "verified" if hits else "not-read"
+    else:
+        report["status"] = "verified" if hits else "not-read"
+    report["label"] = ARTIFACT_STATUS_LABEL.get(report["status"], report["status"])
+    if report["status"] == "verified":
+        report["label"] = f"已读到（{len(hits)} 次 / {len(sessions)} 个会话）"
+    return report
+
+
 ADJUSTMENT_METRICS = {
     "work_minutes": "同类工作中位活跃分钟",
     "reminder_per_turn": "每回合提醒次数",
@@ -3462,6 +3758,7 @@ def record_adjustment(args: dict, context: dict | None = None) -> dict:
     """
     context = context or {}
     sid = str(context.get("sid") or "unknown")
+    workspace = str(context.get("workspace") or context.get("cwd") or "").strip()
     metric = str(args.get("metric") or "").strip().lower()
     if metric not in ADJUSTMENT_METRICS:
         raise ValueError(
@@ -3474,21 +3771,38 @@ def record_adjustment(args: dict, context: dict | None = None) -> dict:
     note = str(args.get("note") or "").strip()
     if not note:
         raise ValueError("note is required: 一句话说明你为什么认为这条改动会改善指标（这就是 AI 该提供的主观判断）")
+    artifact = _parse_artifact(args.get("artifact"))
     adopted_at = int(args.get("adopted_at") or now_ms())
     event = {
         "ev": "adjustment",
         "t": now_ms(),
         "host": host(),
         "sid": sid,
+        "workspace": workspace,
         "work_id": normalize_task_id(str(args.get("work_id") or "")) or "",
+        "adjustment_id": _adjustment_id(adopted_at, metric, evidence, note),
         "metric": metric,
         "direction": "lower",  # 四个内置指标都是越低越好
+        "artifact": artifact,
         "evidence": evidence,
         "window": str(args.get("window") or "").strip(),
         "adopted_at": adopted_at,
         "note": note,
     }
     append_event(event)
+    # 建档即关闭同工作的待复盘（#46）：改进真正落进台账，而不只是被提醒。
+    target = str(event.get("work_id") or "")
+    if target:
+        resolved = {str(row.get("work_id") or "") for row in load_events()
+                    if row.get("ev") == "retro_resolved"}
+        pending = [row for row in load_events()
+                   if row.get("ev") == "retro_pending"
+                   and str(row.get("work_id") or "") == target
+                   and target not in resolved]
+        if pending:
+            append_event({"ev": "retro_resolved", "sid": sid, "work_id": target,
+                          "metric": metric, "evidence": evidence})
+            event["retro_resolved"] = True
     return event
 
 
@@ -3570,7 +3884,7 @@ def _weekly_values(metric: str, start: int, end: int,
     return out
 
 
-def _ledger_row(event: dict, end: int) -> dict:
+def _ledger_row(event: dict, end: int, events: list[dict] | None = None) -> dict:
     adopted = int(event.get("adopted_at") or event.get("t") or 0)
     metric = str(event.get("metric") or "")
     work_id = str(event.get("work_id") or "")
@@ -3659,6 +3973,7 @@ def _ledger_row(event: dict, end: int) -> dict:
         "evidence": str(event.get("evidence") or ""),
         "window": str(event.get("window") or ""),
         "note": str(event.get("note") or ""),
+        "artifact": _artifact_report(event.get("artifact"), event, events or []),
         "age_days": round(age_days, 1),
         "rollback": status != "met" and age_days > LEDGER_WEEKS * 7,
     }
@@ -3668,11 +3983,12 @@ def improvement_ledger(days: float = 180.0, limit: int = 20) -> dict:
     """Recent adjustments, judged by data — not by the AI's own verdict."""
     end = now_ms()
     start = end - int(float(days) * 86400000)
+    all_events = load_events(limit=0)
     events = [
-        event for event in load_events()
+        event for event in all_events
         if event.get("ev") == "adjustment" and start <= int(event.get("t") or 0) <= end
     ]
-    rows = [_ledger_row(event, end) for event in events]
+    rows = [_ledger_row(event, end, all_events) for event in events]
     rows.sort(key=lambda row: row["adopted_at"], reverse=True)
 
     return {
@@ -3684,6 +4000,13 @@ def improvement_ledger(days: float = 180.0, limit: int = 20) -> dict:
         "total": len(rows),
         "rollback_hints": [row for row in rows if row.get("rollback")][:5],
     }
+
+
+def _fmt_short(ms: int | None) -> str:
+    try:
+        return datetime.fromtimestamp(int(ms or 0) / 1000).strftime("%m-%d %H:%M")
+    except Exception:
+        return "未知"
 
 
 def format_ledger(ledger: dict) -> str:
@@ -3711,6 +4034,17 @@ def format_ledger(ledger: dict) -> str:
                 lines.append("  护栏变差：" + "、".join(worse) + "（任一项变差即不算改进）")
         if row.get("evidence"):
             lines.append(f"  证据：{row['evidence']}")
+        artifact = row.get("artifact") or {}
+        if artifact.get("status"):
+            where = artifact.get("path") or "（未登记）"
+            if artifact.get("anchor"):
+                where += "#" + artifact["anchor"]
+            lines.append(f"  产物：{where} —— {artifact.get('label')}")
+            if artifact.get("sessions"):
+                shown = "、".join(str(sid)[:8] for sid in artifact["sessions"][:5])
+                more = "" if len(artifact["sessions"]) <= 5 else f" 等 {len(artifact['sessions'])} 个会话"
+                first = _fmt_short(artifact.get("first_hit")) if artifact.get("first_hit") else "未知"
+                lines.append(f"  读到会话：{shown}{more}（首次 {first}）")
     for row in ledger.get("rollback_hints") or []:
         lines.append(
             f"- 回滚提示：{row.get('metric_label')}（{row.get('work_id') or '未挂工作'}）"
