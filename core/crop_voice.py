@@ -17,6 +17,11 @@ import json
 import os
 import random
 
+try:
+    import crop_templates
+except Exception:  # pragma: no cover - templates are optional at runtime
+    crop_templates = None
+
 TIERS = ("warm", "yellow", "red", "overdue", "miss", "miss_streak")
 
 # warm     — 0.8 × expect_min 起，鞭子还没落下
@@ -150,6 +155,13 @@ def pick(tier: str, state_path: str | None = None) -> str:
     line of a refill is never the one we just showed — that is the whole
     "random but not repetitive" contract in a dozen lines of code.
     """
+    if crop_templates is not None:
+        try:
+            custom = crop_templates.voice_lines(tier)
+        except Exception:
+            custom = None
+        if custom:
+            return random.choice(custom)
     pool = POOLS[tier]
     size = len(pool)
     state = _load_state(state_path)

@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "core"))
@@ -67,6 +68,12 @@ def main(argv: list[str] | None = None) -> int:
     health.add_argument("--host", default=None, help="只看某个宿主，如 dsh / claude-code")
     health.add_argument("--json", action="store_true", help="输出 JSON（给 AI / 脚本）")
 
+    preview = sub.add_parser("preview", help="预览当前注入模板的渲染结果（示例变量）")
+
+    nudges = sub.add_parser("nudges", help="最近注入的鞭策：策略/档位/来源/全文")
+    nudges.add_argument("--limit", type=int, default=10)
+    nudges.add_argument("--json", action="store_true")
+
     serve = sub.add_parser("serve", help="本地 dashboard")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
@@ -79,6 +86,27 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(summary, ensure_ascii=False, indent=2))
         else:
             print(core.format_status(summary))
+        return 0
+
+    if args.command == "preview":
+        print(core.preview_injections())
+        return 0
+
+    if args.command == "nudges":
+        rows = [event for event in core.load_events() if event.get("ev") == "nudge"]
+        rows = rows[-int(args.limit or 10):]
+        if getattr(args, "json", False):
+            print(json.dumps(rows, ensure_ascii=False, indent=2))
+            return 0
+        if not rows:
+            print("还没有记录过鞭策注入。")
+            return 0
+        for row in rows:
+            stamp = time.strftime("%m-%d %H:%M", time.localtime(int(row.get("t") or 0) / 1000))
+            print(f"- {stamp} [{row.get('strategy')}/{row.get('tier')}] {row.get('source')}"
+                  f" · {row.get('work_id') or '-'}")
+            for line in str(row.get("text") or "").splitlines():
+                print(f"    {line}")
         return 0
 
     if args.command == "side":
