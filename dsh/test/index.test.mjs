@@ -12,10 +12,13 @@ function fakeCtx() {
   const handlers = new Map();
   const registered = [];
   const skillDefinitions = [];
+  const sections = [];
   return {
     handlers,
     registered,
     skillDefinitions,
+    sections,
+    systemPrompt: { section(entry) { sections.push(entry); } },
     on(event, handler) { handlers.set(event, handler); },
     effect(fn) { fn(); },
     // 宿主侧 ctx.inject 是能力接缝：测试里直接以「没有 webServer」回调，
@@ -539,6 +542,14 @@ test('dashboard routes ask Connection before serving any data', async (t) => {
   openRoute.handler({ url: '/api/agent-crop/global?days=7', headers: {} }, served);
   assert.equal(served.statusCode, 200, 'a trusted request still gets data');
   assert.match(served.headers['content-type'], /application\/json/);
+});
+
+test('protocol section falls back to the built-in text when no template exists', async () => {
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const section = ctx.sections.find((entry) => entry.name === 'crop:protocol');
+  assert.ok(section, 'protocol section must be registered');
+  assert.equal(section.text, PROTOCOL_TEXT, 'default template path must not change the protocol');
 });
 
 test('a wrong tool call returns a contextual error instead of a bare failure', async (t) => {

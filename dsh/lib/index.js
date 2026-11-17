@@ -167,15 +167,6 @@ export function apply(ctx, config = {}) {
   const python = setting(config?.python, 'python3');
   const states = new Map();
 
-    // Persistent protocol section: assembled into the system prompt on every step,
-  // removed automatically when the plugin is disposed (clean uninstall).
-  try {
-    if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
-      ctx.systemPrompt.section({ name: 'crop:protocol', order: 900, text: PROTOCOL_TEXT });
-    }
-  } catch (error) {
-    ctx.logger?.warn?.('[crop] system prompt section failed: %o', error);
-  }
 
   // Runtime skill: keep the always-on protocol to one line; the full decision
   // tree is only loaded when a retro actually happens.
@@ -220,6 +211,23 @@ export function apply(ctx, config = {}) {
       return null;
     }
   };
+
+  // 协议文本：用户模板优先（protocol.md），取不到就用内置并保持原行为。
+  // 注意：这里在 apply 阶段读一次，改模板需重启宿主才生效（见 docs/TEMPLATES.md）。
+  let protocolText = PROTOCOL_TEXT;
+  try {
+    const renderedProtocol = callCore({ op: 'template_render', args: { name: 'protocol', variables: {} }, context: {} });
+    if (typeof renderedProtocol === 'string' && renderedProtocol.trim()) protocolText = renderedProtocol;
+  } catch { /* keep built-in */ }
+  // Persistent protocol section: assembled into the system prompt on every step,
+  // removed automatically when the plugin is disposed (clean uninstall).
+  try {
+    if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
+      ctx.systemPrompt.section({ name: 'crop:protocol', order: 900, text: protocolText });
+    }
+  } catch (error) {
+    ctx.logger?.warn?.('[crop] system prompt section failed: %o', error);
+  }
 
   /* Same-origin data routes. The DSH host answers these on the instance's own
      port, so every host instance has its own dashboard endpoint — no Python
@@ -501,7 +509,21 @@ export function apply(ctx, config = {}) {
         extra.push(`[crop] 改口：${from} → ${to} 分钟（第 ${count} 次）。新预期从现在重新起算，改小不会立刻算超时；次数会计入估准率。`);
       }
       // 收尾没写落点：当场把补救方式放进工具结果，下一轮注入不会被 turn/end 清掉。
-      if (result.phase === 'end' && !String(args?.sediment || '').trim()) extra.push(END_SEDIMENT_NUDGE);
+      if (result.phase === 'end' && !String(args?.sediment || '').trim()) {
+        let nudge = END_SEDIMENT_NUDGE;
+        try {
+          const renderedEnd = callCore({
+            op: 'template_render',
+            args: { name: 'end-hint', variables: { work_id: String(result.task_id || '') } },
+            context: { sid },
+          });
+          if (typeof renderedEnd === 'string') {
+            const body = renderedEnd.trim();
+            nudge = body ? (body.startsWith('[crop]') ? body : `[crop] ${body}`) : '';
+          }
+        } catch { /* keep built-in */ }
+        if (nudge) extra.push(nudge);
+      }
       return {
         ok: true,
         phase: result.phase,
