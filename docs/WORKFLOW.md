@@ -41,13 +41,13 @@ Python unittest + Node `node --test` + probe smoke，一条命令全跑；CI 只
 
 ## 5. 并行时先开 worktree
 
-仓库可能同时有别的会话在改：
+只有一个工作树、却同时开着多个 agent 会话时，先给每个任务开独立工作树：
 
 ```bash
-git worktree add ../agent-crop-<task> -b <task>
+git worktree add ../<repo>-<task> -b <task>
 ```
 
-不要在共享工作树上切分支（踩过：分支被切走，提交落到别人的分支上）。
+不要在共享工作树上切分支（踩过：分支被切走，提交落到别人的分支上）。单人顺序开发可以忽略这条。
 
 ## 6. PR 按主题拆
 
@@ -59,14 +59,16 @@ git worktree add ../agent-crop-<task> -b <task>
 报「预计 3 轮内出图，第 4 轮还没定就停下来对齐」，比报「12 分钟」有用。
 超过预估 2 倍，或同一处返工 ≥2 次：**主动**写一行「流程观察 + 现在改什么」，不等用户问。
 
-## 8. 开发机重启用脚本
+## 8. 开发机重启用脚本（macOS）
 
 macOS 没有 util-linux 的 `setsid`，别手搓 `nohup setsid`——会静默失败。
-用 `scripts/dev-restart.sh`：python 双 fork 脱离父进程，等端口真的起来，再打印带 token 的 URL。
+macOS 开发机上可以用 `scripts/dev-restart.sh`：python 双 fork 脱离父进程，等端口真的起来，再打印 URL。
 
 ```bash
-scripts/dev-restart.sh 3082 dev
+scripts/dev-restart.sh <port> <profile>
 ```
+
+非 macOS 宿主用平台自带的进程管理方式，这条不适用。
 
 ## 9. 复盘沉淀：落点比结论重要
 
@@ -81,7 +83,7 @@ scripts/dev-restart.sh 3082 dev
 
 运行时完整决策树由插件自带的 skill `crop-retro` 提供（`dsh/lib/index.js` 的 `RETRO_SKILL`）；收尾时落点写进 `crop_update(phase="end", sediment=...)`，只记指针不记正文——正文仍在目标层。
 
-## 这套约定怎么传到别的会话
+## 这套约定怎么传到别的会话（仅 DSH 宿主）
 
 会话之间不共享上下文。agent 能看到的是两样：**会话启动 / 首次碰文件时被注入的内容**，和它主动读的文件。
 DSH 的注入包是 `@deepseek-ai/dsh-agent-instructions`：用户全局链（`$DSH_HOME/AGENTS.md`），项目链是从项目根
@@ -96,7 +98,7 @@ DSH 的注入包是 `@deepseek-ai/dsh-agent-instructions`：用户全局链（`$
 | 所有项目都成立的协作底线 | 用户全局 `$DSH_HOME/AGENTS.md` | 唯一真正全局的注入点，越少越好 |
 | 一次性任务上下文 | 会话内 prompt，不落地 | 只对这一次有效 |
 
-反例（这次差点犯的）：把「改 README 先叙事后画图」写进 `~/AgentProjects/AGENTS.md`——那是**工作区级**、
+反例（这次差点犯的）：把「改 README 先叙事后画图」写进工作区的 `AGENTS.md`——那是**工作区级**、
 所有会话都会读的文件，为一件只在文档/图形任务里成立的事付全量上下文成本。仓库根 `AGENTS.md` 或技能才是它的位置。
 
 ## 自查（每次交付前）

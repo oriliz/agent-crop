@@ -9,8 +9,8 @@
 
 - `KIT_DATA_DIR=$(mktemp -d)`：crop 数据（工作/绑定/事件）全在临时目录，不碰 `~/.agentcrop/data`。
 - 工作区 `$(mktemp -d)`：会话落在独立 workspace，结束后删除。
-- `dsh --profile headless`：该 profile 的 `agent-crop-dsh` 直链仓库
-  `/Users/lizhi/AgentProjects/agent-crop`，跑的就是当前 working tree。
+- `dsh --profile headless`：该 profile 的 `agent-crop-dsh` 直链本仓库
+  （`<repo>`），跑的就是当前 working tree。
 - 进程 2 用 `--session-id` 续接同一会话，`state.started` 是**新进程**的，
   所以首步会重新走 `start_hint` 注入路径。
 
