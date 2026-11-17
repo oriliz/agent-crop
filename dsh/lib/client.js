@@ -1716,7 +1716,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                   h('i', { key: 'd', className: 'crop-improve-dot' }),
                   h('div', { key: 'b', className: 'crop-improve-body' }, [
                     h('div', { key: 'q', className: 'crop-improve-quote' },
-                      `${row.metric_label}：${row.before} → ${row.after == null ? '待验证' : row.after}`
+                      `${row.metric_label}：${row.before} → ${row.after == null ? '暂无完整周' : row.after}`
                       + (row.delta == null ? '' : `（${Math.round(row.delta * 100)}%）`)),
                     h('div', { key: 'm', className: 'crop-improve-tags' }, [
                       h('span', { key: 's', className: 'crop-chip-sm' }, row.status_label),

@@ -646,7 +646,7 @@ export function apply(ctx, config = {}) {
     const lines = [`改进台账 · 近 ${ledger?.window?.days ?? 0} 天 · ${ledger?.total ?? 0} 条`];
     if (!rows.length) return lines.concat('还没有 adjustment 记录。').join('\n');
     for (const row of rows) {
-      const after = row.after === null || row.after === undefined ? '待验证' : row.after;
+      const after = row.after === null || row.after === undefined ? '暂无完整周' : row.after;
       const delta = row.delta === null || row.delta === undefined ? '' : `，变化 ${(row.delta * 100).toFixed(0)}%`;
       lines.push(`- [${row.status_label}] ${row.metric_label}：${row.before} → ${after}${delta}（样本 ${row.samples?.before ?? 0}/${row.samples?.after ?? 0}）`);
     }
