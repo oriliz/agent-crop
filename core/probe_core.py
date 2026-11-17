@@ -60,6 +60,8 @@ CLAIM_TTL_MIN = float(os.environ.get("KIT_CLAIM_TTL_MIN", "120"))
 VERDICTS = ("justified", "not-justified", "unknown")
 REVIEW_LEVELS = ("redo", "major", "minor", "none")
 SENTIMENTS = ("pos", "neu", "neg")
+# 一个工作被鞭策这么多次后，收尾必须给改进（issue #43 / 主动复盘）。
+RETRO_FORCE_NUDGES = 2
 # Built-in types keep their own calibration history.  The list is not a closed
 # enum: users can define their own short slug, and `explore` is first-class
 # because research/triage estimates behave differently from implementation.
@@ -740,6 +742,50 @@ def _close_dangling(sid: str, end: int | None = None,
 # Report recording
 
 
+def _work_signal_count(work_id: str, kinds: tuple[str, ...]) -> int:
+    """Events of these kinds attributed to one work (issue #43 / proactive retro)."""
+    if not work_id:
+        return 0
+    return sum(1 for event in load_events()
+               if event.get("ev") in kinds and str(event.get("work_id") or "") == work_id)
+
+
+def _nudge_tiers(work_id: str) -> list[str]:
+    """Distinct nudge tiers recorded for one work (used to draft the retro)."""
+    tiers: list[str] = []
+    for event in load_events():
+        if event.get("ev") not in ("reminder", "nudge"):
+            continue
+        if str(event.get("work_id") or "") != work_id:
+            continue
+        tier = str(event.get("tier") or "").strip()
+        if tier and tier not in tiers:
+            tiers.append(tier)
+    return tiers
+
+
+def _retro_pending(work_id: str, nudges: int, tiers: list[str]) -> dict:
+    """A concrete retro record, not a reminder: problem + suggested direction + next step.
+
+    The point of the proactive retro is that the improvement actually lands
+    (improve field + crop_adjust ledger entry), so the system writes a pending
+    record the agent must resolve.  A pure nudge could be ignored; this row
+    stays visible until an adjustment closes it.
+    """
+    severe = any(tier in ("red", "overdue") for tier in tiers)
+    suggested = ("先拆任务或先交付一个可验证的阶段，别一口气拖到超时"
+                 if severe else
+                 "检查是否卡在循环里，或把重复动作换成一次性方案")
+    return {
+        "work_id": work_id,
+        "problem": f"被鞭策 {nudges} 次（{', '.join(tiers) or 'n/a'}）",
+        "suggested_fix": suggested,
+        "next": ("把这次的真实改进写进本次 end 的 improve，再调用 "
+                 'crop_adjust(action="record", metric="work_minutes", evidence=..., '
+                 "note=..., work_id=...) 建档；建档后这条待复盘会自动关闭。"),
+    }
+
+
 def record_report(args: dict, context: dict | None = None) -> dict:
     context = context or {}
     report = validate_report(args)
@@ -901,6 +947,22 @@ def record_report(args: dict, context: dict | None = None) -> dict:
             )
         except ValueError:
             pass
+    # 主动复盘：多次鞭策后必须给出改进；一路顺利则提示复盘「为什么顺利」。
+    if report["phase"] == "end":
+        nudges = _work_signal_count(report["task_id"], ("reminder", "nudge"))
+        reworks = _work_signal_count(report["task_id"], ("self_review", "rework_signal"))
+        has_improve = bool(str(report.get("improve") or "").strip())
+        record["nudge_count"] = nudges
+        if nudges >= RETRO_FORCE_NUDGES and not has_improve:
+            tiers = _nudge_tiers(report["task_id"])
+            pending = _retro_pending(report["task_id"], nudges, tiers)
+            record["retro_due"] = True
+            record["retro_pending"] = pending
+            append_event({"ev": "retro_due", "sid": sid, "work_id": report["task_id"],
+                          "nudges": nudges})
+            append_event({"ev": "retro_pending", "sid": sid, **pending})
+        elif nudges == 0 and reworks == 0 and not has_improve:
+            record["retro_smooth"] = True
     return record
 
 
@@ -3525,6 +3587,19 @@ def record_adjustment(args: dict, context: dict | None = None) -> dict:
         "note": note,
     }
     append_event(event)
+    # 建档即关闭同工作的待复盘（#46）：改进真正落进台账，而不只是被提醒。
+    target = str(event.get("work_id") or "")
+    if target:
+        resolved = {str(row.get("work_id") or "") for row in load_events()
+                    if row.get("ev") == "retro_resolved"}
+        pending = [row for row in load_events()
+                   if row.get("ev") == "retro_pending"
+                   and str(row.get("work_id") or "") == target
+                   and target not in resolved]
+        if pending:
+            append_event({"ev": "retro_resolved", "sid": sid, "work_id": target,
+                          "metric": metric, "evidence": evidence})
+            event["retro_resolved"] = True
     return event
 
 

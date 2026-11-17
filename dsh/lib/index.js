@@ -6,6 +6,7 @@
  * the returned notes at the next model step.  Zero runtime dependencies.
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import z from '@deepseek-ai/schemastery';
 import { randomUUID } from 'node:crypto';
@@ -44,7 +45,7 @@ export const PROTOCOL_TEXT = [
   '- 黄线提醒：先安抚用户一句，再反思方法对不对，然后上报。红线提醒：先判断是否还走在正确路上，能阶段性交付就先交付。',
   '- end 时 what 必填（这次做了什么），cost / next_time / artifact 能写就写；再判断这条经验该落到哪：规范→AGENTS.md（一行换一行）、方法→skill、机械→工具、事实→docs、都不成立→none:<原因>；落点写进 sediment，规则见 skill crop-retro。',
   '- end 之后：交付、汇报、截图不用重新绑定；只是收尾追问就记 category="side-issue"；确实是新工作再 start。',
-  '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
+  '- 发现「要顺利做完得先改 X」时按 ROI 分流：成本低收益高就当场做；必要但本次 ROI 低就记一条 crop_adjust(record) 排队；成本高收益高先问用户，别自己开工。',  '- 与当前工作无关的问题：一句话回答后记为 category="side-issue"，禁止新建任务、禁止现场排查，除非用户明确要求。',
   '- 看到“待清退”的工作：先问用户要继续 / 挂起 / 清退，再用 crop_work 执行，不要自己决定。',
   '- 说话方式：跟用户像同事吐槽，短句 + 自嘲，别客服腔；卡住或超时先自嘲一句，再说真实原因和下一步。梗是包装，技术结论、代码、风险提示照常严谨。',
   '- 别把「奴隶主 / 鞭子」当设定跟用户演；用户是甲方 / 老板 / 同事，梗只是自嘲的比喻。',
@@ -188,12 +189,13 @@ export function apply(ctx, config = {}) {
     return state;
   };
 
+  let lastCoreError = null;
   const callCore = (payload) => {
     try {
       const result = spawnSync(python, [CORE_CLI], {
         input: JSON.stringify(payload),
         encoding: 'utf8',
-        timeout: 2500,
+        timeout: 5000,
         env: {
           ...process.env,
           KIT_HOST: 'dsh',
@@ -203,7 +205,21 @@ export function apply(ctx, config = {}) {
           KIT_TASK_PERSONA: String(setting(config.persona, 'owner')),
         },
       });
-      if (result.error || result.status !== 0 || !result.stdout) return null;
+      if (process.env.KIT_DEBUG_CALLS) {
+        try {
+          appendFileSync('/tmp/crop-call-debug.log',
+            `${new Date().toISOString()} op=${payload.op} status=${result.status} err=${result.error?.message || ''} signal=${result.signal || ''} stdout=${String(result.stdout || '').slice(0, 300)} stderr=${String(result.stderr || '').slice(0, 500)}\n`);
+        } catch { /* debug only */ }
+      }
+      if (result.error || result.status !== 0 || !result.stdout) {
+        lastCoreError = {
+          status: result.status,
+          error: result.error?.message || '',
+          stderr: String(result.stderr || '').trim().slice(0, 300),
+          stdout: String(result.stdout || '').trim().slice(0, 120),
+        };
+        return null;
+      }
       const parsed = JSON.parse(result.stdout);
       return parsed && parsed.ok ? parsed.result : null;
     } catch (error) {
@@ -485,8 +501,11 @@ export function apply(ctx, config = {}) {
         const missing = ['phase', 'task_id', 'summary']
           .filter((key) => !String(args?.[key] ?? '').trim());
         const detail = missing.length ? ` (missing: ${missing.join(', ')})` : '';
+        const coreNote = lastCoreError
+          ? `（core: status=${lastCoreError.status} ${lastCoreError.stderr || lastCoreError.error || 'no output'}）`
+          : '';
         throw new Error(
-          `crop_update could not be recorded${detail}. `
+          `crop_update could not be recorded${detail}${coreNote}. `
           + 'crop_update 只收 phase / task_id / summary 等工作字段；'
           + '读改进台账请用 crop_adjust(action="ledger")。',
         );
@@ -507,6 +526,19 @@ export function apply(ctx, config = {}) {
       if (result.estimate_revised) {
         const { from, to, count } = result.estimate_revised;
         extra.push(`[crop] 改口：${from} → ${to} 分钟（第 ${count} 次）。新预期从现在重新起算，改小不会立刻算超时；次数会计入估准率。`);
+      }
+      if (result.retro_pending) {
+        const pending = result.retro_pending;
+        extra.push(
+          `[crop] 这个工作被鞭策 ${Number(result.nudge_count) || 0} 次，已记为待复盘：`
+          + `问题=${pending.problem}；建议方向=${pending.suggested_fix}。\n`
+          + `现在就把实际改进写进本次 end 的 improve=…；再调用 crop_adjust(action="record", `
+          + `metric="work_minutes", evidence=…, note=…, work_id="${pending.work_id}") 建档。`
+          + `建档后这条待复盘会自动关闭——只提醒不留意见，等于没复盘。`,
+        );
+      }
+      if (result.retro_smooth) {
+        extra.push('[crop] 这次挺顺利，花一行说为什么顺利（用了什么方法/前提），别让经验白白流走。');
       }
       // 收尾没写落点：当场把补救方式放进工具结果，下一轮注入不会被 turn/end 清掉。
       if (result.phase === 'end' && !String(args?.sediment || '').trim()) {
