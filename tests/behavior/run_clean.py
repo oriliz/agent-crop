@@ -28,7 +28,7 @@ from pathlib import Path
 HOME = Path.home()
 DEFAULT_HOME = HOME / ".dsh-e2e"
 DEFAULT_PROFILE = "lab"
-MARKER = "绑定只用 probe_report"
+MARKER = "绑定后先报预期"
 
 
 def read_key(dsh_home: Path) -> str:
@@ -93,6 +93,8 @@ def main() -> int:
     ap.add_argument("--dsh-home", default=str(DEFAULT_HOME))
     ap.add_argument("--profile", default=DEFAULT_PROFILE)
     ap.add_argument("--marker", default=MARKER)
+    ap.add_argument("--expect-tools", default="",
+                    help="逗号分隔；这些工具都必须出现过，否则 INVALID")
     args = ap.parse_args()
 
     dsh_home = Path(args.dsh_home).expanduser()
@@ -151,6 +153,30 @@ def main() -> int:
     ]
     result["tool_calls"] = len(tool_calls)
     result["first_tools"] = tool_calls[:5]
+    names = [call["name"] for call in tool_calls]
+    result["all_tool_names"] = list(dict.fromkeys(names))
+
+    def is_bind(call):
+        if call["name"] in ("probe_report", "work_claim"):
+            return True
+        if call["name"] == "crop_update":
+            return "start" in str(call.get("args") or "")
+        return False
+
+    result["first_bind_tool_index"] = next((i for i, call in enumerate(tool_calls)
+                                            if is_bind(call)), None)
+
+    reply_parts = [
+        block.get("text", "")
+        for row in rows if row.get("type") == "assistant/message"
+        for block in row.get("data", {}).get("message", {}).get("content", [])
+        if block.get("type") == "text" and block.get("text", "").strip()
+    ]
+    result["final_text"] = reply_parts[-1][:2000] if reply_parts else ""
+
+    expected = [name.strip() for name in args.expect_tools.split(",") if name.strip()]
+    if expected:
+        result["checks"]["expect_tools"] = all(name in names for name in expected)
 
     events = []
     events_file = data_dir / "events.jsonl"

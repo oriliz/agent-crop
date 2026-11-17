@@ -99,6 +99,31 @@ class AdjustmentTest(unittest.TestCase):
         })
         self.assertEqual(ledger["rows"][0]["status"], "improving")
 
+    def test_partial_week_does_not_drive_the_verdict(self):
+        # #31：判定只看最后一个「完整周」。尾部不满一周的桶样本少，
+        # 哪怕数字很夸张也不能把结论从 improving 翻成 not-improved。
+        now = self.core.now_ms()
+        adopted = now - 10 * 86400000  # 1 个完整周 + 3 天尾巴
+        self.record(adopted_at=adopted)
+
+        def fake(metric, start, end, work_type=""):
+            if end <= adopted:
+                return (40.0, 25)  # 基线：4 个完整周，每周 40 分钟
+            if end - start < 7 * 86400000 - 1:
+                return (999.0, 1)  # 部分周噪音：只有 1 个样本
+            return (30.0, 25)  # 完整周：确实降到 30 分钟
+
+        old = self.core._metric_value
+        self.core._metric_value = fake
+        try:
+            ledger = self.core.improvement_ledger()
+        finally:
+            self.core._metric_value = old
+        row = ledger["rows"][0]
+        self.assertEqual(row["weeks"]["complete_after"], 1)
+        self.assertEqual(row["after"], 30.0)
+        self.assertEqual(row["status"], "improving")
+
     def test_fresh_adjustment_is_observing(self):
         now = self.core.now_ms()
         ledger = self.ledger_with(now - 2 * 86400000, {
