@@ -1023,14 +1023,20 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           })()));
 
       const active = data.active_work;
+      const ended = data.ended_work || null;
       const expect = active && active.expect_min ? active.expect_min : null;
       const current = h('div', { key: 'current', className: 'crop-card crop-sess-current' },
-        h('span', { className: 'crop-sess-label' }, '当前工作'),
-        h('span', { className: 'crop-sess-name', title: active ? active.work_id : '' }, active ? (active.title || active.goal || labelOf(active.work_id)) : '本会话还没有绑定工作'),
-        expect ? h('div', { className: 'crop-sess-bar' },
+        h('span', { className: 'crop-sess-label' }, active ? '当前工作' : (ended ? '上一件' : '当前工作')),
+        h('span', { className: 'crop-sess-name', title: active ? active.work_id : (ended ? ended.work_id : '') },
+          active ? (active.title || active.goal || labelOf(active.work_id))
+            : ended ? (ended.title || ended.goal || labelOf(ended.work_id))
+              : '本会话还没有绑定工作'),
+        active && expect ? h('div', { className: 'crop-sess-bar' },
           h('i', { style: { width: pct(Math.min(100, ((active.minutes || 0) / expect) * 100)) } })) : null,
         h('span', { className: 'crop-muted crop-small' },
-          expect ? `估 ${Math.round(expect)}m / 已 ${Math.round(active.minutes || 0)}m` : ''));
+          active
+            ? (expect ? `估 ${Math.round(expect)}m / 已 ${Math.round(active.minutes || 0)}m` : '')
+            : ended ? `已收尾 · ${Math.round(ended.minutes || 0)}m` : ''));
 
       const frame = h('div', { key: 'frame', className: 'crop-card crop-tl-card' },
         h('div', { className: 'crop-tl-head' },
@@ -1079,6 +1085,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('div', null, data.session_works.map((item) => h('div', { key: item.work_id, className: 'crop-work-row' },
               h('i', { className: 'crop-dot', style: { background: lampColor(item.ratio) } }),
               h('span', { title: fullTitles[item.work_id] || item.work_id }, labelOf(item.work_id)),
+              item.state === 'closed' ? h('span', { className: 'crop-chip-sm' }, '已收尾') : null,
               h('span', { className: 'crop-muted crop-small', style: { marginLeft: 'auto' } },
                 `${Math.round(item.minutes || 0)}m`)))))
         : null;
@@ -1169,9 +1176,19 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             })
           : h('div', { className: 'crop-muted crop-small' }, '当前时间窗口内没有问题记录，平移时间轴看看。'));
 
+      // 收尾后这张页不该像没干过活：把上一件的收尾自述留在左栏。
+      const endedCard = ended ? h('div', { key: 'ended', className: 'crop-card' },
+        h('div', { className: 'crop-muted crop-small crop-tl-cap' },
+          `上一件已收尾 · ${ended.title || ended.goal || labelOf(ended.work_id)} · ${Math.round(ended.minutes || 0)}m`),
+        h('div', { className: 'crop-pair-text' }, `做了什么：${(ended.report && ended.report.what) || '未记录'}`),
+        ended.report && ended.report.cost
+          ? h('div', { className: 'crop-pair-meta' }, `时间花在哪：${ended.report.cost}`) : null,
+        h('div', { className: 'crop-pair-text' }, `下次怎么更好：${(ended.report && ended.report.next_time) || '未提出改进'}`))
+        : null;
+
       return h('div', { className: 'crop-page' },
         h('div', { className: 'crop-session-grid' }, [
-          h('div', { className: 'crop-session-main' }, [head, current, frame, works]),
+          h('div', { className: 'crop-session-main' }, [head, current, frame, works, endedCard]),
           reflect,
         ]));
     }
