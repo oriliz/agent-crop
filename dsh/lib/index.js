@@ -6,6 +6,7 @@
  * the returned notes at the next model step.  Zero runtime dependencies.
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import z from '@deepseek-ai/schemastery';
 import { randomUUID } from 'node:crypto';
@@ -197,12 +198,13 @@ export function apply(ctx, config = {}) {
     return state;
   };
 
+  let lastCoreError = null;
   const callCore = (payload) => {
     try {
       const result = spawnSync(python, [CORE_CLI], {
         input: JSON.stringify(payload),
         encoding: 'utf8',
-        timeout: 2500,
+        timeout: 5000,
         env: {
           ...process.env,
           KIT_HOST: 'dsh',
@@ -212,7 +214,21 @@ export function apply(ctx, config = {}) {
           KIT_TASK_PERSONA: String(setting(config.persona, 'owner')),
         },
       });
-      if (result.error || result.status !== 0 || !result.stdout) return null;
+      if (process.env.KIT_DEBUG_CALLS) {
+        try {
+          appendFileSync('/tmp/crop-call-debug.log',
+            `${new Date().toISOString()} op=${payload.op} status=${result.status} err=${result.error?.message || ''} signal=${result.signal || ''} stdout=${String(result.stdout || '').slice(0, 300)} stderr=${String(result.stderr || '').slice(0, 500)}\n`);
+        } catch { /* debug only */ }
+      }
+      if (result.error || result.status !== 0 || !result.stdout) {
+        lastCoreError = {
+          status: result.status,
+          error: result.error?.message || '',
+          stderr: String(result.stderr || '').trim().slice(0, 300),
+          stdout: String(result.stdout || '').trim().slice(0, 120),
+        };
+        return null;
+      }
       const parsed = JSON.parse(result.stdout);
       return parsed && parsed.ok ? parsed.result : null;
     } catch (error) {
@@ -473,7 +489,19 @@ export function apply(ctx, config = {}) {
           block_start: state.blockStart,
         },
       });
-      if (!result) throw new Error('crop_update could not be recorded');
+      if (!result) {
+        const missing = ['phase', 'task_id', 'summary']
+          .filter((key) => !String(args?.[key] ?? '').trim());
+        const detail = missing.length ? ` (missing: ${missing.join(', ')})` : '';
+        const coreNote = lastCoreError
+          ? `（core: status=${lastCoreError.status} ${lastCoreError.stderr || lastCoreError.error || 'no output'}）`
+          : '';
+        throw new Error(
+          `crop_update could not be recorded${detail}${coreNote}. `
+          + 'crop_update 只收 phase / task_id / summary 等工作字段；'
+          + '读改进台账请用 crop_adjust(action="ledger")。',
+        );
+      }
       state.reported = true;
       state.everReported = true;
       // 收尾后进入 120 秒冷静期：交付、汇报、截图都算收尾，不必重新绑定。

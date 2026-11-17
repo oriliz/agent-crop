@@ -26,15 +26,19 @@
 
 ## 满意度
 
-**部分满足**：
-- 达成目标的部分：AI 不是「只留一句提醒」——它按结构化提示补了改进，且 `crop_adjust` 建档成功、pending 自动关闭，台账里有真实条目；
-- 未达成的部分：二次 end 补 `improve` 失败（同样的调用在隔离环境用 CLI / spawnSync 复现均成功，怀疑宿主执行时超时或环境瞬时问题，未定位）。
+**满足**（复测后）：
+- AI 不是「只留一句提醒」——它按结构化提示补了改进，`crop_adjust` 建档成功、pending 自动关闭，台账里有真实条目；
+- 复测同一场景两次，二次 end 均成功（`status=0`），完整闭环：`crop_update(start) → crop_update(end) → crop_update(end, improve) → crop_adjust(record)`，事件流 `retro_pending → adjustment → retro_resolved`。
+
+## 关于第一次失败
+
+第一次运行时二次 end 返回 `crop_update could not be recorded`。隔离环境里 CLI / spawnSync 复现均成功，两次完整复测也成功——**未能复现**，判断为偶发（宿主执行时超时或环境瞬时）。
+
+已做加固（本 PR）：
+- `callCore` 超时 2500 → 5000 ms；
+- 失败时记录 core 的 status/stderr 摘要，`crop_update` 的错误里直接带上，下次再发生能看到根因；
+- `KIT_DEBUG_CALLS=1` 时把每次 core 调用（op/status/err/stdout/stderr 摘要）追加到 `/tmp/crop-call-debug.log`，可选诊断。
 
 ## 访谈
 
-未做——失败原因属于架构层（宿主调用链），不是措辞问题；先记 issue 复现，再考虑访谈。
-
-## 后续
-
-- 单独排查「二次 end 补 improve 在宿主里失败」；
-- `END_SEDIMENT_NUDGE` 同样依赖二次 end，若该问题常见，补沉淀路径也会受影响。
+未做——首次失败属偶发，复测正常，不构成行为偏差。
