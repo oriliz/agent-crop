@@ -67,13 +67,14 @@ class AdjustmentTest(unittest.TestCase):
 
     # -- 产物：采纳之后落点是什么、有没有被读到 ---------------------------
     def test_record_stores_artifact_and_stable_id(self):
-        event = self.record(artifact="file:docs/FOO.md#§1")
+        args = {"artifact": "file:docs/FOO.md#§1", "adopted_at": 1700000000000}
+        event = self.record(**args)
         self.assertEqual(event["artifact"], {
             "kind": "file", "path": "docs/FOO.md", "anchor": "§1", "delivery": "read",
         })
         self.assertTrue(event["adjustment_id"].startswith("adj-"))
-        self.assertEqual(event["adjustment_id"],
-                         self.record(artifact="file:docs/FOO.md#§1")["adjustment_id"])
+        # 显式固定 adopted_at，避免两次调用跨毫秒时 id 不同（CI 上就栽过）。
+        self.assertEqual(event["adjustment_id"], self.record(**args)["adjustment_id"])
 
     def test_record_rejects_unknown_artifact_kind(self):
         with self.assertRaises(ValueError):
