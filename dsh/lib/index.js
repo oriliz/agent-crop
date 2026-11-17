@@ -397,6 +397,23 @@ export function apply(ctx, config = {}) {
     'crop_work', 'crop_review', 'crop_works', 'crop_health',
   ]);
 
+  // 读取类工具的目标路径：台账用它判断「已登记产物有没有在会话里被读到」。
+  const READ_TOOLS = new Set(['read', 'read_file', 'view', 'open', 'cat']);
+  const toolTarget = (name, rawArgs) => {
+    try {
+      const n = String(name || '').toLowerCase();
+      let args = rawArgs;
+      if (typeof args === 'string') args = JSON.parse(args);
+      if (!args || typeof args !== 'object') return null;
+      if (READ_TOOLS.has(n)) return args.file_path || args.filePath || args.path || args.file || null;
+      if (n === 'skill') return args.name || args.skill || null;
+      if (n === 'grep' || n === 'search') return args.path || args.file_path || null;
+    } catch (error) {
+      // 工具参数解析失败只影响归因，不影响工具本身。
+    }
+    return null;
+  };
+
   const tool = {
     name: 'crop_update',
     description:
@@ -695,6 +712,17 @@ export function apply(ctx, config = {}) {
         note: { type: 'string', description: 'record 必填：一句话主观判断——为什么认为这条改动会改善指标' },
         work_id: { type: 'string', description: '可选：这条改进挂在哪个工作上' },
         window: { type: 'string', description: '可选：采样窗口，如 2026-10-20~11-03' },
+        artifact: {
+          type: 'object',
+          description: 'record 可选：产物落点。台账据此验「文件是否存在 + 哪些会话读到」；不填就标「未登记产物」',
+          properties: {
+            kind: { type: 'string', enum: ['file', 'skill', 'hook'] },
+            path: { type: 'string', description: '仓库相对或绝对路径；kind=skill 时是技能名' },
+            anchor: { type: 'string', description: '可选：小节或行锚点，如 §1.2' },
+            delivery: { type: 'string', enum: ['read', 'injected'], description: '默认 read；injected=每会话自动注入的载体（AGENTS.md 等）' },
+          },
+          required: ['path'],
+        },
         days: { type: 'number', description: 'ledger 可选：窗口天数，默认 180' },
       },
       required: ['action'],
@@ -708,18 +736,23 @@ export function apply(ctx, config = {}) {
       },
       render: (_args, value) => [{ type: 'text', text: value.text }],
     },
-    async execute(args) {
+    async execute(args, exec) {
       if (args?.action === 'ledger') {
         const ledger = callCore({ op: 'ledger', args: { days: args?.days ?? 180 } });
         if (!ledger) throw new Error('crop ledger could not be read');
         return { ok: true, text: formatLedgerText(ledger) };
       }
+      const session = exec?.agent?.session;
+      const sid = session ? String(session.id) : 'unknown';
+      const workspace = session?.header?.cwd || process.cwd();
       const result = callCore({
         op: 'record_adjustment',
         args: {
           metric: args?.metric, evidence: args?.evidence,
           work_id: args?.work_id, window: args?.window, note: args?.note,
+          artifact: args?.artifact,
         },
+        context: { sid, workspace },
       });
       if (!result) throw new Error('crop_adjust could not be recorded (metric / evidence / note are required)');
       return { ok: true, text: `recorded adjustment ${result.metric}（数值由 crop ledger 从事件派生）` };
@@ -734,6 +767,18 @@ export function apply(ctx, config = {}) {
       const after = row.after === null || row.after === undefined ? '暂无完整周' : row.after;
       const delta = row.delta === null || row.delta === undefined ? '' : `，变化 ${(row.delta * 100).toFixed(0)}%`;
       lines.push(`- [${row.status_label}] ${row.metric_label}：${row.before} → ${after}${delta}（样本 ${row.samples?.before ?? 0}/${row.samples?.after ?? 0}）`);
+      if (row.artifact?.status) {
+        const where = row.artifact.path
+          ? `${row.artifact.path}${row.artifact.anchor ? '#' + row.artifact.anchor : ''}`
+          : '（未登记）';
+        lines.push(`  产物：${where} —— ${row.artifact.label}`);
+        const sessions = row.artifact.sessions ?? [];
+        if (sessions.length) {
+          const shown = sessions.slice(0, 5).map((sid) => String(sid).slice(0, 8)).join('、');
+          const more = sessions.length > 5 ? ` 等 ${sessions.length} 个会话` : '';
+          lines.push(`  读到会话：${shown}${more}`);
+        }
+      }
     }
     for (const row of ledger?.rollback_hints ?? []) {
       lines.push(`- 回滚提示：${row.metric_label} 已满 4 周仍未达标，先看证据：${row.evidence}`);
@@ -810,7 +855,12 @@ export function apply(ctx, config = {}) {
       if (event.type === 'tool/call') {
         const callId = event.data?.callId;
         const name = event.data?.name;
-        if (callId && name) state.calls.set(String(callId), String(name));
+        if (callId && name) {
+          state.calls.set(String(callId), {
+            name: String(name),
+            target: toolTarget(name, event.data?.arguments),
+          });
+        }
         const askTools = String(setting(config.askHumanTools, '')).split(',').map((s) => s.trim()).filter(Boolean);
         if (name && askTools.includes(String(name))) {
           state.askStarted = Date.now();
@@ -821,7 +871,9 @@ export function apply(ctx, config = {}) {
 
       if (event.type === 'tool/result') {
         const callId = event.data?.message?.toolCallId;
-        const toolName = (callId && state.calls.get(String(callId))) || 'tool';
+        const call = callId ? state.calls.get(String(callId)) : null;
+        const toolName = (call && call.name) || 'tool';
+        const target = (call && call.target) || null;
         if (callId) state.calls.delete(String(callId));
         if (!LEDGER_TOOLS.has(toolName)) state.toolsUsed = true;
         if (state.askStarted) {
@@ -836,7 +888,7 @@ export function apply(ctx, config = {}) {
           state.askTool = null;
         }
         const isError = Boolean(event.data?.error || event.data?.message?.isError);
-        callCore({ op: 'record_tool', context: { sid, workspace }, name: toolName, is_error: isError });
+        callCore({ op: 'record_tool', context: { sid, workspace }, name: toolName, is_error: isError, target });
         return;
       }
 

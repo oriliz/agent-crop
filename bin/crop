@@ -58,6 +58,10 @@ def main(argv: list[str] | None = None) -> int:
     adjust.add_argument("--note", required=True, help="一句话主观判断：为什么认为它会改善指标")
     adjust.add_argument("--work-id", default="", help="这条改进挂在哪个工作上（可选）")
     adjust.add_argument("--window", default="", help="采样窗口说明，如 2026-10-20~11-03")
+    adjust.add_argument("--artifact", default="",
+                        help="产物落点：kind:path#anchor（kind=file/skill/hook），如 file:docs/FOO.md#§1")
+    adjust.add_argument("--delivery", default="read", choices=["read", "injected"],
+                        help="read=按需读取（默认）；injected=每会话自动注入的载体（如 AGENTS.md）")
 
     ledger = sub.add_parser("ledger", help="改进台账：前后值、样本量、护栏、回滚提示")
     ledger.add_argument("--days", type=float, default=180.0)
@@ -141,11 +145,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "adjust":
         sid = (core.read_runtime() or {}).get("sid") or "cli"
+        artifact = None
+        if args.artifact:
+            kind, sep, rest = args.artifact.partition(":")
+            if not sep or kind not in core.ARTIFACT_KINDS:
+                kind, rest = "file", args.artifact
+            path, _, anchor = rest.partition("#")
+            artifact = {"kind": kind, "path": path, "anchor": anchor, "delivery": args.delivery}
         try:
             event = core.record_adjustment({
                 "metric": args.metric, "evidence": args.evidence, "work_id": args.work_id,
-                "window": args.window, "note": args.note,
-            }, {"sid": sid})
+                "window": args.window, "note": args.note, "artifact": artifact,
+            }, {"sid": sid, "workspace": os.getcwd()})
         except ValueError as exc:
             print(f"error: {exc}")
             return 2
