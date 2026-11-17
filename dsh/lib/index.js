@@ -313,7 +313,13 @@ export function apply(ctx, config = {}) {
         webServer.register({
           kind: 'exact',
           path: '/api/agent-crop/global',
-          handler: relay((url) => ({ op: 'global', args: { days: Number(url.searchParams.get('days') ?? 7) || 7 } })),
+          handler: relay((url) => ({
+            op: 'global',
+            args: {
+              days: Number(url.searchParams.get('days') ?? 7) || 7,
+              host: url.searchParams.get('host') || undefined,
+            },
+          })),
         }),
         webServer.register({
           kind: 'exact',

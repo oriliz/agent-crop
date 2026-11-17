@@ -168,7 +168,10 @@ def dispatch(payload: dict):
         return core.archive_stale(float(payload.get("days") or 14))
     if op == "global":
         args = payload.get("args") or {}
-        return core.improvement_summary(max(1.0, float(args.get("days") or 7)))
+        return core.improvement_summary(
+            max(1.0, float(args.get("days") or 7)),
+            host=str(args.get("host") or "") or None,
+        )
     if op == "day":
         args = payload.get("args") or {}
         return core.day_detail(str(args.get("date") or core.today()))
