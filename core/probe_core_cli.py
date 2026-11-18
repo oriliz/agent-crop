@@ -162,6 +162,8 @@ def dispatch(payload: dict):
         return core.set_work_state(payload.get("work_id") or "", "suspended")
     if op == "work_resume":
         return core.set_work_state(payload.get("work_id") or "", "open")
+    if op == "pending_confirm_hint":
+        return core.pending_confirm_hint(payload.get("context") or {})
     if op == "work_confirm":
         args = payload.get("args") or {}
         return core.confirm_works(

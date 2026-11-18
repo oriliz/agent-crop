@@ -997,6 +997,11 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                 # 切工作不能让旧工作“静默失联”：留一条可追溯事件，工具结果里也会警告。
                 append_event({"ev": "work_switch", "sid": sid,
                               "from": switched_from, "to": report["task_id"]})
+            old_task = previous_open.get(switched_from) or {}
+            if old_task.get("status") == "pending_confirm" and not _confirm_reminded(switched_from, "switch"):
+                append_event({"ev": "confirm_reminder", "sid": sid, "task_id": switched_from,
+                              "kind": "switch", "at": record["t"]})
+                record["switched_pending"] = switched_from
             append_event({"ev": "work_open", "sid": sid, "work_id": report["task_id"],
                           "goal": report.get("goal", ""), "type": report.get("type", ""),
                           "difficulty": report.get("difficulty", "")})
@@ -1197,6 +1202,47 @@ def miss_nudge(streak: int, sid: str | None = None) -> str:
     fallback = "[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_update 写一行。"
     _record_nudge(sid or "unknown", "miss", tier, fallback, streak=int(streak or 0))
     return fallback
+
+
+def _confirm_reminded(task_id: str, kind: str) -> bool:
+    return any(event.get("ev") == "confirm_reminder"
+               and event.get("task_id") == task_id
+               and event.get("kind") == kind
+               for event in load_events(limit=5000))
+
+
+def pending_confirm_hint(context: dict | None = None) -> str:
+    """待确认收尾的工作：首轮提醒一次；超过 30 分钟再提醒一次（不自动确认）。"""
+    context = context or {}
+    sid = str(context.get("sid") or "")
+    pending = pending_confirm_tasks(sid or None)
+    if not pending:
+        return ""
+    parts = []
+    now = now_ms()
+    timeout_ms = int(float(os.environ.get("KIT_CONFIRM_REMIND_MIN") or 30) * 60000)
+    for task in pending[:3]:
+        task_id = str(task.get("task_id") or "")
+        if not task_id:
+            continue
+        pending_at = int(task.get("pending_at") or 0)
+        if not _confirm_reminded(task_id, "start"):
+            append_event({"ev": "confirm_reminder", "sid": sid, "task_id": task_id,
+                          "kind": "start", "at": now})
+            parts.append(
+                f'[crop] 工作「{task_id}」已提交收尾，等待人类确认（crop_confirm）。'
+                f'确认前不计为完成、计时继续。'
+            )
+            continue
+        if pending_at and now - pending_at > timeout_ms and not _confirm_reminded(task_id, "timeout"):
+            append_event({"ev": "confirm_reminder", "sid": sid, "task_id": task_id,
+                          "kind": "timeout", "at": now})
+            minutes = int((now - pending_at) / 60000)
+            parts.append(
+                f'[crop] 工作「{task_id}」提交收尾已经 {minutes} 分钟，人类还没确认。'
+                f'再问用户一句：这个工作确认收尾了吗？要收尾就调 crop_confirm。'
+            )
+    return "\n".join(parts)
 
 
 def binding_hint(sid: str) -> str:

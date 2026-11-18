@@ -1056,20 +1056,23 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           })()));
 
       const active = data.active_work;
+      const pendingWork = data.pending_work || null;
       const ended = data.ended_work || null;
+      const currentJob = active || pendingWork || ended || null;
       const expect = active && active.expect_min ? active.expect_min : null;
       const current = h('div', { key: 'current', className: 'crop-card crop-sess-current' },
-        h('span', { className: 'crop-sess-label' }, active ? '当前工作' : (ended ? '上一件' : '当前工作')),
-        h('span', { className: 'crop-sess-name', title: active ? active.work_id : (ended ? ended.work_id : '') },
-          active ? (active.title || active.goal || labelOf(active.work_id))
-            : ended ? (ended.title || ended.goal || labelOf(ended.work_id))
-              : '本会话还没有绑定工作'),
+        h('span', { className: 'crop-sess-label' },
+          active ? '当前工作' : (pendingWork ? '待确认 · 等人类' : (ended ? '上一件' : '当前工作'))),
+        h('span', { className: 'crop-sess-name', title: currentJob ? currentJob.work_id : '' },
+          currentJob ? (currentJob.title || currentJob.goal || labelOf(currentJob.work_id)) : '本会话还没有绑定工作'),
         active && expect ? h('div', { className: 'crop-sess-bar' },
           h('i', { style: { width: pct(Math.min(100, ((active.minutes || 0) / expect) * 100)) } })) : null,
         h('span', { className: 'crop-muted crop-small' },
           active
             ? (expect ? `估 ${Math.round(expect)}m / 已 ${Math.round(active.minutes || 0)}m` : '')
-            : ended ? `已收尾 · ${Math.round(ended.minutes || 0)}m` : ''));
+            : pendingWork
+              ? `已提交收尾 · ${Math.round(pendingWork.minutes || 0)}m · 等人类确认`
+              : ended ? `已收尾 · ${Math.round(ended.minutes || 0)}m` : ''));
 
       const frame = h('div', { key: 'frame', className: 'crop-card crop-tl-card' },
         h('div', { className: 'crop-tl-head' },
@@ -1118,7 +1121,8 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('div', null, data.session_works.map((item) => h('div', { key: item.work_id, className: 'crop-work-row' },
               h('i', { className: 'crop-dot', style: { background: lampColor(item.ratio) } }),
               h('span', { title: fullTitles[item.work_id] || item.work_id }, labelOf(item.work_id)),
-              item.state === 'closed' ? h('span', { className: 'crop-chip-sm' }, '已收尾') : null,
+              item.state === 'closed' ? h('span', { className: 'crop-chip-sm' }, '已收尾')
+                : item.state === 'pending_confirm' ? h('span', { className: 'crop-chip-sm' }, '待确认') : null,
               h('span', { className: 'crop-muted crop-small', style: { marginLeft: 'auto' } },
                 `${Math.round(item.minutes || 0)}m`)))))
         : null;

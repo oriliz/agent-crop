@@ -410,6 +410,41 @@ class EventFlowTest(unittest.TestCase):
         self.assertEqual(result["missing"], ["nope"])
 
 
+    def test_pending_confirm_hint_is_sent_once(self):
+        self.report(phase="start", goal="甲")
+        self.report(phase="end", what="完")
+        hint = self.core.pending_confirm_hint({"sid": self.sid})
+        self.assertIn("已提交收尾", hint)
+        self.assertIn("crop_confirm", hint)
+        self.assertEqual(self.core.pending_confirm_hint({"sid": self.sid}), "", "只提醒一次")
+
+    def test_pending_confirm_hint_reminds_timeout(self):
+        self.report(phase="start", goal="甲")
+        self.report(phase="end", what="完")
+        value = self.core.load_open()
+        value["tasks"]["flow-work"]["pending_at"] -= 31 * 60000
+        self.core.save_open(value)
+        self.core.pending_confirm_hint({"sid": self.sid})  # 消耗首轮提醒
+        hint = self.core.pending_confirm_hint({"sid": self.sid})
+        self.assertIn("分钟", hint)
+        self.assertIn("crop_confirm", hint)
+
+    def test_switch_from_pending_marks_switched_pending(self):
+        self.core.record_report({"phase": "start", "task_id": "old-work", "summary": "旧"},
+                                {"sid": self.sid, "workspace": "/tmp/ws"})
+        self.core.record_report({"phase": "end", "task_id": "old-work", "summary": "旧收尾", "what": "完"},
+                                {"sid": self.sid, "workspace": "/tmp/ws"})
+        record = self.core.record_report({"phase": "start", "task_id": "new-work", "summary": "新"},
+                                         {"sid": self.sid, "workspace": "/tmp/ws"})
+        self.assertEqual(record.get("switched_pending"), "old-work")
+        again = self.core.record_report({"phase": "start", "task_id": "new-work", "summary": "新"},
+                                        {"sid": self.sid, "workspace": "/tmp/ws"})
+        self.assertIsNone(again.get("switched_pending"), "只建议一次")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
 if __name__ == "__main__":
     unittest.main()
 
