@@ -3018,8 +3018,17 @@ def emotion_hint(context: dict | None = None) -> str:
            "这个场景是不是犯过类似的错、有没有按既定的经验或规范来？找到依据再继续；",
         3: "用户很用力地鞭了：非常不满。停下来，直接问用户具体哪里不对、要不要回退或换方式，别自己猜着继续；",
     }
+    # 自定义优先级：模板文件（~/.agentcrop/templates/emotion/<level>.md）> 环境变量（设置页）> 内置。
+    templates_root = os.path.join(os.path.expanduser("~/.agentcrop"), "templates", "emotion")
     for level, key in ((1, "KIT_EMOTION_HINT1"), (2, "KIT_EMOTION_HINT2"), (3, "KIT_EMOTION_HINT3")):
-        custom = str(os.environ.get(key) or "").strip()
+        custom = ""
+        try:
+            with open(os.path.join(templates_root, f"{level}.md"), encoding="utf-8") as handle:
+                custom = handle.read().strip()[:2000]
+        except Exception:
+            custom = ""
+        if not custom:
+            custom = str(os.environ.get(key) or "").strip()
         if custom:
             scripts[level] = custom
     text = f"[crop] {scripts.get(intensity, scripts[1])}"
