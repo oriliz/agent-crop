@@ -791,6 +791,32 @@ body[data-ds-dark-theme] .crop-page .crop-card {
 .crop-persona-body { display: grid; gap: 2px; }
 .crop-config-note { font-size: 12px; color: var(--dsw-alias-label-secondary, #4a5568); }
 
+/* Crop 设置页：分区卡 + 更宽松的控件 */
+.crop-settings { max-width: 760px; margin: 0 auto; padding: 4px 2px 24px; display: grid; gap: 18px; }
+.crop-settings-head h2 { font-size: 20px; margin: 0 0 4px; }
+.crop-settings-head p { margin: 0; font-size: 12.5px; color: var(--dsw-alias-label-tertiary, #6b7899); line-height: 1.6; }
+.crop-settings-section { border: 1px solid var(--dsw-alias-border-l2, rgba(150, 170, 220, .18)); border-radius: 14px; padding: 16px 18px; background: var(--dsw-alias-bg-module-platform, rgba(255, 255, 255, .02)); }
+.crop-settings-section-head h3 { font-size: 14px; margin: 0 0 4px; }
+.crop-settings-section-head p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-tertiary, #6b7899); }
+.crop-settings-body { margin-top: 12px; display: grid; gap: 12px; }
+.crop-settings-field { display: grid; gap: 6px; }
+.crop-settings-label { font-size: 12.5px; font-weight: 600; }
+.crop-threshold-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 22px; }
+.crop-settings-threshold { display: grid; gap: 6px; }
+.crop-settings-number { display: flex; align-items: center; gap: 8px; }
+.crop-settings-unit { font-size: 12px; color: var(--dsw-alias-label-tertiary, #6b7899); }
+.crop-config-input {
+  box-sizing: border-box; width: 100%; padding: 9px 12px; border-radius: 9px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(150, 170, 220, .24));
+  background: var(--dsw-alias-bg-input, rgba(0, 0, 0, .22));
+  color: var(--dsw-alias-label-primary, #e7ecf7);
+  font-size: 13px; line-height: 1.55; font-family: inherit; resize: vertical;
+}
+.crop-settings-number .crop-config-input { width: 92px; }
+.crop-config-input:focus { outline: none; border-color: rgba(110, 140, 235, .8); box-shadow: 0 0 0 3px rgba(110, 140, 235, .18); }
+.crop-config-input::placeholder { color: var(--dsw-alias-label-tertiary, #6b7899); }
+.crop-settings-note { position: sticky; bottom: 8px; justify-self: end; font-size: 12px; padding: 6px 12px; border-radius: 999px; background: rgba(80, 200, 140, .14); color: #86e0b5; }
+
 `;
 
     const S = {
@@ -2047,7 +2073,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       return node;
     }
 
-    /* Crop 自己的设置页（侧边栏入口）：不依赖插件管理器的 form，直接读写 settings.json。 */
+    /* Crop 自己的设置页：系统设置里的一个分区，直接读写 settings.json。 */
     function SettingsPage() {
       const [state, setState] = React.useState({ loaded: false, emotionFeedback: true, emotionHint1: '', emotionHint2: '', emotionHint3: '', note: '' });
       React.useEffect(() => {
@@ -2069,24 +2095,48 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           .then((data) => setState((prev) => ({ ...prev, ...data, note: '已保存，下一次生效' })))
           .catch(() => setState((prev) => ({ ...prev, note: '保存失败' })));
       };
-      const hintField = (key, label) => h('div', { key, style: { marginTop: 8 } }, [
-        h('div', { key: 'l', className: 'crop-config-hint' }, label + '：留空用内置文案'),
+      const section = (key, title, hint, children) => h('section', { key, className: 'crop-settings-section' }, [
+        h('div', { key: 'h', className: 'crop-settings-section-head' }, [
+          h('h3', { key: 't' }, title),
+          hint ? h('p', { key: 'd' }, hint) : null,
+        ]),
+        children ? h('div', { key: 'b', className: 'crop-settings-body' }, children) : null,
+      ]);
+      const hintField = (key, label) => h('label', { key, className: 'crop-settings-field' }, [
+        h('span', { key: 'l', className: 'crop-settings-label' }, label),
         h('textarea', {
           key: 't',
           className: 'crop-config-input',
-          rows: 2,
+          rows: 3,
           value: state[key] || '',
+          placeholder: '留空 = 使用内置文案',
           onChange: (event) => setState((prev) => ({ ...prev, [key]: event.target.value })),
           onBlur: (event) => save({ [key]: event.target.value }),
         }),
       ]);
-      return h('div', { className: 'crop-page' },
-        h('div', { className: 'crop-card' }, [
-          h('h2', { key: 't', className: 'crop-global-title' }, 'Crop · 设置'),
-          h('div', { key: 'n', className: 'crop-config-hint' },
-            '实验性功能；保存写入 ~/.agentcrop/settings.json，下一次提醒 / 鞭打立即生效。'),
-          h('div', { key: 'p1', className: 'crop-config-title', style: { marginTop: 16 } }, '鞭策风格'),
-          h('div', { key: 'p2', className: 'crop-persona-list' },
+      const threshold = (key, label, number) => h('label', { key, className: 'crop-settings-threshold' }, [
+        h('span', { key: 'l', className: 'crop-settings-label' }, label),
+        h('span', { key: 'i', className: 'crop-settings-number' }, [
+          h('input', {
+            key: 'n',
+            type: 'number',
+            min: 0,
+            max: 480,
+            className: 'crop-config-input',
+            value: state[key] ?? '',
+            onChange: (event) => setState((prev) => ({ ...prev, [key]: event.target.value })),
+            onBlur: (event) => save({ [key]: number === false ? 0 : (Number(event.target.value) || 0) }),
+          }),
+          h('span', { key: 'u', className: 'crop-settings-unit' }, '分钟'),
+        ]),
+      ]);
+      return h('div', { className: 'crop-settings' },
+        h('div', { key: 'head', className: 'crop-settings-head' }, [
+          h('h2', { key: 't' }, 'Crop'),
+          h('p', { key: 'd' }, '实验性设置；保存即生效（写入 ~/.agentcrop/settings.json，优先于 profile config）。'),
+        ]),
+        section('persona', '鞭策风格', '决定超时提醒的语气。只有「奴隶主」会抽鞭子；其余风格更温和。',
+          h('div', { className: 'crop-persona-list' },
             ['owner', 'senior', 'colleague', 'free'].map((value) =>
               h('label', {
                 key: value,
@@ -2100,26 +2150,14 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                   onChange: () => save({ persona: value }),
                 }),
                 h('span', { key: 'b', className: 'crop-persona-body' },
-                  h('b', null, PERSONA_LABEL[value] || value))))),
-          h('div', { key: 't1', className: 'crop-config-title', style: { marginTop: 16 } }, '提醒阈值（分钟）'),
-          h('div', { key: 't2', style: { display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 6 } },
-            [['yellowMin', '工作黄线'], ['redMin', '单轮红线'], ['remindMin', '提醒冷却'], ['missMin', '缺报检测']].map(([key, label]) =>
-              h('label', { key, style: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 } },
-                label,
-                h('input', {
-                  type: 'number',
-                  className: 'crop-config-input',
-                  style: { width: 96 },
-                  value: state[key] ?? '',
-                  onChange: (event) => setState((prev) => ({ ...prev, [key]: event.target.value })),
-                  onBlur: (event) => save({ [key]: Number(event.target.value) || 0 }),
-                })))),
-          h('div', { key: 'tpl1', className: 'crop-config-title', style: { marginTop: 16 } }, '注入模板'),
-          h('div', { key: 'tpl2', className: 'crop-config-hint' },
-            '也可以用文件覆盖：~/.agentcrop/templates/ 下的 protocol.md / start-hint.md / binding-hint.md / end-hint.md / voice/*.md。'
-            + '空文件=默认，写 none=关闭；voice 与提示类即时生效，protocol 需重启宿主。'),
-          h('div', { key: 'e1', className: 'crop-config-title', style: { marginTop: 16 } }, '情绪反馈'),
-          h('label', { key: 'e2', className: 'crop-persona-option', style: { cursor: 'pointer' } }, [
+                  h('b', null, PERSONA_LABEL[value] || value)))))),
+        section('thresholds', '提醒阈值', '单位：分钟。黄线=工作累计活跃开始提醒；红线=单轮超时；冷却=同一条提醒不重复；缺报=一轮没登记就补记。',
+          h('div', { className: 'crop-threshold-grid' },
+            [['yellowMin', '工作黄线'], ['redMin', '单轮红线'], ['remindMin', '提醒冷却'], ['missMin', '缺报检测']]
+              .map(([key, label]) => threshold(key, label)))),
+        section('templates', '注入模板', '文案也可用文件覆盖（改动即时生效，protocol 需重启）：~/.agentcrop/templates/ 下的 protocol.md / start-hint.md / binding-hint.md / end-hint.md / voice/*.md。空文件=默认，写 none=关闭。'),
+        section('emotion', '情绪反馈（实验性）', '允许「鞭打宠物」把用户的不满反馈给运行中的 AI；关掉后只保留点击动画。',
+          h('label', { className: 'crop-persona-option', style: { cursor: 'pointer' } }, [
             h('input', {
               key: 'c',
               type: 'checkbox',
@@ -2127,16 +2165,13 @@ body[data-ds-dark-theme] .crop-page .crop-card {
               onChange: (event) => save({ emotionFeedback: event.target.checked }),
             }),
             h('span', { key: 'b', className: 'crop-persona-body' }, [
-              h('b', { key: 't' }, '允许「鞭打宠物」把不满反馈给 AI'),
+              h('b', { key: 't' }, '允许情绪信号进入 AI 上下文'),
               h('span', { key: 'h', className: 'crop-config-hint' }, '关掉后 AI 收不到情绪信号，只保留点击动画。'),
             ]),
-          ]),
-          h('div', { key: 'h1', className: 'crop-config-title', style: { marginTop: 16 } }, '鞭打三级文案'),
-          hintField('emotionHint1', '1 级（轻拍）'),
-          hintField('emotionHint2', '2 级（连击）'),
-          hintField('emotionHint3', '3 级（很生气）'),
-          state.note ? h('div', { key: 'note', className: 'crop-config-note' }, state.note) : null,
-        ]));
+          ])),
+        section('emotion-hints', '鞭打三级文案（实验性）', '留空用内置文案。1 级=重新审视方式；2 级=翻经验、查类似错；3 级=停下来问用户。',
+          [hintField('emotionHint1', '1 级 · 轻拍'), hintField('emotionHint2', '2 级 · 连击'), hintField('emotionHint3', '3 级 · 很生气')]),
+        state.note ? h('div', { key: 'note', className: 'crop-settings-note' }, state.note) : null);
     }
 
     function SettingsPanelIcon({ size, active }) {
