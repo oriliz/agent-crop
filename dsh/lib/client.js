@@ -1749,8 +1749,11 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                 : row['class'] === 'on_demand' ? h('span', { key: 'x', className: 'crop-muted' }, '—')
                   : h('div', { key: 'tr' }, [
                       h(TrendSpark, { key: 's', row }),
-                      h('div', { key: 'v', className: 'crop-mini' },
-                        `${coverageNote ? coverageNote + ' · ' : ''}${row.session_coverage == null ? '—' : pctText(row.session_coverage)}`),
+                      h('div', { key: 'v', className: 'crop-mini',
+                        style: { color: latestTone === '#ef4444' ? '#ef4444' : (latest ? '#c7d5ee' : '#7f90b0') } },
+                        latest ? `昨天 ${pctText(trendValue(latest))}` : '—'),
+                      coverageNote ? h('div', { key: 'w', className: 'crop-mini', style: { color: '#7f90b0' } },
+                        `全窗口 ${coverageNote}`) : null,
                     ]),
             ]),
             h('td', { key: 'f', style: { ...cellRight, color: latestTone === '#ef4444' ? '#ef4444' : (row.events ? '#9aa8c4' : undefined) } }, [
