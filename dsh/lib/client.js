@@ -1945,9 +1945,13 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const form = props && props.form;
       const stored = form && form.state && form.state.value && form.state.value.persona;
       const [value, setValue] = React.useState(stored || 'owner');
+      const storedEmotion = form && form.state && form.state.value
+        && form.state.value.emotionFeedback !== false;
+      const [emotionOn, setEmotionOn] = React.useState(storedEmotion !== false);
       const [note, setNote] = React.useState('');
       if (props && props.view === 'summary') {
-        return h('span', null, `鞭策风格：${personaLabelOf(stored || value)}`);
+        return h('span', null,
+          `鞭策风格：${personaLabelOf(stored || value)} · 情绪反馈：${emotionOn ? '开' : '关'}`);
       }
       if (!form) {
         return h('div', { className: 'crop-config' },
@@ -1960,6 +1964,13 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         setNote('保存中…');
         form.mutate([{ op: 'set', path: ['persona'], value: next }], form.state.revision)
           .then((ok) => setNote(ok ? '已保存，下一条提醒立即生效。' : 'Host 拒绝了这次修改。'))
+          .catch((error) => setNote(`保存失败：${error && error.message ? error.message : error}`));
+      };
+      const toggleEmotion = (next) => {
+        setEmotionOn(next);
+        setNote('保存中…');
+        form.mutate([{ op: 'set', path: ['emotionFeedback'], value: next }], form.state.revision)
+          .then((ok) => setNote(ok ? '已保存。' : 'Host 拒绝了这次修改。'))
           .catch((error) => setNote(`保存失败：${error && error.message ? error.message : error}`));
       };
       return h('div', { className: 'crop-config' },
@@ -1982,6 +1993,18 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('span', { className: 'crop-config-hint' }, choice.hint))))),
         h('div', { className: 'crop-config-hint' },
           '提醒里的具体台词用 Markdown 覆盖 ~/.agentcrop/templates/voice/*.md，改完即时生效；常驻协议模板要重启宿主。'),
+        h('div', { className: 'crop-config-title', style: { marginTop: 14 } }, '情绪反馈（实验性）'),
+        h('label', { className: 'crop-persona-option', 'data-active': emotionOn ? '' : undefined,
+          style: { cursor: 'pointer' } },
+          h('input', {
+            type: 'checkbox',
+            checked: emotionOn,
+            onChange: (event) => toggleEmotion(event.target.checked),
+          }),
+          h('span', { className: 'crop-persona-body' },
+            h('b', null, '允许「鞭打宠物」把不满反馈给 AI'),
+            h('span', { className: 'crop-config-hint' },
+              '开：鞭打后 AI 会收到情绪信号并按强度调整；关：只保留点击动画，AI 收不到任何信号。'))),
         note ? h('div', { className: 'crop-config-note' }, note) : null);
     }
 

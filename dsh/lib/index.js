@@ -155,6 +155,8 @@ export const Config = z.object({
     .description('缺报检测：一轮超过多少分钟且没有上报，下一轮提醒补记'),
   persona: z.string().default('owner').volatile()
     .description('鞭策风格：owner 奴隶主（重时间效率）/ senior 和蔼的前辈（鼓励提问）/ colleague 经验丰富的同事（建议拆解）/ free 放任自由的家长（不鞭策）'),
+  emotionFeedback: z.boolean().default(true).volatile()
+    .description('实验性：允许「鞭打宠物」把用户的不满反馈给运行中的 AI；关闭后 AI 不再收到情绪信号'),
   askHumanTools: z.string().default('ask_user_question,ask_human,askHuman')
     .description('哪些工具名算“在等用户回答”，逗号分隔；不同宿主名字不同，在这里加'),
 });
@@ -166,6 +168,7 @@ function setting(value, fallback) {
 
 export function apply(ctx, config = {}) {
   const python = setting(config?.python, 'python3');
+  const emotionFeedback = setting(config?.emotionFeedback, true);
   const states = new Map();
 
 
@@ -1036,8 +1039,10 @@ export function apply(ctx, config = {}) {
         if (status) notes.push(status);
       }
 
-      const emotionHint = callCore({ op: 'emotion_hint', context: { sid, workspace } });
-      if (emotionHint) notes.push(emotionHint);
+      if (emotionFeedback) {
+        const emotionHint = callCore({ op: 'emotion_hint', context: { sid, workspace } });
+        if (emotionHint) notes.push(emotionHint);
+      }
 
       const pendingHint = callCore({ op: 'pending_confirm_hint', context: { sid, workspace } });
       if (pendingHint) notes.push(pendingHint);
