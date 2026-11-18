@@ -860,6 +860,20 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const [flashIv, setFlashIv] = React.useState(null);
       const [hotMarker, setHotMarker] = React.useState(null);
       const dragRef = React.useRef(null);
+      const [whipFlash, setWhipFlash] = React.useState('');
+      const whipRef = React.useRef({ count: 0, last: 0 });
+      const whip = () => {
+        const now = Date.now();
+        const meter = whipRef.current;
+        if (now - meter.last < 2000) meter.count += 1;
+        else meter.count = 1;
+        meter.last = now;
+        const intensity = meter.count >= 6 ? 3 : (meter.count >= 3 ? 2 : 1);
+        const sid = encodeURIComponent(sessionId || '');
+        fetch(`${API}/emotion?intensity=${intensity}&count=${meter.count}&sid=${sid}`, { cache: 'no-store' }).catch(() => {});
+        setWhipFlash(intensity === 3 ? '啪！很生气' : (intensity === 2 ? '啪！' : '轻拍'));
+        window.setTimeout(() => setWhipFlash(''), 1200);
+      };
       if (error || !data) {
         return h('div', { className: 'crop-page' },
           h('div', { className: 'crop-card' },
@@ -1049,6 +1063,14 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('i', { className: 'work', style: { width: pct(wall ? (activeMs / wall) * 100 : 0) } }),
           h('i', { className: 'wait', style: { width: pct(wall ? (waitMs / wall) * 100 : 0) } })),
         h('div', { className: 'crop-muted crop-small' }, `活跃 ${fmtSpan(activeMs)} · 等待 ${fmtSpan(waitMs)}`),
+        h('button', {
+          key: 'whip',
+          type: 'button',
+          className: 'crop-whip-btn',
+          title: '对当前会话的 AI 不满：点=轻拍，连击=不满，连击 6 下=很生气（可再点关闭前先确认设置里的情绪反馈开关）',
+          onClick: whip,
+        }, '🐋 鞭一下'),
+        whipFlash ? h('span', { key: 'whip-flash', className: 'crop-whip-flash' }, whipFlash) : null,
         h('span', { className: 'crop-persona-chip' }, `你是一个${PERSONA_LABEL[persona] || persona}`),
         h('div', { className: 'crop-sess-turn' }, `本回合 ${fmtSpan((data.current_minutes || 0) * 60000)}`),
         h('div', { className: 'crop-sess-stats' },
@@ -1381,20 +1403,6 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         h('div', { className: `crop-delta${delta.tone ? ` crop-${delta.tone}` : ''}` }, delta.text),
         h('div', { className: 'crop-muted crop-metric-n' }, note));
 
-      const [whipFlash, setWhipFlash] = React.useState('');
-      const whipRef = React.useRef({ count: 0, last: 0 });
-      const whip = () => {
-        const now = Date.now();
-        const meter = whipRef.current;
-        if (now - meter.last < 2000) meter.count += 1;
-        else meter.count = 1;
-        meter.last = now;
-        const intensity = meter.count >= 6 ? 3 : (meter.count >= 3 ? 2 : 1);
-        fetch(`${API}/emotion?intensity=${intensity}&count=${meter.count}`, { cache: 'no-store' }).catch(() => {});
-        setWhipFlash(intensity === 3 ? '啪！很生气' : (intensity === 2 ? '啪！' : '轻拍'));
-        window.setTimeout(() => setWhipFlash(''), 1200);
-      };
-
       const loadingCard = !data
         ? h('div', { key: 'state', className: 'crop-card' },
             h('div', { className: 'crop-muted', style: S.quiet },
@@ -1423,15 +1431,6 @@ body[data-ds-dark-theme] .crop-page .crop-card {
               ...(((data && data.hosts) || []).map((item) =>
                 h('option', { key: item, value: item }, item))),
             ])),
-          h('button', {
-            key: 'whip',
-            type: 'button',
-            className: 'crop-whip-btn',
-            title: '对 AI 不满：点一下=轻拍（1 级），连击 3 下=明显不满（2 级），连击 6 下=很生气（3 级）',
-            onClick: whip,
-          }, '🐋 鞭一下'),
-          // flash 放在按钮后面：放前面会把按钮推走，连击会打空。
-          whipFlash ? h('span', { key: 'whip-flash', className: 'crop-whip-flash' }, whipFlash) : null,
           h('div', { className: 'crop-modes' },
             [['overview', '概览'], ['health', '健康度']].map(([value, label]) => h('button', {
               key: value,

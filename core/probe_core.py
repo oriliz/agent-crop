@@ -2960,8 +2960,10 @@ def format_work_reminder(health: dict, config: dict) -> str:
 def record_emotion(args: dict, context: dict | None = None) -> dict:
     """用户对运行中 AI 的不满（实验性）：鞭打宠物的点击/连击。"""
     context = context or {}
-    runtime = read_runtime()
-    sid = str(context.get("sid") or runtime.get("sid") or "unknown")
+    sid = str(context.get("sid") or "")
+    if not sid:
+        # 没有目标会话就不记：情绪信号必须落在用户正在骂的那个会话上。
+        return {"recorded": False, "error": "missing sid"}
     workspace = str(context.get("workspace") or "")
     try:
         intensity = int(args.get("intensity") or 1)
