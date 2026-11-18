@@ -1650,6 +1650,11 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           showClosure ? h('th', { key: 'cl', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '闭环') : null,
         ]));
 
+        const localDay = () => {
+          const now = new Date();
+          const pad = (value) => String(value).padStart(2, '0');
+          return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+        };
         const trendColor = (value, klass) => {
           const threshold = { session: .8, work: .7, ended: .8, call: .9 }[klass] || .8;
           if (value == null) return '#64748b';
@@ -1662,7 +1667,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         const latestComplete = (daily) => {
           const rows = (daily || []).filter((day) => day && day.events);
           if (!rows.length) return null;
-          const today = new Date().toISOString().slice(0, 10);
+          const today = localDay();
           const complete = rows.filter((day) => day.date !== today);
           return complete.length ? complete[complete.length - 1] : null;
         };
@@ -1675,7 +1680,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           const width = 140;
           const height = 24;
           const pad = 6;
-          const today = new Date().toISOString().slice(0, 10);
+          const today = localDay();
           const step = daily.length > 1 ? (width - pad * 2) / (daily.length - 1) : 0;
           const points = daily.map((day, index) => {
             const value = trendValue(day) || 0;
