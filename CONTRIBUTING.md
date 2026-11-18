@@ -7,6 +7,20 @@ Agent Crop 是给 AI 编程助手用的本地探针：只观察、只记在你�
 
 ---
 
+## 合并一批 PR
+
+多个 PR 同时就绪时：**先统一 update-branch，等 CI 跑完，最后合并**。
+
+逐个合并会让后面的 PR 立刻变成 `BEHIND`，触发 `2 of 2 required status checks are expected` 的来回等待——每个 PR 多等一轮 CI。
+
+```bash
+for pr in 41 44 45 46; do gh pr update-branch "$pr"; done
+# 等所有 CI 完成
+for pr in 41 44 45 46; do gh pr merge "$pr" --squash; done
+```
+
+来源：2026-11-18 合并 #41/#44/#45/#46 时踩的坑（改进台账 `merge-prs-2`）。
+
 ## 30 秒跑起来
 
 ```bash
