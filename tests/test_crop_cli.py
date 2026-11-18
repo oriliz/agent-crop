@@ -382,6 +382,7 @@ class StatusViewTest(unittest.TestCase):
             {"phase": "end", "task_id": "t1", "summary": "面板收尾", "what": "把面板收尾"},
             {"sid": "s1", "workspace": "/tmp/ws"},
         )
+        core.confirm_works(["t1"], "s1")
         summary = core.period_summary(7, start=0)
         self.assertEqual(summary["completed"], 1)
         self.assertAlmostEqual(

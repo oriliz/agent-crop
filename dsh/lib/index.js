@@ -829,6 +829,41 @@ export function apply(ctx, config = {}) {
     },
   };
 
+  const confirmTool = {
+    name: 'crop_confirm',
+    description:
+      '人类确认收尾后调用：关闭一个或多个待确认（pending_confirm）的工作。'
+      + '只有用户明确说「收尾 / 确认 / 好了」之后才允许调用；AI 不能替用户做这个决定。支持批量。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        task_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          description: '要确认关闭的工作短名列表（可批量）',
+        },
+      },
+      required: ['task_ids'],
+    },
+    async execute(args) {
+      const ids = (args?.task_ids || []).map((item) => String(item).trim()).filter(Boolean);
+      if (!ids.length) throw new Error('crop_confirm requires task_ids');
+      const result = callCore({ op: 'work_confirm', args: { task_ids: ids } });
+      if (!result) {
+        throw new Error(
+          `crop_confirm failed${lastCoreError ? `（core: ${lastCoreError.stderr || lastCoreError.error || 'no output'}）` : ''}`,
+        );
+      }
+      return {
+        text: `confirmed ${result.confirmed?.length || 0}${result.missing?.length ? ` · missing: ${result.missing.join(', ')}` : ''}`,
+        confirmed: result.confirmed || [],
+        missing: result.missing || [],
+      };
+    },
+  };
+  ctx.effect(() => ctx.tools.register(confirmTool), 'agent-crop.crop_confirm');
   ctx.effect(() => ctx.tools.register(tool), 'agent-crop.crop_update');
   ctx.effect(() => ctx.tools.register(legacyTool), 'agent-crop.probe_report (alias)');
   ctx.effect(() => ctx.tools.register(legacyCropReportTool), 'agent-crop.crop_report (alias)');
