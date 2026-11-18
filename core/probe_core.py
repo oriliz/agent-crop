@@ -2413,6 +2413,23 @@ def _session_improvements(events: list[dict]) -> list[dict]:
     return out
 
 
+def _latest_work_summary(events: list[dict], work_id: str) -> dict:
+    """The AI's own closing note for one work (what / cost / next_time)."""
+    for event in reversed(events):
+        if event.get("ev") != "work_summary":
+            continue
+        if str(event.get("work_id") or "") != work_id:
+            continue
+        return {
+            "what": str(event.get("what") or ""),
+            "cost": str(event.get("cost") or ""),
+            "next_time": str(event.get("next_time") or ""),
+            "artifact": str(event.get("artifact") or ""),
+            "at": int(event.get("t") or 0),
+        }
+    return {}
+
+
 def _session_timeline(events: list[dict]) -> dict:
     """Render-ready slices for the session panel: runs, waits, whips and reports."""
     blocks, waits, whips, reports = [], [], [], []
@@ -2556,7 +2573,10 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         if health:
             session_works.append(health)
     # never fall back to a work from another session: that reads as "wrong data"
-    active = session_works[0] if session_works else None
+    active = next((item for item in session_works if item.get("state") != "closed"), None)
+    ended = next((item for item in session_works if item.get("state") == "closed"), None)
+    if ended:
+        ended = {**ended, "report": _latest_work_summary(events, str(ended.get("work_id") or ""))}
 
     latest_cause = ""
     latest_category = ""
@@ -2584,6 +2604,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         "sid": sid,
         "active_work": active,
         "session_works": session_works,
+        "ended_work": ended,
         "recent_blocks": recent[-5:][::-1],
         "session_started_at": int(events[0].get("t") or 0) if events else 0,
         "persona": str(load_config().get("persona") or "owner"),
@@ -2762,13 +2783,20 @@ def baseline_minutes(work_type: str | None, difficulty: str | None) -> tuple[flo
 
 def work_health(work_id: str | None = None) -> dict | None:
     works = [task for task in load_open().get("tasks", {}).values() if task.get("state", "open") == "open"]
-    if not works:
-        return None
     if work_id:
         task = next((item for item in works if item.get("task_id") == work_id), None)
         if task is None:
+            # A finished work still explains what a session did; the panel
+            # renders it as 已收尾 instead of pretending the session was idle.
+            task = next(
+                (item for item in _all_known_works() if item.get("task_id") == work_id),
+                None,
+            )
+        if task is None:
             return None
     else:
+        if not works:
+            return None
         task = max(works, key=lambda item: int(item.get("last_seen_at") or 0))
     minutes = work_minutes(str(task.get("task_id") or ""))
     baseline, source = baseline_minutes(task.get("type"), task.get("difficulty"))
@@ -2795,6 +2823,8 @@ def work_health(work_id: str | None = None) -> dict | None:
         "expect_changes": len(task.get("expect_history") or []),
         "expect_set_at": task.get("expect_set_at"),
         "expect_revised_at": task.get("expect_revised_at"),
+        "state": "closed" if str(task.get("status") or "") == "closed" else "open",
+        "closed_at": int(task.get("closed_at") or 0) or None,
     }
 
 
