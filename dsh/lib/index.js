@@ -155,6 +155,12 @@ export const Config = z.object({
     .description('缺报检测：一轮超过多少分钟且没有上报，下一轮提醒补记'),
   persona: z.string().default('owner').volatile()
     .description('鞭策风格：owner 奴隶主（重时间效率）/ senior 和蔼的前辈（鼓励提问）/ colleague 经验丰富的同事（建议拆解）/ free 放任自由的家长（不鞭策）'),
+  emotionHint1: z.string().default('').volatile()
+    .description('实验性：轻拍时的注入文案（留空用内置：重新审视当前方式是否正确）'),
+  emotionHint2: z.string().default('').volatile()
+    .description('实验性：连击时的注入文案（留空用内置：翻经验、查是否犯过类似错）'),
+  emotionHint3: z.string().default('').volatile()
+    .description('实验性：很生气时的注入文案（留空用内置：停下来问用户）'),
   emotionFeedback: z.boolean().default(true).volatile()
     .description('实验性：允许「鞭打宠物」把用户的不满反馈给运行中的 AI；关闭后 AI 不再收到情绪信号'),
   askHumanTools: z.string().default('ask_user_question,ask_human,askHuman')
@@ -206,6 +212,9 @@ export function apply(ctx, config = {}) {
           KIT_TASK_RED_MIN: String(setting(config.redMin, 30)),
           KIT_TASK_REMIND_MIN: String(setting(config.remindMin, 15)),
           KIT_TASK_PERSONA: String(setting(config.persona, 'owner')),
+          KIT_EMOTION_HINT1: String(setting(config.emotionHint1, '')),
+          KIT_EMOTION_HINT2: String(setting(config.emotionHint2, '')),
+          KIT_EMOTION_HINT3: String(setting(config.emotionHint3, '')),
         },
       });
       if (process.env.KIT_DEBUG_CALLS) {

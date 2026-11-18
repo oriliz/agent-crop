@@ -1932,6 +1932,9 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const storedEmotion = form && form.state && form.state.value
         && form.state.value.emotionFeedback !== false;
       const [emotionOn, setEmotionOn] = React.useState(storedEmotion !== false);
+      const [hint1, setHint1] = React.useState((form && form.state && form.state.value && form.state.value.emotionHint1) || '');
+      const [hint2, setHint2] = React.useState((form && form.state && form.state.value && form.state.value.emotionHint2) || '');
+      const [hint3, setHint3] = React.useState((form && form.state && form.state.value && form.state.value.emotionHint3) || '');
       const [note, setNote] = React.useState('');
       if (props && props.view === 'summary') {
         return h('span', null,
@@ -1948,6 +1951,12 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         setNote('保存中…');
         form.mutate([{ op: 'set', path: ['persona'], value: next }], form.state.revision)
           .then((ok) => setNote(ok ? '已保存，下一条提醒立即生效。' : 'Host 拒绝了这次修改。'))
+          .catch((error) => setNote(`保存失败：${error && error.message ? error.message : error}`));
+      };
+      const saveHint = (path, value, setter) => {
+        setter(value);
+        form.mutate([{ op: 'set', path: [path], value }], form.state.revision)
+          .then((ok) => setNote(ok ? '已保存，下一次鞭打生效。' : 'Host 拒绝了这次修改。'))
           .catch((error) => setNote(`保存失败：${error && error.message ? error.message : error}`));
       };
       const toggleEmotion = (next) => {
@@ -1977,6 +1986,20 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('span', { className: 'crop-config-hint' }, choice.hint))))),
         h('div', { className: 'crop-config-hint' },
           '提醒里的具体台词用 Markdown 覆盖 ~/.agentcrop/templates/voice/*.md，改完即时生效；常驻协议模板要重启宿主。'),
+        h('div', { className: 'crop-config-title', style: { marginTop: 14 } }, '鞭打三级文案（实验性）'),
+        [['emotionHint1', '1 级（轻拍）', hint1, setHint1],
+          ['emotionHint2', '2 级（连击）', hint2, setHint2],
+          ['emotionHint3', '3 级（很生气）', hint3, setHint3]].map(([field, label, value, setter]) =>
+          h('div', { key: field, style: { marginTop: 8 } },
+            h('div', { className: 'crop-config-hint' }, label + '：留空用内置文案'),
+            h('textarea', {
+              className: 'crop-config-input',
+              rows: 2,
+              value,
+              placeholder: '留空 = 内置文案',
+              onChange: (event) => setter(event.target.value),
+              onBlur: (event) => saveHint(field, event.target.value, setter),
+            }))),
         h('div', { className: 'crop-config-title', style: { marginTop: 14 } }, '情绪反馈（实验性）'),
         h('label', { className: 'crop-persona-option', 'data-active': emotionOn ? '' : undefined,
           style: { cursor: 'pointer' } },
@@ -2065,6 +2088,10 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       // The bundle's own row is `agent-crop-dsh` in its patch; the Plugins
       // page keys a row page as `<bundle>#<rowId>` and supplies the form for
       // the profile entry whose id is the row id.
+      ctx.effect(() => ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+        name: 'plugins.bundle.config',
+        key: 'agent-crop-dsh',
+      }, PersonaSettings)), 'crop: bundle settings page');
       ctx.effect(() => ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
         name: 'plugins.row.config',
         key: 'agent-crop-dsh#agent-crop-dsh',

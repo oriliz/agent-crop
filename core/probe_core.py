@@ -3011,14 +3011,17 @@ def emotion_hint(context: dict | None = None) -> str:
         return ""
     intensity = int(last.get("intensity") or 1)
     reason = str(last.get("reason") or "")
-    # 按用户定义的严重程度给明确动作，而不是一句笼统的“不满”：
-    # 1 级=重新审视方向/方法；2 级=翻经验、查以前有没有犯过类似错；3 级=停下来问用户。
+    # 按用户定义的严重程度给明确动作；设置页可用 KIT_EMOTION_HINT1/2/3 覆盖内置文案。
     scripts = {
         1: "用户轻拍了一下：对当前这步有点不满。重新想想现在的方式是不是正确的（方向/方法），再继续；",
         2: "用户连击了鞭子：明显对当前这步不满。先别急着继续——翻翻以前的记录和经验（crop 台账/sediment/improve），"
            "这个场景是不是犯过类似的错、有没有按既定的经验或规范来？找到依据再继续；",
         3: "用户很用力地鞭了：非常不满。停下来，直接问用户具体哪里不对、要不要回退或换方式，别自己猜着继续；",
     }
+    for level, key in ((1, "KIT_EMOTION_HINT1"), (2, "KIT_EMOTION_HINT2"), (3, "KIT_EMOTION_HINT3")):
+        custom = str(os.environ.get(key) or "").strip()
+        if custom:
+            scripts[level] = custom
     text = f"[crop] {scripts.get(intensity, scripts[1])}"
     if reason:
         text += f"（用户选的原因：{reason}）"
