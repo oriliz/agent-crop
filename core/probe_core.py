@@ -2992,7 +2992,7 @@ def record_emotion(args: dict, context: dict | None = None) -> dict:
 
 def load_settings() -> dict:
     """用户设置（~/.agentcrop/settings.json），设置页写入。"""
-    path = os.path.join(os.path.dirname(paths()["closed_dir"]), "settings.json")
+    path = os.path.join(os.path.expanduser("~/.agentcrop"), "settings.json")
     try:
         with open(path, encoding="utf-8") as handle:
             value = json.load(handle)
