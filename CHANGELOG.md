@@ -8,6 +8,15 @@ Agent Crop（npm 包 `agent-crop-dsh`）的版本历史。结构参考 Keep a Ch
 > **v0.4.0 及更早：未整理。** 那段时间是边写边改，提交里混着设计草稿与试验，
 > 没有逐条回溯。要看那段历史，直接读 `git log`。
 
+## [Unreleased]
+
+### Added（新增）
+
+- 插件页配置：Agent Crop 的行页多了「鞭策风格」单选（奴隶主 / 和蔼的前辈 /
+  经验丰富的同事 / 放任自由的家长），写入 `persona`，保存即生效。
+  之前这个字段只有 Config schema，没有客户端配置页，用户只能改 profile 的
+  `cordis.patch.yml`。
+
 ## [0.8.2] — 2026-11-18
 
 ### Added（新增）

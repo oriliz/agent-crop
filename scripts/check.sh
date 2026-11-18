@@ -15,7 +15,7 @@ if [ ! -d node_modules ]; then
   # dsh/lib 里 import 了 @deepseek-ai/schemastery，测试需要它
   npm ci --no-audit --no-fund || fail=1
 fi
-node --test dsh/test/index.test.mjs || fail=1
+node --test dsh/test/index.test.mjs dsh/test/client.test.mjs || fail=1
 
 step "probe smoke"
 bash tests/probe-smoke.sh || fail=1
