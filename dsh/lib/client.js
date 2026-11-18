@@ -2047,6 +2047,83 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       return node;
     }
 
+    /* Crop 自己的设置页（侧边栏入口）：不依赖插件管理器的 form，直接读写 settings.json。 */
+    function SettingsPage() {
+      const [state, setState] = React.useState({ loaded: false, emotionFeedback: true, emotionHint1: '', emotionHint2: '', emotionHint3: '', note: '' });
+      React.useEffect(() => {
+        let alive = true;
+        fetch(`${API}/settings`, { cache: 'no-store' })
+          .then((response) => response.json())
+          .then((data) => { if (alive) setState((prev) => ({ ...prev, ...data, loaded: true, note: '' })); })
+          .catch(() => { if (alive) setState((prev) => ({ ...prev, loaded: true, note: '读取失败' })); });
+        return () => { alive = false; };
+      }, []);
+      const save = (patch) => {
+        setState((prev) => ({ ...prev, ...patch, note: '保存中…' }));
+        fetch(`${API}/settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        })
+          .then((response) => response.json())
+          .then((data) => setState((prev) => ({ ...prev, ...data, note: '已保存，下一次生效' })))
+          .catch(() => setState((prev) => ({ ...prev, note: '保存失败' })));
+      };
+      const hintField = (key, label) => h('div', { key, style: { marginTop: 8 } }, [
+        h('div', { key: 'l', className: 'crop-config-hint' }, label + '：留空用内置文案'),
+        h('textarea', {
+          key: 't',
+          className: 'crop-config-input',
+          rows: 2,
+          value: state[key] || '',
+          onChange: (event) => setState((prev) => ({ ...prev, [key]: event.target.value })),
+          onBlur: (event) => save({ [key]: event.target.value }),
+        }),
+      ]);
+      return h('div', { className: 'crop-page' },
+        h('div', { className: 'crop-card' }, [
+          h('h2', { key: 't', className: 'crop-global-title' }, 'Crop · 设置'),
+          h('div', { key: 'n', className: 'crop-config-hint' },
+            '实验性功能；保存写入 ~/.agentcrop/settings.json，下一次提醒 / 鞭打立即生效。'),
+          h('div', { key: 'e1', className: 'crop-config-title', style: { marginTop: 16 } }, '情绪反馈'),
+          h('label', { key: 'e2', className: 'crop-persona-option', style: { cursor: 'pointer' } }, [
+            h('input', {
+              key: 'c',
+              type: 'checkbox',
+              checked: state.emotionFeedback !== false,
+              onChange: (event) => save({ emotionFeedback: event.target.checked }),
+            }),
+            h('span', { key: 'b', className: 'crop-persona-body' }, [
+              h('b', { key: 't' }, '允许「鞭打宠物」把不满反馈给 AI'),
+              h('span', { key: 'h', className: 'crop-config-hint' }, '关掉后 AI 收不到情绪信号，只保留点击动画。'),
+            ]),
+          ]),
+          h('div', { key: 'h1', className: 'crop-config-title', style: { marginTop: 16 } }, '鞭打三级文案'),
+          hintField('emotionHint1', '1 级（轻拍）'),
+          hintField('emotionHint2', '2 级（连击）'),
+          hintField('emotionHint3', '3 级（很生气）'),
+          state.note ? h('div', { key: 'note', className: 'crop-config-note' }, state.note) : null,
+        ]));
+    }
+
+    function SettingsPanelIcon({ size, active }) {
+      return h('svg', {
+        viewBox: '0 0 16 16',
+        width: size,
+        height: size,
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.3,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'data-dsh-panel-entry': 'crop-settings',
+        'aria-hidden': true,
+      }, [
+        h('circle', { key: 'c', cx: 8, cy: 8, r: 2.2 }),
+        h('path', { key: 'p', d: 'M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1' }),
+      ]);
+    }
+
     function installStyles() {
       const existing = document.getElementById(STYLE_ID);
       if (existing) return existing;
@@ -2081,6 +2158,16 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         order: PANEL_ORDER,
         label: () => 'Crop 全局',
       }, CropPanelIcon)), 'crop: global panel row');
+      ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+        name: 'sidebar.panellist',
+        id: 'crop-settings',
+        order: PANEL_ORDER + 1,
+        label: () => 'Crop 设置',
+      }, SettingsPanelIcon)), 'crop: settings panel row');
+      ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
+        name: 'main',
+        key: 'crop-settings',
+      }, SettingsPage)), 'crop: settings page');
       ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
         name: 'main',
         key: PANEL_ID,

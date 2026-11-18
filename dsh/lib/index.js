@@ -6,8 +6,8 @@
  * the returned notes at the next model step.  Zero runtime dependencies.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
-import { readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import z from '@deepseek-ai/schemastery';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -173,6 +173,15 @@ function setting(value, fallback) {
 }
 
 export function apply(ctx, config = {}) {
+  const settingsFile = () => join(homedir(), '.agentcrop', 'settings.json');
+  const readSettings = () => {
+    try { return JSON.parse(readFileSync(settingsFile(), 'utf8')); } catch { return {}; }
+  };
+  const writeSettings = (value) => {
+    mkdirSync(dirname(settingsFile()), { recursive: true });
+    writeFileSync(settingsFile(), JSON.stringify(value, null, 2) + '\n');
+  };
+
   const python = setting(config?.python, 'python3');
   const emotionFeedback = setting(config?.emotionFeedback, true);
   const states = new Map();
@@ -311,6 +320,25 @@ export function apply(ctx, config = {}) {
       res.end();
       return true;
     };
+    const settingsHandler = (req, res) => {
+      if (rejected(req, res)) return;
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const patch = JSON.parse(body || '{}');
+            const next = { ...readSettings(), ...patch };
+            writeSettings(next);
+            reply(res, 200, next);
+          } catch (error) {
+            reply(res, 400, { error: String(error?.message ?? error) });
+          }
+        });
+        return;
+      }
+      reply(res, 200, readSettings());
+    };
     const relay = (payloadOf) => (req, res) => {
       if (rejected(req, res)) return;
       try {
@@ -322,6 +350,11 @@ export function apply(ctx, config = {}) {
     };
     ctx.effect(() => {
       const disposers = [
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/settings',
+          handler: settingsHandler,
+        }),
         webServer.register({
           kind: 'exact',
           path: '/api/agent-crop/emotion',
@@ -1048,7 +1081,7 @@ export function apply(ctx, config = {}) {
         if (status) notes.push(status);
       }
 
-      if (emotionFeedback) {
+      if (readSettings().emotionFeedback !== false) {
         const emotionHint = callCore({ op: 'emotion_hint', context: { sid, workspace } });
         if (emotionHint) notes.push(emotionHint);
       }
