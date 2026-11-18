@@ -853,6 +853,19 @@ export function apply(ctx, config = {}) {
       },
       required: ['task_ids'],
     },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          text: { type: 'string' },
+          confirmed: { type: 'array', items: { type: 'string' } },
+          missing: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['text', 'confirmed', 'missing'],
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
     async execute(args) {
       const ids = (args?.task_ids || []).map((item) => String(item).trim()).filter(Boolean);
       if (!ids.length) throw new Error('crop_confirm requires task_ids');
