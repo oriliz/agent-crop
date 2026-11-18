@@ -45,6 +45,12 @@
 | 子代理 | `work.parent_work_id`，总耗时用递归 CTE（M6） |
 | 未归因时间 | 显式归到 session，面板单列「未归因时间」，不报红（M2） |
 | 迁移时机 | **下次会话启动时**执行 + 前后各打一条 event 留断点（评审 D/G） |
+| 生成列容错 | `CASE WHEN json_valid(payload)`；坏数据进 `ingest_error`（S1） |
+| 归档 | 单个 `cold_archive.db` + manifest，ATTACH 热/冷两个（S2） |
+| 迁移栅栏 | 跨进程锁 + generation/fencing token + migration journal（S3） |
+| 状态/确认 | `state` + `confirmation` 三态 + CHECK + `work_submitted/confirmed/reopened`（S4） |
+| 事件身份 | `event_uuid` + `session_seq`；键域 `(host, session_id)`（S5） |
+| 文档口径 | §4 DDL + §6 原则为唯一 normative；§9 只留历史（S6） |
 
 ## 3. 实体与关系
 
@@ -71,7 +77,8 @@ CREATE TABLE work (
   work_id TEXT PRIMARY KEY, goal TEXT, type TEXT, difficulty TEXT,
   expect_min REAL, expect_why TEXT,
   state TEXT NOT NULL DEFAULT 'open',   -- open|suspended|closed
-  confirmed INTEGER NOT NULL DEFAULT 0, -- 0=等人类确认, 1=已确认
+  confirmation TEXT NOT NULL DEFAULT 'not_requested', -- not_requested|pending|confirmed（S4）
+  submitted_at INTEGER, confirmed_at INTEGER,
   parent_work_id TEXT,                  -- 子代理/子工作（M6）
   expect_first REAL,                    -- 从 estimate 首行物化（work_open 时写首行，R4）；当前预期用 expect_min
   workspace TEXT, created_at INTEGER, updated_at INTEGER,
@@ -79,27 +86,38 @@ CREATE TABLE work (
 );
 
 CREATE TABLE event (
-  id INTEGER PRIMARY KEY,              -- 自增；append-only 不需要 AUTOINCREMENT（R7）
-  ts INTEGER NOT NULL, host TEXT NOT NULL, session_id TEXT,
-  work_id TEXT,                        -- 逻辑关联，不加外键（R2：写入顺序/ purge）
+  id INTEGER PRIMARY KEY,              -- 仅库内序号；跨库/重放身份用 event_uuid（S5）
+  event_uuid TEXT NOT NULL,            -- 生产者生成、重试不变；跨库/合并/重放的身份
+  ts INTEGER NOT NULL,
+  host TEXT NOT NULL,
+  session_id TEXT,                     -- 会话键域 = (host, session_id)（S5）
+  session_seq INTEGER,                 -- 每会话单调序号；会话内因果（S5）
+  source_ordinal INTEGER,              -- 迁移来源顺序；跨会话排序用（ts,host,session_id,seq）
+  work_id TEXT,                        -- 逻辑关联，不加外键（R2）
   kind TEXT NOT NULL,
-  phase TEXT GENERATED ALWAYS AS (json_extract(payload,'$.phase')) VIRTUAL,
-  summary TEXT GENERATED ALWAYS AS (json_extract(payload,'$.summary')) VIRTUAL,
-  cause TEXT GENERATED ALWAYS AS (json_extract(payload,'$.cause')) VIRTUAL,
-  category TEXT GENERATED ALWAYS AS (json_extract(payload,'$.category')) VIRTUAL,
-  minutes REAL GENERATED ALWAYS AS (json_extract(payload,'$.minutes')) VIRTUAL,
-  origin TEXT GENERATED ALWAYS AS (json_extract(payload,'$.origin')) VIRTUAL,
-  payload TEXT NOT NULL DEFAULT '{}',
-  schema_ver INTEGER NOT NULL DEFAULT 2,
-  idem_key TEXT                        -- 普通索引；事实日志不设 UNIQUE（M4）
+  phase TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(payload) THEN json_extract(payload,'$.phase') END) VIRTUAL,
+  summary TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(payload) THEN json_extract(payload,'$.summary') END) VIRTUAL,
+  cause TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(payload) THEN json_extract(payload,'$.cause') END) VIRTUAL,
+  category TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(payload) THEN json_extract(payload,'$.category') END) VIRTUAL,
+  minutes REAL GENERATED ALWAYS AS (CASE WHEN json_valid(payload) THEN json_extract(payload,'$.minutes') END) VIRTUAL,
+  origin TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(payload) THEN json_extract(payload,'$.origin') END) VIRTUAL,
+  payload TEXT NOT NULL DEFAULT '{}',  -- 非法 JSON 不再拒整行（S1）
+  schema_ver INTEGER NOT NULL DEFAULT 3,
+  idem_key TEXT                        -- 普通索引；事实日志无条件接受（M4）
 );
-CREATE INDEX idx_event_idem ON event(idem_key);
--- 部分索引：健康度「缺 work_id」类查询（E）
-CREATE INDEX idx_tool_noid ON event(ts) WHERE kind='tool' AND work_id IS NULL;
 CREATE INDEX idx_event_ts      ON event(ts);
 CREATE INDEX idx_event_work_ts ON event(work_id, ts);
-CREATE INDEX idx_event_sid_ts  ON event(session_id, ts);
+CREATE INDEX idx_event_sid_ts  ON event(host, session_id, ts);
 CREATE INDEX idx_event_kind_ts ON event(kind, ts);
+CREATE INDEX idx_event_idem    ON event(idem_key);
+CREATE INDEX idx_event_uuid    ON event(event_uuid);
+CREATE INDEX idx_tool_noid     ON event(ts) WHERE kind='tool' AND work_id IS NULL;
+
+-- 坏数据不进事实流，进 dead-letter（S1）
+CREATE TABLE ingest_error (
+  id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, host TEXT,
+  session_id TEXT, kind TEXT, error TEXT NOT NULL, raw TEXT NOT NULL
+);
 
 CREATE TABLE block (
   block_start INTEGER NOT NULL, session_id TEXT NOT NULL,
@@ -110,15 +128,17 @@ CREATE TABLE block (
 -- 归属不物化：由 work_claim / work_switch 事件按时间点派生（M1 方案 b）
 
 CREATE TABLE binding (
-  session_id TEXT PRIMARY KEY, work_id TEXT NOT NULL,
+  host TEXT NOT NULL, session_id TEXT NOT NULL, work_id TEXT NOT NULL,
+  PRIMARY KEY (host, session_id),
   state TEXT NOT NULL DEFAULT 'active',  -- active|ended
   switched_at INTEGER, ended_at INTEGER, updated_at INTEGER
 );
 
 CREATE TABLE session (
-  session_id TEXT PRIMARY KEY, host TEXT, workspace TEXT,
-  started_at INTEGER NOT NULL,
-  ended_at INTEGER                      -- derived：COALESCE(session_end.ts, MAX(event.ts)+IDLE_MIN)（R6）
+  host TEXT NOT NULL, session_id TEXT NOT NULL,   -- 键域 = (host, session_id)（S5）
+  workspace TEXT, started_at INTEGER NOT NULL,
+  ended_at INTEGER,                     -- derived：COALESCE(session_end.ts, MAX(event.ts)+IDLE_MIN)（R6）
+  PRIMARY KEY (host, session_id)
 );
 
 CREATE TABLE estimate (              -- 预估改口时间序列（M5）
@@ -190,17 +210,25 @@ CREATE TABLE adjustment (
 6. **自然日**用本地时区显式计算；存储一律 UTC 毫秒；
 7. **事实日志无条件接受**：UNIQUE 约束只留给业务表；去重在写入层（应用级窗口/游标）做；
 8. **每个可变字段都有对应事件**：work 的 state/expect/type 等变更写 `work_update`，否则 rebuild 只能恢复计数、恢复不了语义；
-9. **未归因时间是真实时间**：绑定前的事件归到 session，面板单列「未归因」，不当作缺失报警。
+9. **未归因时间是真实时间**：绑定前的事件归到 session，面板单列「未归因」，不当作缺失报警；
+10. **ingest 不被投影查询反向卡住**：生成列用 `json_valid` 保护；坏数据进 `ingest_error` dead-letter，不拒整行；
+11. **事件身份与顺序**：`event_uuid`（生产者生成、重试不变）+ 会话内 `session_seq`；跨会话排序 `(ts, host, session_id, session_seq, source_ordinal)`。
 
 ## 7. 迁移
 
-一次性切换，时机放在**下次会话启动时**（用户本来就在等宿主起来，不额外打断）：
+一次性切换，时机放在**下次会话启动时**（用户本来就在等宿主起来，不额外打断）。
 
-0. **前置核查**：扫描所有候选 data_dir，列出找到的 `events*.jsonl` 的条数 / 时间跨度 / `schema_ver` 分布，打印给用户确认（避免「探测到另一个目录、只迁了一半」）；
-1. 提示 + 迁移前后各打一条 event（历史里能看到断点）；
-2. 暂停写入（hook 只读）→ 导入（游标 + 幂等断点）→ 切读 → 恢复写入；13k 事件 <30s；
-3. 失败自动回滚 JSONL；**切换后保留 7 天双写**（SQLite 为主 + 每日 `crop export --format jsonl` 全量快照），否则「可回滚」只覆盖迁移那一刻、不覆盖迁移后发现问题；
-4. 旧文件归档 `archive/`，保留 `KIT_STORAGE=jsonl` 一个版本周期；发布时发破坏性变更公告。
+**协议（S3）**：`prepare → global freeze → import → verify → atomic cutover → unfreeze`
+
+0. **前置核查**：扫描所有候选 `data_dir`，列出 `events*.jsonl` 的条数 / 时间跨度 / `schema_ver` 分布，用户确认；
+1. `prepare`：创建临时库；持久化 **migration journal**（阶段 + 高水位）；
+2. `global freeze`：**跨进程锁 + storage generation / fencing token**——所有写入方（hook/plugin/CLI/旧版本进程）共同检查，旧 generation 一律拒绝写入；仅靠「hook 只读」不够；
+3. `import`：游标导入（幂等断点）；`verify`：每个来源/kind 的行数、时间范围、投影校验；
+4. `atomic cutover`：切换 generation；`unfreeze`；
+5. 崩溃恢复：journal 决定续导/重导/清理临时库；**自动回滚只允许在 cutover 前**；cutover 后按 R3 双写/导出恢复；
+6. **切换后保留 7 天双写**（SQLite 主 + 每日 `crop export --format jsonl` 全量快照），「可回滚」覆盖迁移后 7 天；
+7. 旧文件归档 `archive/`，保留 `KIT_STORAGE=jsonl` 一个版本周期；发布时发破坏性变更公告；
+8. 测试：每个阶段 `kill -9` + 「迁移期间另一个进程仍尝试写」。
 
 ## 8. 性能目标
 
@@ -215,7 +243,12 @@ CREATE TABLE adjustment (
 | 事件写入（批写） | — | — | P95 < 5ms |
 | 迁移导入（13k） | — | — | < 5s |
 
-**热冷分离**：主库只留 90 天；按月 `VACUUM INTO archive/YYYY-MM.db`；跨期查询 `ATTACH`；保留 2 年。
+**热冷分离（S2 修正）**：主库只留 90 天；**单个 `cold_archive.db` + `archive_manifest`**（记录每个月的行数/ts 范围/哈希），跨期查询最多 `ATTACH` 热/冷两个库（避免 `SQLITE_MAX_ATTACHED=10` 限制）。
+
+- `VACUUM INTO` 只用于每日**整库备份**（一致性复制），不用于按月切片；
+- 按月归档 = 新建冷库后 `INSERT ... SELECT WHERE ts...` → 核对行数/min-max ts/哈希 → 再从热库删除；
+- 保留规则：跨过 cutoff 仍未关闭的 Work，其**完整事件历史**必须留在可重建范围内；
+- 验收：24 个月跨期查询 + 跨月未关闭 Work 重建。
 
 ## 9. 外部评审问题与应对
 
@@ -260,6 +293,12 @@ CREATE TABLE adjustment (
 | R5 elapsed_min 冻结口径 | 采纳：落盘 + `calc_ver` 标注 |
 | R6 session.ended_at 无填充规则 | 采纳：文档写死 `COALESCE(session_end, MAX(event.ts)+IDLE_MIN)` |
 | R7 AUTOINCREMENT 无收益 | 采纳：去掉，`INTEGER PRIMARY KEY` 自增 |
+| S1 生成列撞非法 JSON | 采纳：`CASE WHEN json_valid` + `ingest_error` dead-letter |
+| S2 VACUUM INTO 不是月度归档 | 采纳：单个 cold archive + manifest；ATTACH 两库；跨月未关闭 Work 保留完整历史 |
+| S3 迁移缺跨进程栅栏 | 采纳：prepare/freeze/import/verify/cutover/unfreeze + generation + journal |
+| S4 confirmed 二值不够 | 采纳：`confirmation` 三态 + CHECK + 三个事件 + reducer + golden stream |
+| S5 事件身份/顺序/键域 | 采纳：`event_uuid` + `session_seq`；键域 `(host, session_id)` |
+| S6 文档旧口径残留 | 采纳：§4 DDL + §6 原则为唯一 normative，§9 只留历史 |
 
 ## 10. 讨论结论（2026-11-18）
 
