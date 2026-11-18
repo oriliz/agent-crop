@@ -981,17 +981,10 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         if report.get("sediment"):
             append_event({"ev": "work_sediment", "sid": sid, "work_id": report["task_id"],
                           "sediment": report["sediment"]})
-        # B 方案（实验性）：end 只是「提交收尾」——人类确认前不关闭，超时也不自动确认。
-        # KIT_CONFIRM_FLOW=legacy 可回到旧行为（end 直接关闭），用于回滚。
-        if os.environ.get("KIT_CONFIRM_FLOW", "experimental") == "legacy":
-            append_event({"ev": "work_close", "sid": sid, "work_id": report["task_id"],
-                          "verdict": report.get("verdict", "")})
-            close_task(report["task_id"])
-        else:
-            pending_task(report["task_id"], report)
-            append_event({"ev": "work_pending", "sid": sid, "work_id": report["task_id"],
-                          "verdict": report.get("verdict", "")})
-            record["pending_confirm"] = True
+        # B 方案：end 只是「提交收尾」——人类确认前不关闭，超时也不自动确认。
+        pending_task(report["task_id"], report)
+        append_event({"ev": "work_pending", "sid": sid, "work_id": report["task_id"],
+                      "verdict": report.get("verdict", "")})
         # #43：收尾不立刻解绑——下一轮开头不该再被催 start，墙钟也要能跨轮累计。
         mark_binding_ended(sid, report["task_id"])
         record["pending_confirm"] = True
