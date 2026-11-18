@@ -1645,8 +1645,8 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('th', { key: 't', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '工具'),
           h('th', { key: 's', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '口径'),
           h('th', { key: 'e', style: { ...cellRight, fontSize: '11.5px' } }, '事件'),
-          h('th', { key: 'c', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '趋势'),
-          h('th', { key: 'f', style: { ...cellRight, fontSize: '11.5px' } }, '完整'),
+          h('th', { key: 'c', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '趋势（最新完整天）'),
+          h('th', { key: 'f', style: { ...cellRight, fontSize: '11.5px' } }, '完整（全窗口）'),
           showClosure ? h('th', { key: 'cl', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '闭环') : null,
         ]));
 
@@ -1755,7 +1755,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
                         `${coverageNote ? coverageNote + ' · ' : ''}${row.session_coverage == null ? '—' : pctText(row.session_coverage)}`),
                     ]),
             ]),
-            h('td', { key: 'f', style: { ...cellRight, color: row.events && row.field_completeness < .95 ? '#b45309' : undefined } }, [
+            h('td', { key: 'f', style: { ...cellRight, color: latestTone === '#ef4444' ? '#ef4444' : (row.events ? '#9aa8c4' : undefined) } }, [
               row.events ? pctText(row.field_completeness) : '—',
               missing ? h('div', { key: 'm', className: 'crop-mini' }, `缺 ${missing}`) : null,
             ]),
