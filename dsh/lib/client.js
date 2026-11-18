@@ -1719,9 +1719,12 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('b', null, pctText(value)));
           const latest = latestComplete(row.daily);
           const latestTone = latest ? trendColor(trendValue(latest), row['class']) : null;
-          const rowClass = red || latestTone === '#ef4444'
+          // 行底色只看「最新完整天」：历史坏、当前好的行不该整行红。
+          const rowClass = latestTone === '#ef4444'
             ? 'crop-row-red'
-            : (latestTone === '#eab308' || latestTone === '#fb923c' ? 'crop-row-warn' : undefined);
+            : (latestTone === '#eab308' || latestTone === '#fb923c'
+              ? 'crop-row-warn'
+              : (latest ? undefined : (red ? 'crop-row-red' : undefined)));
           return h('tr', { key: row.tool, className: rowClass }, [
             h('td', { key: 'n', style: cell }, [
               h('div', { key: 't' }, [
