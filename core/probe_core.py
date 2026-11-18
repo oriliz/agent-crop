@@ -3011,15 +3011,18 @@ def emotion_hint(context: dict | None = None) -> str:
         return ""
     intensity = int(last.get("intensity") or 1)
     reason = str(last.get("reason") or "")
-    lead = {
-        1: "用户刚轻拍了一下：对你当前这步有点不满，但还能接受。",
-        2: "用户刚连击了鞭子：明显对当前这步不满。",
-        3: "用户刚很用力地鞭了：非常不满。",
-    }.get(intensity, "用户刚表达了不满。")
-    text = f"[crop] {lead}停下来想想这一步是不是做错了"
+    # 按用户定义的严重程度给明确动作，而不是一句笼统的“不满”：
+    # 1 级=重新审视方向/方法；2 级=翻经验、查以前有没有犯过类似错；3 级=停下来问用户。
+    scripts = {
+        1: "用户轻拍了一下：对当前这步有点不满。重新想想现在的方式是不是正确的（方向/方法），再继续；",
+        2: "用户连击了鞭子：明显对当前这步不满。先别急着继续——翻翻以前的记录和经验（crop 台账/sediment/improve），"
+           "这个场景是不是犯过类似的错、有没有按既定的经验或规范来？找到依据再继续；",
+        3: "用户很用力地鞭了：非常不满。停下来，直接问用户具体哪里不对、要不要回退或换方式，别自己猜着继续；",
+    }
+    text = f"[crop] {scripts.get(intensity, scripts[1])}"
     if reason:
         text += f"（用户选的原因：{reason}）"
-    text += "；先说明问题再继续，必要时回退。"
+    text += "先说明判断再往下做。"
     append_event({"ev": "emotion_delivered", "sid": sid, "at": now_ms(), "intensity": intensity})
     return text
 
