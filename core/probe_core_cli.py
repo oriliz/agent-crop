@@ -162,6 +162,10 @@ def dispatch(payload: dict):
         return core.set_work_state(payload.get("work_id") or "", "suspended")
     if op == "work_resume":
         return core.set_work_state(payload.get("work_id") or "", "open")
+    if op == "emotion":
+        return core.record_emotion(payload.get("args") or {}, payload.get("context") or {})
+    if op == "emotion_hint":
+        return core.emotion_hint(payload.get("context") or {})
     if op == "pending_confirm_hint":
         return core.pending_confirm_hint(payload.get("context") or {})
     if op == "work_confirm":

@@ -2957,6 +2957,71 @@ def format_work_reminder(health: dict, config: dict) -> str:
     return _nudge(tier, _nudge_meta(health, config))
 
 
+def record_emotion(args: dict, context: dict | None = None) -> dict:
+    """用户对运行中 AI 的不满（实验性）：鞭打宠物的点击/连击。"""
+    context = context or {}
+    runtime = read_runtime()
+    sid = str(context.get("sid") or runtime.get("sid") or "unknown")
+    workspace = str(context.get("workspace") or "")
+    try:
+        intensity = int(args.get("intensity") or 1)
+    except Exception:
+        intensity = 1
+    intensity = max(1, min(3, intensity))
+    try:
+        count = int(args.get("count") or 1)
+    except Exception:
+        count = 1
+    count = max(1, count)
+    reason = str(args.get("reason") or "")[:120]
+    event = {
+        "ev": "emotion",
+        "t": now_ms(),
+        "host": host(),
+        "sid": sid,
+        "workspace": workspace,
+        "intensity": intensity,
+        "count": count,
+        "reason": reason,
+    }
+    append_event(event)
+    return {"recorded": True, "intensity": intensity, "count": count, "at": event["t"]}
+
+
+def _emotion_delivered(at: int) -> bool:
+    return any(event.get("ev") == "emotion_delivered"
+               and int(event.get("at") or 0) >= int(at or 0)
+               for event in load_events(limit=500))
+
+
+def emotion_hint(context: dict | None = None) -> str:
+    """把最近一次未被消费的情绪事件变成给 AI 的一句话（5 分钟内有效）。"""
+    context = context or {}
+    sid = str(context.get("sid") or "")
+    events = [event for event in load_events(sid=sid or None) if event.get("ev") == "emotion"]
+    if not events:
+        return ""
+    last = events[-1]
+    at = int(last.get("t") or 0)
+    if not at or now_ms() - at > 5 * 60000:
+        return ""
+    if _emotion_delivered(at):
+        return ""
+    intensity = int(last.get("intensity") or 1)
+    reason = str(last.get("reason") or "")
+    lead = {
+        1: "用户刚轻拍了一下：对你当前这步有点不满，但还能接受。",
+        2: "用户刚连击了鞭子：明显对当前这步不满。",
+        3: "用户刚很用力地鞭了：非常不满。",
+    }.get(intensity, "用户刚表达了不满。")
+    text = f"[crop] {lead}停下来想想这一步是不是做错了"
+    if reason:
+        text += f"（用户选的原因：{reason}）"
+    text += "；先说明问题再继续，必要时回退。"
+    append_event({"ev": "emotion_delivered", "sid": sid, "at": now_ms(), "intensity": intensity})
+    return text
+
+
 def record_review(args: dict, context: dict | None = None) -> dict:
     """AI-judged rework level after user feedback. No keyword matching anywhere."""
     context = context or {}

@@ -312,6 +312,18 @@ export function apply(ctx, config = {}) {
       const disposers = [
         webServer.register({
           kind: 'exact',
+          path: '/api/agent-crop/emotion',
+          handler: relay((url) => ({
+            op: 'emotion',
+            args: {
+              intensity: Number(url.searchParams.get('intensity') ?? 1) || 1,
+              count: Number(url.searchParams.get('count') ?? 1) || 1,
+              reason: url.searchParams.get('reason') ?? '',
+            },
+            context: { sid: url.searchParams.get('sid') ?? '' },
+          })),
+        }),
+        webServer.register({
           path: '/api/agent-crop/global',
           handler: relay((url) => ({
             op: 'global',
@@ -1023,6 +1035,9 @@ export function apply(ctx, config = {}) {
         const status = callCore({ op: 'work_status', context: { sid, workspace } });
         if (status) notes.push(status);
       }
+
+      const emotionHint = callCore({ op: 'emotion_hint', context: { sid, workspace } });
+      if (emotionHint) notes.push(emotionHint);
 
       const pendingHint = callCore({ op: 'pending_confirm_hint', context: { sid, workspace } });
       if (pendingHint) notes.push(pendingHint);

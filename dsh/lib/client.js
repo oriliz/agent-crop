@@ -186,6 +186,15 @@ body[data-ds-dark-theme] .crop-card {
   border-color: var(--dsw-alias-state-business-primary, #4a5fa8);
 }
 
+.crop-whip-btn {
+  margin-left: 8px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(248,113,113,.45); background: rgba(248,113,113,.12);
+  color: #fecaca; font-size: 12px;
+}
+.crop-whip-btn:active { transform: translateY(1px) scale(.97); }
+.crop-whip-flash { margin-left: 6px; font-size: 12px; color: #fca5a5; animation: crop-whip-pop .9s ease-out; }
+@keyframes crop-whip-pop { 0% { opacity: 0; transform: translateY(4px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
+
 .crop-global-asof {
   margin-left: auto;
   font-size: 11px;
@@ -1372,6 +1381,20 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         h('div', { className: `crop-delta${delta.tone ? ` crop-${delta.tone}` : ''}` }, delta.text),
         h('div', { className: 'crop-muted crop-metric-n' }, note));
 
+      const [whipFlash, setWhipFlash] = React.useState('');
+      const whipRef = React.useRef({ count: 0, last: 0 });
+      const whip = () => {
+        const now = Date.now();
+        const meter = whipRef.current;
+        if (now - meter.last < 2000) meter.count += 1;
+        else meter.count = 1;
+        meter.last = now;
+        const intensity = meter.count >= 6 ? 3 : (meter.count >= 3 ? 2 : 1);
+        fetch(`${API}/emotion?intensity=${intensity}&count=${meter.count}`, { cache: 'no-store' }).catch(() => {});
+        setWhipFlash(intensity === 3 ? '啪！很生气' : (intensity === 2 ? '啪！' : '轻拍'));
+        window.setTimeout(() => setWhipFlash(''), 1200);
+      };
+
       const loadingCard = !data
         ? h('div', { key: 'state', className: 'crop-card' },
             h('div', { className: 'crop-muted', style: S.quiet },
@@ -1400,6 +1423,14 @@ body[data-ds-dark-theme] .crop-page .crop-card {
               ...(((data && data.hosts) || []).map((item) =>
                 h('option', { key: item, value: item }, item))),
             ])),
+          whipFlash ? h('span', { key: 'whip-flash', className: 'crop-whip-flash' }, whipFlash) : null,
+          h('button', {
+            key: 'whip',
+            type: 'button',
+            className: 'crop-whip-btn',
+            title: '对 AI 不满：点一下=轻拍（1 级），连击 3 下=明显不满（2 级），连击 6 下=很生气（3 级）',
+            onClick: whip,
+          }, '🐋 鞭一下'),
           h('div', { className: 'crop-modes' },
             [['overview', '概览'], ['health', '健康度']].map(([value, label]) => h('button', {
               key: value,
