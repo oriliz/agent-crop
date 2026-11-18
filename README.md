@@ -8,6 +8,8 @@
 
 **Agent Crop 是给 AI 的一根马鞭：催它交活，逼它复盘，让它自己越用越顺。**
 
+<sub>[为什么做它 →](docs/WHY.md)（始于一个具体的迷失：在并发 agent 与上下文切换里，不知道时间到底花在了哪）</sub>
+
 <sub>测量 → 归因 → 优化 → 验证 · 本地 JSONL · 不上传</sub>
 
 <sub>[中文](README.md) · [English](README.en.md)</sub>
