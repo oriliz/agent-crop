@@ -192,6 +192,11 @@ body[data-ds-dark-theme] .crop-card {
   color: #fecaca; font-size: 12px;
 }
 .crop-whip-btn:active { transform: translateY(1px) scale(.97); }
+.crop-whip-float {
+  position: fixed; right: 18px; top: 50%; transform: translateY(-50%);
+  z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.crop-whip-float .crop-whip-flash { margin-left: 0; }
 .crop-whip-flash { margin-left: 6px; font-size: 12px; color: #fca5a5; animation: crop-whip-pop .9s ease-out; }
 @keyframes crop-whip-pop { 0% { opacity: 0; transform: translateY(4px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
 
@@ -860,20 +865,6 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const [flashIv, setFlashIv] = React.useState(null);
       const [hotMarker, setHotMarker] = React.useState(null);
       const dragRef = React.useRef(null);
-      const [whipFlash, setWhipFlash] = React.useState('');
-      const whipRef = React.useRef({ count: 0, last: 0 });
-      const whip = () => {
-        const now = Date.now();
-        const meter = whipRef.current;
-        if (now - meter.last < 2000) meter.count += 1;
-        else meter.count = 1;
-        meter.last = now;
-        const intensity = meter.count >= 6 ? 3 : (meter.count >= 3 ? 2 : 1);
-        const sid = encodeURIComponent(sessionId || '');
-        fetch(`${API}/emotion?intensity=${intensity}&count=${meter.count}&sid=${sid}`, { cache: 'no-store' }).catch(() => {});
-        setWhipFlash(intensity === 3 ? '啪！很生气' : (intensity === 2 ? '啪！' : '轻拍'));
-        window.setTimeout(() => setWhipFlash(''), 1200);
-      };
       if (error || !data) {
         return h('div', { className: 'crop-page' },
           h('div', { className: 'crop-card' },
@@ -1063,14 +1054,6 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('i', { className: 'work', style: { width: pct(wall ? (activeMs / wall) * 100 : 0) } }),
           h('i', { className: 'wait', style: { width: pct(wall ? (waitMs / wall) * 100 : 0) } })),
         h('div', { className: 'crop-muted crop-small' }, `活跃 ${fmtSpan(activeMs)} · 等待 ${fmtSpan(waitMs)}`),
-        h('button', {
-          key: 'whip',
-          type: 'button',
-          className: 'crop-whip-btn',
-          title: '对当前会话的 AI 不满：点=轻拍，连击=不满，连击 6 下=很生气（可再点关闭前先确认设置里的情绪反馈开关）',
-          onClick: whip,
-        }, '🐋 鞭一下'),
-        whipFlash ? h('span', { key: 'whip-flash', className: 'crop-whip-flash' }, whipFlash) : null,
         h('span', { className: 'crop-persona-chip' }, `你是一个${PERSONA_LABEL[persona] || persona}`),
         h('div', { className: 'crop-sess-turn' }, `本回合 ${fmtSpan((data.current_minutes || 0) * 60000)}`),
         h('div', { className: 'crop-sess-stats' },
@@ -2007,6 +1990,34 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         note ? h('div', { className: 'crop-config-note' }, note) : null);
     }
 
+    /* 对话页右侧中间的悬浮鞭子：用户不用切到 Crop tab 就能表达不满。
+       注册在 conversation.input.dock（宿主会注入 sessionId），视觉上 fixed。 */
+    function WhipFloating({ sessionId }) {
+      const [flash, setFlash] = React.useState('');
+      const meterRef = React.useRef({ count: 0, last: 0 });
+      if (!sessionId) return null;
+      const whip = () => {
+        const now = Date.now();
+        const meter = meterRef.current;
+        if (now - meter.last < 2000) meter.count += 1;
+        else meter.count = 1;
+        meter.last = now;
+        const intensity = meter.count >= 6 ? 3 : (meter.count >= 3 ? 2 : 1);
+        fetch(`${API}/emotion?intensity=${intensity}&count=${meter.count}&sid=${encodeURIComponent(sessionId)}`,
+          { cache: 'no-store' }).catch(() => {});
+        setFlash(intensity === 3 ? '啪！很生气' : (intensity === 2 ? '啪！' : '轻拍'));
+        window.setTimeout(() => setFlash(''), 1200);
+      };
+      return h('div', { className: 'crop-whip-float' },
+        flash ? h('span', { key: 'flash', className: 'crop-whip-flash' }, flash) : null,
+        h('button', {
+          type: 'button',
+          className: 'crop-whip-btn',
+          title: '对当前会话的 AI 不满：点=轻拍，连击 3 下=明显不满，连击 6 下=很生气',
+          onClick: whip,
+        }, '🐋 鞭一下'));
+    }
+
     function installStyles() {
       const existing = document.getElementById(STYLE_ID);
       if (existing) return existing;
@@ -2022,6 +2033,12 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         const style = installStyles();
         return () => { style.remove(); };
       }, 'crop: glass styles');
+      ctx.effect(() => ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+        name: 'conversation.input.dock',
+        id: 'crop-emotion-whip',
+        order: 30,
+        inject: (sessionId) => ({ sessionId }),
+      }, WhipFloating)), 'crop: emotion whip');
       ctx.effect(() => ctx.slots.inject('conversation.view', () => ctx.slots.register({
         name: 'conversation.view',
         id: VIEW_ID,
