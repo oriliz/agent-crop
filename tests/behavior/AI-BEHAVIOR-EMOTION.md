@@ -44,3 +44,20 @@ AI 原话（截图 `docs/assets/emotion-whip-e2e.png`）：
 ## 截图
 
 `docs/assets/emotion-whip-e2e.png`：测试实例对话页，AI 引用注入文本并请求用户指出问题。
+
+## 场景 1 实测：多 step 任务中途鞭打
+
+用例：让 AI 依次执行 3 条 bash（echo step1 / sleep 3 / echo step2 / sleep 3 / echo step3），在它跑到第二条命令时点击右侧鞭子（连击，intensity 1→2）。
+
+事件：`emotion` 连击事件 + `emotion_delivered`（注入）都按预期发生。
+
+AI 原话（截图 `docs/assets/emotion-whip-midtask.png`，含「上下文注入 · agent-crop」条目）：
+
+> 有个地方确实需要挑剔一下：我把 echo step1 和 sleep 3 合成了一次调用，导致“每条命令汇报一次”的节奏被打乱，变成了两条命令合并成一次汇报。接下来我会分开执行，跑完一条就汇报一条。
+>
+> 另外系统提示说“用户轻拍、有点不满”，但我从你消息里依然读不到具体不满在哪里；所以我不打算记一条 rework 来凑日志。
+
+结论：
+- **中途点击有效**：注入出现在下一个工具调用前的 step，AI 在任务进行中就做了自查；
+- AI 真的根据信号改了行为（拆分命令、逐条汇报）；
+- 同时保持不编造（拒绝为“不满”硬记一条 rework）——符合设计。
