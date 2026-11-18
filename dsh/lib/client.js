@@ -2053,7 +2053,8 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         if (now - meter.last < 2000) meter.count += 1;
         else meter.count = 1;
         meter.last = now;
-        const intensity = meter.count >= 6 ? 3 : (meter.count >= 3 ? 2 : 1);
+        // 高频点击容易误触重击：把 L2/L3 门槛调大（L1 保持单击即触发）。
+        const intensity = meter.count >= 12 ? 3 : (meter.count >= 6 ? 2 : 1);
         fetch(`${API}/emotion?intensity=${intensity}&count=${meter.count}&sid=${encodeURIComponent(sessionId)}`,
           { cache: 'no-store' }).catch(() => {});
         setFlash(intensity === 3 ? '啪！很生气' : (intensity === 2 ? '啪！' : '轻拍'));
