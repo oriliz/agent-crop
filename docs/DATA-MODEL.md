@@ -35,7 +35,7 @@
 | 配置/模板 | **留文件**（`settings.json` / `templates/`） |
 | 迁移 | **一次性切换** + 破坏性变更公告，可回滚 |
 | 数据服务 | 继续 **spawn python**（本地应用不管理常驻进程） |
-| event 字段 | `json_extract` 生成 STORED 列 + 索引，payload 唯一写入点 |
+| event 字段 | `json_extract` 生成 **VIRTUAL** 列（`json_valid` 保护）+ 索引，payload 唯一写入点 |
 | block 归属 | **不物化归属**：只存会话时间边界，归属完全派生（M1 方案 b） |
 | 生成列 | 用 **VIRTUAL**（不是 STORED）：查询同级、省存储/写计算（A） |
 | 幂等 | `idem_key` 不加 UNIQUE；事实日志无条件接受，去重放写入层（B/M4） |
@@ -61,8 +61,8 @@ Work 1 ──< Event（唯一事实源，append-only）
 Work 1 ──< Summary / Sediment / Adjustment（结论，可重建）
 ```
 
-- Work 生命周期：`open → suspended ↔ open → pending_confirm → closed`（人类确认才关闭）；
-- Work 唯一性：短名全局唯一，创建时冲突检测（同名自动 `-2` 后缀），`UNIQUE(workspace, work_id)` 兜底；
+- Work 生命周期：`state`（open → suspended ↔ open → closed）+ `confirmation`（not_requested → pending → confirmed）；人类确认后才 `confirmed + closed`；
+- Work 唯一性：**短名全局唯一**（work_id 主键），创建时冲突检测（同名自动 `-2` 后缀）；不再加 `UNIQUE(workspace, work_id)`（F）；
 - 派生（活跃分钟、提醒次数、健康度、台账）全部从 event 推导，不存冗余字段。
 
 ## 4. 表结构
@@ -250,13 +250,13 @@ CREATE TABLE adjustment (
 - 保留规则：跨过 cutoff 仍未关闭的 Work，其**完整事件历史**必须留在可重建范围内；
 - 验收：24 个月跨期查询 + 跨月未关闭 Work 重建。
 
-## 9. 外部评审问题与应对
+## 9. 外部评审问题与应对（历史记录，规范以 §4/§6 为准）
 
 | 问题 | 应对 |
 |---|---|
-| work_id 短名撞名 | 冲突检测 + `-2` 后缀 + `UNIQUE(workspace, work_id)` |
-| block 跨多个工作 | 主工作 + `work_switch` 切分 |
-| 宽表 vs JSON | generated columns（STORED）+ 索引 |
+| work_id 短名撞名 | 冲突检测 + `-2` 后缀（不保留 workspace 唯一索引，见 F） |
+| block 跨多个工作 | 决议：block 不物化归属，完全派生（M1 方案 b，见 §4） |
+| 宽表 vs JSON | generated columns（已改为 VIRTUAL，见 §4） |
 | 结论与事件双写一致性 | 同事务写入 + `rebuild` 校验 |
 | NULL vs 0 | 字段级标注语义，查询显式区分 |
 | 时钟与自然日 | UTC 存储，本地时区算窗口，ts 单调兜底 |
@@ -346,3 +346,37 @@ CREATE TABLE adjustment (
 - 这版设计**够用且可演进**，不是终态；
 - 所有「未来会变」的地方都留了可空列/迁移链/逃生门，而不是承诺“不变”；
 - 如果未来做多机同步或分析平台，按 11.2 的预留做一次结构调整，而不是推倒重来。
+
+## 12. 自洽性审计（2026-11-18 复审）
+
+### 12.1 文档层面
+
+规范优先级：**§4 DDL + §6 原则是唯一 normative**；§9 是历史评审记录，不复制 schema；§2/§3 是摘要，必须与 §4/§6 对齐。
+
+本轮复审发现并已修正 4 处不一致：
+- §2 决策表同一节内「STORED」与「VIRTUAL」并存 → 统一 VIRTUAL；
+- §3 生命周期仍写 `pending_confirm` → 改为 `state + confirmation` 两维；
+- §3 仍写 `UNIQUE(workspace, work_id)` → 改为全局唯一 + 创建层冲突检测；
+- §9 评审表里仍是旧建议（STORED、主工作切分）→ 标注历史并改写为已定结论。
+
+**约定**：以后改 schema 只改 §4/§6；§2/§3 同步一句摘要；§9/§10/§11 不再重复 schema。
+
+### 12.2 设计层面
+
+- **事件源 vs 物化**：`work.expect_first`、`session.ended_at`、`report` 视图都是派生/物化。已定义「事件优先、物化可重建」；rebuild 校验是兜底；
+- **状态机 vs 事件**：`state`/`confirmation` 是快照，状态迁移由事件驱动（`work_open/submitted/confirmed/closed/reopened`）；事件与快照在同一事务写；
+- **一次性迁移 vs 演进**：迁移只搬一次结构；未来多机/分析按 §11.2 预留做结构调整，不推倒重来；
+- **未收敛项**：`work` 里 `pending_at/closed_at/confirmed_by` 与 `confirmation/submitted_at/confirmed_at` 有语义重叠，实施时保留哪套需在迁移脚本里二选一（见 §11.3 张力表）。
+
+### 12.3 大厂评审会挑的工程规范缺口
+
+| 类别 | 缺口 | 建议 |
+|---|---|---|
+| 文档规范 | 无 status 版本链、无 ADR 索引、无术语表/数据字典（枚举值域） | 文档头加 `Status/Last updated/Owner`；`docs/adr/` 记录每条决策；枚举集中 `core/enums.py` |
+| 代码规范 | 无 lint/format 配置、无类型注解规范、无 pre-commit | 引入 ruff/black（或项目现有风格）、mypy（可选）、pre-commit |
+| 测试规范 | 无覆盖率门槛、无 golden event stream、无迁移/并发/崩溃测试矩阵 | `tests/storage/` + 覆盖率门槛（如 80%）+ golden 回放 |
+| 迁移规范 | 无版本化迁移脚本、无 dry-run、无回滚演练 | `crop migrate --dry-run` / `--step`；迁移脚本带版本号与 journal |
+| 发布规范 | 无发布 checklist、无破坏性变更流程、无 SemVer 纪律 | RELEASE.md + 破坏性变更公告模板 + 回滚预案 |
+| 可观测 | 无 DB 指标（WAL 大小、慢查询、写入延迟）、无告警 | `crop db stats`；记录 P95 写入/查询；慢查询日志 |
+| 数据治理 | 无 RPO/RTO 定义、无数据保留/删除策略、无导出脱敏 | 明确 RPO=1 天（备份）、RTO=1 天（演练）；保留 2 年；导出脱敏说明 |
+| 安全 | 无密钥/敏感字段清单、无审计日志 | 数据目录权限；导出脱敏；`crop purge` 审计事件 |
