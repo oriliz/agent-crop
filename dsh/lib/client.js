@@ -29,6 +29,8 @@ window.__ModuleLoader__.load({
     const module = { exports: {} };
     const exports = module.exports;
     const React = require('react');
+    let ReactDOM = null;
+    try { ReactDOM = require('react-dom'); } catch { ReactDOM = null; }
     const h = React.createElement;
 
     const VIEW_ID = 'crop';
@@ -2008,7 +2010,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         setFlash(intensity === 3 ? '啪！很生气' : (intensity === 2 ? '啪！' : '轻拍'));
         window.setTimeout(() => setFlash(''), 1200);
       };
-      return h('div', { className: 'crop-whip-float' },
+      const node = h('div', { className: 'crop-whip-float' },
         flash ? h('span', { key: 'flash', className: 'crop-whip-flash' }, flash) : null,
         h('button', {
           type: 'button',
@@ -2016,6 +2018,10 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           title: '对当前会话的 AI 不满：点=轻拍，连击 3 下=明显不满，连击 6 下=很生气',
           onClick: whip,
         }, '🐋 鞭一下'));
+      // composerSeat 的 will-change: transform 会成为 fixed 的 containing block，
+      // 用 portal 挂到 body 才能真正固定在视口右侧中间。
+      if (ReactDOM && typeof document !== 'undefined') return ReactDOM.createPortal(node, document.body);
+      return node;
     }
 
     function installStyles() {
