@@ -2145,6 +2145,13 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         order: 30,
         inject: (sessionId) => ({ sessionId }),
       }, WhipFloating)), 'crop: emotion whip');
+      // 设置页里的一个分区（不占侧边栏，避免打扰用户）
+      ctx.effect(() => ctx.slots.inject('settings.section', () => ctx.slots.register({
+        name: 'settings.section',
+        id: 'crop-settings',
+        order: 90,
+        label: 'Crop',
+      }, SettingsPage)), 'crop: settings section');
       ctx.effect(() => ctx.slots.inject('conversation.view', () => ctx.slots.register({
         name: 'conversation.view',
         id: VIEW_ID,
@@ -2158,16 +2165,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         order: PANEL_ORDER,
         label: () => 'Crop 全局',
       }, CropPanelIcon)), 'crop: global panel row');
-      ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-        name: 'sidebar.panellist',
-        id: 'crop-settings',
-        order: PANEL_ORDER + 1,
-        label: () => 'Crop 设置',
-      }, SettingsPanelIcon)), 'crop: settings panel row');
-      ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
-        name: 'main',
-        key: 'crop-settings',
-      }, SettingsPage)), 'crop: settings page');
+
       ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
         name: 'main',
         key: PANEL_ID,
