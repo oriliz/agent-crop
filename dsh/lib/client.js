@@ -570,6 +570,10 @@ body[data-ds-dark-theme] .crop-donut-hole {
   font-weight: 500;
 }
 
+.crop-row-warn td {
+  background: rgba(234,179,8,.055);
+}
+
 .crop-row-red td {
   background: rgba(239, 68, 68, .10);
 }
@@ -1641,10 +1645,78 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('th', { key: 't', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '工具'),
           h('th', { key: 's', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '口径'),
           h('th', { key: 'e', style: { ...cellRight, fontSize: '11.5px' } }, '事件'),
-          h('th', { key: 'c', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '覆盖'),
-          h('th', { key: 'f', style: { ...cellRight, fontSize: '11.5px' } }, '完整'),
+          h('th', { key: 'c', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '趋势（最新完整天）'),
+          h('th', { key: 'f', style: { ...cellRight, fontSize: '11.5px' } }, '完整（全窗口）'),
           showClosure ? h('th', { key: 'cl', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '闭环') : null,
         ]));
+
+        const localDay = () => {
+          const now = new Date();
+          const pad = (value) => String(value).padStart(2, '0');
+          return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+        };
+        const trendColor = (value) => {
+          if (value == null) return '#64748b';
+          if (value >= 0.9) return '#4ade80';
+          if (value >= 0.6) return '#eab308';
+          return '#ef4444';
+        };
+        const trendValue = (day) => (day.coverage != null ? day.coverage : day.completeness);
+        const latestComplete = (daily) => {
+          const rows = (daily || []).filter((day) => day && day.events);
+          if (!rows.length) return null;
+          const today = localDay();
+          const complete = rows.filter((day) => day.date !== today);
+          return complete.length ? complete[complete.length - 1] : null;
+        };
+        const TrendSpark = ({ row }) => {
+          const daily = (row.daily || []).filter((day) => day && day.events);
+          if (!daily.length) {
+            return h('svg', { width: 140, height: 24, viewBox: '0 0 140 24' },
+              h('line', { x1: 4, y1: 12, x2: 136, y2: 12, stroke: '#64748b', strokeWidth: 1.4, strokeDasharray: '3 3' }));
+          }
+          const width = 140;
+          const height = 24;
+          const pad = 6;
+          const today = localDay();
+          const step = daily.length > 1 ? (width - pad * 2) / (daily.length - 1) : 0;
+          const points = daily.map((day, index) => {
+            const value = trendValue(day) || 0;
+            return { x: pad + index * step, y: height - pad - value * (height - pad * 2), value, date: day.date };
+          });
+          const gradient = `crop-trend-${String(row.tool || '').replace(/[^a-zA-Z0-9-]/g, '')}`;
+          const stops = points.map((point, index) => h('stop', {
+            key: `s${index}`,
+            offset: `${((point.x - pad) / (width - pad * 2)) * 100}%`,
+            stopColor: trendColor(point.value),
+          }));
+          const parts = [
+            // userSpaceOnUse：水平线段的 bbox 高度为 0，objectBoundingBox 渐变在 Chrome 下会被吞掉。
+            h('defs', { key: 'defs' },
+              h('linearGradient', { id: gradient, gradientUnits: 'userSpaceOnUse',
+                x1: pad, y1: 0, x2: width - pad, y2: 0 }, stops)),
+            h('polyline', {
+              key: 'line',
+              points: points.map((point) => `${point.x},${point.y}`).join(' '),
+              fill: 'none',
+              stroke: `url(#${gradient})`,
+              strokeWidth: 1.8,
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            }),
+          ];
+          points.forEach((point, index) => {
+            const outgoing = point.date === today;
+            parts.push(h('circle', {
+              key: `p${index}`, cx: point.x, cy: point.y,
+              r: outgoing ? 2.2 : 2.6,
+              fill: outgoing ? 'none' : trendColor(point.value),
+              stroke: trendColor(point.value),
+              strokeWidth: outgoing ? 1.2 : 0,
+            }));
+          });
+          return h('svg', { width, height, viewBox: `0 0 ${width} ${height}` }, parts);
+        };
 
         const rowEl = (row, showClosure) => {
           const red = row.lamp === 'red' || (row.events > 0 && row.session_coverage === 0);
@@ -1654,7 +1726,15 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           const meter = (value, fill) => h('div', { className: 'crop-meter', style: { background: fill === '#ef4444' ? 'rgba(239,68,68,.20)' : 'rgba(100,116,160,.16)' } },
             h('i', { style: { width: pctWidth(value), background: fill } }),
             h('b', null, pctText(value)));
-          return h('tr', { key: row.tool, className: red ? 'crop-row-red' : undefined }, [
+          const latest = latestComplete(row.daily);
+          const latestTone = latest ? trendColor(trendValue(latest)) : null;
+          // 行底色只看「最新完整天」：历史坏、当前好的行不该整行红。
+          const rowClass = latestTone === '#ef4444'
+            ? 'crop-row-red'
+            : (latestTone === '#eab308' || latestTone === '#fb923c'
+              ? 'crop-row-warn'
+              : (latest ? undefined : (red ? 'crop-row-red' : undefined)));
+          return h('tr', { key: row.tool, className: rowClass }, [
             h('td', { key: 'n', style: cell }, [
               h('div', { key: 't' }, [
                 row.label,
@@ -1667,10 +1747,16 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('td', { key: 'cv', style: cell }, [
               row.status === 'not-shipped' ? h('span', { key: 'x', className: 'crop-muted' }, '未上线')
                 : row['class'] === 'on_demand' ? h('span', { key: 'x', className: 'crop-muted' }, '—')
-                  : meter(row.session_coverage, color),
-              coverageNote ? h('div', { key: 'cd', className: 'crop-mini' }, coverageNote) : null,
+                  : h('div', { key: 'tr' }, [
+                      h(TrendSpark, { key: 's', row }),
+                      h('div', { key: 'v', className: 'crop-mini',
+                        style: { color: latestTone === '#ef4444' ? '#ef4444' : (latest ? '#c7d5ee' : '#7f90b0') } },
+                        latest ? `昨天 ${pctText(trendValue(latest))}` : '—'),
+                      coverageNote ? h('div', { key: 'w', className: 'crop-mini', style: { color: '#7f90b0' } },
+                        `全窗口 ${coverageNote}`) : null,
+                    ]),
             ]),
-            h('td', { key: 'f', style: { ...cellRight, color: row.events && row.field_completeness < .95 ? '#b45309' : undefined } }, [
+            h('td', { key: 'f', style: { ...cellRight, color: latestTone === '#ef4444' ? '#ef4444' : (row.events ? '#9aa8c4' : undefined) } }, [
               row.events ? pctText(row.field_completeness) : '—',
               missing ? h('div', { key: 'm', className: 'crop-mini' }, `缺 ${missing}`) : null,
             ]),
