@@ -1655,12 +1655,10 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           const pad = (value) => String(value).padStart(2, '0');
           return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
         };
-        const trendColor = (value, klass) => {
-          const threshold = { session: .8, work: .7, ended: .8, call: .9 }[klass] || .8;
+        const trendColor = (value) => {
           if (value == null) return '#64748b';
-          if (value >= threshold) return '#4ade80';
-          if (value >= threshold * 0.75) return '#eab308';
-          if (value >= threshold * 0.5) return '#fb923c';
+          if (value >= 0.9) return '#4ade80';
+          if (value >= 0.6) return '#eab308';
           return '#ef4444';
         };
         const trendValue = (day) => (day.coverage != null ? day.coverage : day.completeness);
@@ -1690,7 +1688,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           const stops = points.map((point, index) => h('stop', {
             key: `s${index}`,
             offset: `${((point.x - pad) / (width - pad * 2)) * 100}%`,
-            stopColor: trendColor(point.value, row['class']),
+            stopColor: trendColor(point.value),
           }));
           const parts = [
             // userSpaceOnUse：水平线段的 bbox 高度为 0，objectBoundingBox 渐变在 Chrome 下会被吞掉。
@@ -1712,8 +1710,8 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             parts.push(h('circle', {
               key: `p${index}`, cx: point.x, cy: point.y,
               r: outgoing ? 2.2 : 2.6,
-              fill: outgoing ? 'none' : trendColor(point.value, row['class']),
-              stroke: trendColor(point.value, row['class']),
+              fill: outgoing ? 'none' : trendColor(point.value),
+              stroke: trendColor(point.value),
               strokeWidth: outgoing ? 1.2 : 0,
             }));
           });
@@ -1729,7 +1727,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('i', { style: { width: pctWidth(value), background: fill } }),
             h('b', null, pctText(value)));
           const latest = latestComplete(row.daily);
-          const latestTone = latest ? trendColor(trendValue(latest), row['class']) : null;
+          const latestTone = latest ? trendColor(trendValue(latest)) : null;
           // 行底色只看「最新完整天」：历史坏、当前好的行不该整行红。
           const rowClass = latestTone === '#ef4444'
             ? 'crop-row-red'
