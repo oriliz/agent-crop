@@ -217,10 +217,11 @@ export function apply(ctx, config = {}) {
         env: {
           ...process.env,
           KIT_HOST: 'dsh',
-          KIT_TASK_YELLOW_MIN: String(setting(config.yellowMin, 10)),
-          KIT_TASK_RED_MIN: String(setting(config.redMin, 30)),
-          KIT_TASK_REMIND_MIN: String(setting(config.remindMin, 15)),
-          KIT_TASK_PERSONA: String(setting(config.persona, 'owner')),
+          // 设置页写 settings.json，优先于 profile config
+          KIT_TASK_YELLOW_MIN: String(readSettings().yellowMin ?? setting(config.yellowMin, 10)),
+          KIT_TASK_RED_MIN: String(readSettings().redMin ?? setting(config.redMin, 30)),
+          KIT_TASK_REMIND_MIN: String(readSettings().remindMin ?? setting(config.remindMin, 15)),
+          KIT_TASK_PERSONA: String(readSettings().persona || setting(config.persona, 'owner')),
           KIT_EMOTION_HINT1: String(setting(config.emotionHint1, '')),
           KIT_EMOTION_HINT2: String(setting(config.emotionHint2, '')),
           KIT_EMOTION_HINT3: String(setting(config.emotionHint3, '')),

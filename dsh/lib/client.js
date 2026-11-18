@@ -2085,6 +2085,39 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('h2', { key: 't', className: 'crop-global-title' }, 'Crop · 设置'),
           h('div', { key: 'n', className: 'crop-config-hint' },
             '实验性功能；保存写入 ~/.agentcrop/settings.json，下一次提醒 / 鞭打立即生效。'),
+          h('div', { key: 'p1', className: 'crop-config-title', style: { marginTop: 16 } }, '鞭策风格'),
+          h('div', { key: 'p2', className: 'crop-persona-list' },
+            ['owner', 'senior', 'colleague', 'free'].map((value) =>
+              h('label', {
+                key: value,
+                className: 'crop-persona-option',
+                'data-active': (state.persona || 'owner') === value ? '' : undefined,
+              },
+                h('input', {
+                  type: 'radio',
+                  name: 'crop-settings-persona',
+                  checked: (state.persona || 'owner') === value,
+                  onChange: () => save({ persona: value }),
+                }),
+                h('span', { key: 'b', className: 'crop-persona-body' },
+                  h('b', null, PERSONA_LABEL[value] || value))))),
+          h('div', { key: 't1', className: 'crop-config-title', style: { marginTop: 16 } }, '提醒阈值（分钟）'),
+          h('div', { key: 't2', style: { display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 6 } },
+            [['yellowMin', '工作黄线'], ['redMin', '单轮红线'], ['remindMin', '提醒冷却'], ['missMin', '缺报检测']].map(([key, label]) =>
+              h('label', { key, style: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 } },
+                label,
+                h('input', {
+                  type: 'number',
+                  className: 'crop-config-input',
+                  style: { width: 96 },
+                  value: state[key] ?? '',
+                  onChange: (event) => setState((prev) => ({ ...prev, [key]: event.target.value })),
+                  onBlur: (event) => save({ [key]: Number(event.target.value) || 0 }),
+                })))),
+          h('div', { key: 'tpl1', className: 'crop-config-title', style: { marginTop: 16 } }, '注入模板'),
+          h('div', { key: 'tpl2', className: 'crop-config-hint' },
+            '也可以用文件覆盖：~/.agentcrop/templates/ 下的 protocol.md / start-hint.md / binding-hint.md / end-hint.md / voice/*.md。'
+            + '空文件=默认，写 none=关闭；voice 与提示类即时生效，protocol 需重启宿主。'),
           h('div', { key: 'e1', className: 'crop-config-title', style: { marginTop: 16 } }, '情绪反馈'),
           h('label', { key: 'e2', className: 'crop-persona-option', style: { cursor: 'pointer' } }, [
             h('input', {
