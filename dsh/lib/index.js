@@ -546,6 +546,12 @@ export function apply(ctx, config = {}) {
       if (result.switched_from) {
         extra.push(`[crop] 已从 ${result.switched_from} 切到 ${result.task_id}；旧工作还没收尾，记得顺手 end 或挂起，别让它静默失联。`);
       }
+      if (result.switched_pending) {
+        extra.push(
+          `[crop] 上一件「${result.switched_pending}」还在等你确认收尾（人类还没说结束）。`
+          + '建议新开会话做当前工作，省 token，也避免上下文污染。',
+        );
+      }
       if (result.estimate_revised) {
         const { from, to, count } = result.estimate_revised;
         extra.push(`[crop] 改口：${from} → ${to} 分钟（第 ${count} 次）。新预期从现在重新起算，改小不会立刻算超时；次数会计入估准率。`);
@@ -829,6 +835,54 @@ export function apply(ctx, config = {}) {
     },
   };
 
+  const confirmTool = {
+    name: 'crop_confirm',
+    description:
+      '人类确认收尾后调用：关闭一个或多个待确认（pending_confirm）的工作。'
+      + '只有用户明确说「收尾 / 确认 / 好了」之后才允许调用；AI 不能替用户做这个决定。支持批量。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        task_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          description: '要确认关闭的工作短名列表（可批量）',
+        },
+      },
+      required: ['task_ids'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          text: { type: 'string' },
+          confirmed: { type: 'array', items: { type: 'string' } },
+          missing: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['text', 'confirmed', 'missing'],
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute(args) {
+      const ids = (args?.task_ids || []).map((item) => String(item).trim()).filter(Boolean);
+      if (!ids.length) throw new Error('crop_confirm requires task_ids');
+      const result = callCore({ op: 'work_confirm', args: { task_ids: ids } });
+      if (!result) {
+        throw new Error(
+          `crop_confirm failed${lastCoreError ? `（core: ${lastCoreError.stderr || lastCoreError.error || 'no output'}）` : ''}`,
+        );
+      }
+      return {
+        text: `confirmed ${result.confirmed?.length || 0}${result.missing?.length ? ` · missing: ${result.missing.join(', ')}` : ''}`,
+        confirmed: result.confirmed || [],
+        missing: result.missing || [],
+      };
+    },
+  };
+  ctx.effect(() => ctx.tools.register(confirmTool), 'agent-crop.crop_confirm');
   ctx.effect(() => ctx.tools.register(tool), 'agent-crop.crop_update');
   ctx.effect(() => ctx.tools.register(legacyTool), 'agent-crop.probe_report (alias)');
   ctx.effect(() => ctx.tools.register(legacyCropReportTool), 'agent-crop.crop_report (alias)');
@@ -969,6 +1023,9 @@ export function apply(ctx, config = {}) {
         const status = callCore({ op: 'work_status', context: { sid, workspace } });
         if (status) notes.push(status);
       }
+
+      const pendingHint = callCore({ op: 'pending_confirm_hint', context: { sid, workspace } });
+      if (pendingHint) notes.push(pendingHint);
 
       const reminder = callCore({ op: 'maybe_reminder', context: { sid, workspace } });
       if (reminder) notes.push(reminder);

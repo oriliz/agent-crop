@@ -48,17 +48,24 @@ class SedimentTest(unittest.TestCase):
         self.report(phase="end", what="做完了", sediment="none:一次性")
         second = self.report(phase="end", what="补沉淀", summary="补沉淀", sediment="skill:crop-retro")
         self.assertTrue(second.get("already_closed"))
+        pendings = [event for event in self.events() if event["ev"] == "work_pending"]
+        self.assertEqual(len(pendings), 1, "二次收尾不能重复提交")
+        self.assertEqual([event for event in self.events() if event["ev"] == "work_close"], [])
+        self.core.confirm_works(["sed-work"], self.sid)
         closes = [event for event in self.events() if event["ev"] == "work_close"]
-        self.assertEqual(len(closes), 1, "二次收尾不能重复关单")
+        self.assertEqual(len(closes), 1)
         sediments = [event for event in self.events() if event["ev"] == "work_sediment"]
         self.assertEqual(sediments[-1]["sediment"], "skill:crop-retro")
 
-    def test_end_without_sediment_still_closes(self):
+    def test_end_without_sediment_still_waits_for_confirm(self):
         self.report(phase="start")
         self.report(phase="end", what="完")
         kinds = [event["ev"] for event in self.events()]
-        self.assertIn("work_close", kinds)
+        self.assertIn("work_pending", kinds)
+        self.assertNotIn("work_close", kinds)
         self.assertNotIn("work_sediment", kinds)
+        self.core.confirm_works(["sed-work"], self.sid)
+        self.assertIn("work_close", [event["ev"] for event in self.events()])
 
     def test_health_counts_sediment_closure(self):
         self.core.record_session_start(self.sid, "/tmp/ws")

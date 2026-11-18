@@ -162,6 +162,14 @@ def dispatch(payload: dict):
         return core.set_work_state(payload.get("work_id") or "", "suspended")
     if op == "work_resume":
         return core.set_work_state(payload.get("work_id") or "", "open")
+    if op == "pending_confirm_hint":
+        return core.pending_confirm_hint(payload.get("context") or {})
+    if op == "work_confirm":
+        args = payload.get("args") or {}
+        return core.confirm_works(
+            [str(item) for item in (args.get("task_ids") or [])],
+            str(args.get("sid") or ""),
+        )
     if op == "work_archive":
         return core.archive_work(payload.get("work_id") or "", payload.get("reason") or "manual")
     if op == "work_archive_stale":

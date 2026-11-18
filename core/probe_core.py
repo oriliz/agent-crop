@@ -457,6 +457,65 @@ def close_task(task_id: str) -> None:
     append_jsonl(os.path.join(paths()["closed_dir"], f"{today()}.jsonl"), task)
 
 
+def pending_task(task_id: str, report: dict) -> None:
+    """end 提交收尾：工作进入 pending_confirm，等人类确认才真正关闭。"""
+    value = load_open()
+    tasks = value.setdefault("tasks", {})
+    task = tasks.get(task_id)
+    if task is None:
+        return
+    task["status"] = "pending_confirm"
+    task["pending_at"] = now_ms()
+    task["summary"] = report.get("summary") or task.get("summary", "")
+    for key in ("what", "cost", "next_time", "verdict", "sediment"):
+        if report.get(key):
+            task[key] = report[key]
+    task["last_seen_at"] = int(report.get("t") or now_ms())
+    save_open(value)
+
+
+def pending_confirm_tasks(sid: str | None = None) -> list[dict]:
+    """已提交收尾、等人类确认的工作（不参与认领，只用于提醒/面板）。"""
+    value = load_open()
+    tasks = [
+        task for task in value.get("tasks", {}).values()
+        if task.get("status") == "pending_confirm"
+    ]
+    tasks.sort(key=lambda task: -float(task.get("pending_at") or 0))
+    if sid:
+        same = [task for task in tasks if task.get("last_sid") == sid]
+        return same or tasks
+    return tasks
+
+
+def confirm_works(task_ids: list[str], sid: str = "", actor: str = "human") -> dict:
+    """人类确认收尾：批量关闭 pending_confirm 工作。"""
+    value = load_open()
+    tasks = value.get("tasks", {})
+    confirmed: list[str] = []
+    missing: list[str] = []
+    for task_id in task_ids:
+        task = tasks.get(task_id)
+        if not task or task.get("status") != "pending_confirm":
+            missing.append(task_id)
+            continue
+        confirmed.append(task_id)
+    at = now_ms()
+    for task_id in confirmed:
+        owner_sid = sid or str(tasks[task_id].get("last_sid") or "")
+        append_event({
+            "ev": "work_confirm",
+            "sid": owner_sid,
+            "work_id": task_id,
+            "confirmed_by": actor,
+            "confirmed_at": at,
+        })
+        append_event({"ev": "work_close", "sid": owner_sid, "work_id": task_id,
+                      "confirmed_by": actor})
+        close_task(task_id)
+    return {"confirmed": confirmed, "missing": missing, "confirmed_at": at}
+
+
 def link_task(task_id: str, block_start: int | None, sid: str | None = None) -> None:
     if not task_id or not block_start:
         return
@@ -812,7 +871,7 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         old_binding = resolve_binding(sid)
         if old_binding and old_binding != report["task_id"]:
             old_task = previous_open.get(old_binding) or {}
-            if (old_task.get("status", "open") == "open"
+            if (old_task.get("status", "open") in ("open", "pending_confirm")
                     and old_task.get("state", "open") == "open"):
                 switched_from = old_binding
     record = {
@@ -883,12 +942,15 @@ def record_report(args: dict, context: dict | None = None) -> dict:
 
     already_closed = (report["phase"] == "end"
                       and report["task_id"] not in (load_open().get("tasks") or {}))
+    already_pending = (report["phase"] == "end"
+                       and (load_open().get("tasks") or {}).get(
+                           report["task_id"], {}).get("status") == "pending_confirm")
     append_jsonl(os.path.join(paths()["reports_dir"], f"{today()}.jsonl"), record)
     write_runtime(sid, workspace, block_start)
-    if not already_closed:
+    if not already_closed and not already_pending:
         append_event({**record, "ev": "probe_report"})
     if report["phase"] == "end":
-        if already_closed:
+        if already_closed or already_pending:
             # 二次收尾（补沉淀/补小结）：不重复关单、不重复释放绑定
             if report.get("sediment"):
                 append_event({"ev": "work_sediment", "sid": sid, "work_id": report["task_id"],
@@ -919,11 +981,13 @@ def record_report(args: dict, context: dict | None = None) -> dict:
         if report.get("sediment"):
             append_event({"ev": "work_sediment", "sid": sid, "work_id": report["task_id"],
                           "sediment": report["sediment"]})
-        append_event({"ev": "work_close", "sid": sid, "work_id": report["task_id"],
+        # B 方案：end 只是「提交收尾」——人类确认前不关闭，超时也不自动确认。
+        pending_task(report["task_id"], report)
+        append_event({"ev": "work_pending", "sid": sid, "work_id": report["task_id"],
                       "verdict": report.get("verdict", "")})
         # #43：收尾不立刻解绑——下一轮开头不该再被催 start，墙钟也要能跨轮累计。
         mark_binding_ended(sid, report["task_id"])
-        close_task(report["task_id"])
+        record["pending_confirm"] = True
     else:
         _upsert_task(record, workspace)
         bind_session(sid, report["task_id"])
@@ -933,6 +997,11 @@ def record_report(args: dict, context: dict | None = None) -> dict:
                 # 切工作不能让旧工作“静默失联”：留一条可追溯事件，工具结果里也会警告。
                 append_event({"ev": "work_switch", "sid": sid,
                               "from": switched_from, "to": report["task_id"]})
+            old_task = previous_open.get(switched_from) or {}
+            if old_task.get("status") == "pending_confirm" and not _confirm_reminded(switched_from, "switch"):
+                append_event({"ev": "confirm_reminder", "sid": sid, "task_id": switched_from,
+                              "kind": "switch", "at": record["t"]})
+                record["switched_pending"] = switched_from
             append_event({"ev": "work_open", "sid": sid, "work_id": report["task_id"],
                           "goal": report.get("goal", ""), "type": report.get("type", ""),
                           "difficulty": report.get("difficulty", "")})
@@ -1133,6 +1202,47 @@ def miss_nudge(streak: int, sid: str | None = None) -> str:
     fallback = "[crop] 上一轮跑了挺久但没有登记。如果这个工作有进展或卡点，调 crop_update 写一行。"
     _record_nudge(sid or "unknown", "miss", tier, fallback, streak=int(streak or 0))
     return fallback
+
+
+def _confirm_reminded(task_id: str, kind: str) -> bool:
+    return any(event.get("ev") == "confirm_reminder"
+               and event.get("task_id") == task_id
+               and event.get("kind") == kind
+               for event in load_events(limit=5000))
+
+
+def pending_confirm_hint(context: dict | None = None) -> str:
+    """待确认收尾的工作：首轮提醒一次；超过 30 分钟再提醒一次（不自动确认）。"""
+    context = context or {}
+    sid = str(context.get("sid") or "")
+    pending = pending_confirm_tasks(sid or None)
+    if not pending:
+        return ""
+    parts = []
+    now = now_ms()
+    timeout_ms = int(float(os.environ.get("KIT_CONFIRM_REMIND_MIN") or 30) * 60000)
+    for task in pending[:3]:
+        task_id = str(task.get("task_id") or "")
+        if not task_id:
+            continue
+        pending_at = int(task.get("pending_at") or 0)
+        if not _confirm_reminded(task_id, "start"):
+            append_event({"ev": "confirm_reminder", "sid": sid, "task_id": task_id,
+                          "kind": "start", "at": now})
+            parts.append(
+                f'[crop] 工作「{task_id}」已提交收尾，等待人类确认（crop_confirm）。'
+                f'确认前不计为完成、计时继续。'
+            )
+            continue
+        if pending_at and now - pending_at > timeout_ms and not _confirm_reminded(task_id, "timeout"):
+            append_event({"ev": "confirm_reminder", "sid": sid, "task_id": task_id,
+                          "kind": "timeout", "at": now})
+            minutes = int((now - pending_at) / 60000)
+            parts.append(
+                f'[crop] 工作「{task_id}」提交收尾已经 {minutes} 分钟，人类还没确认。'
+                f'再问用户一句：这个工作确认收尾了吗？要收尾就调 crop_confirm。'
+            )
+    return "\n".join(parts)
 
 
 def binding_hint(sid: str) -> str:
@@ -2573,8 +2683,12 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         if health:
             session_works.append(health)
     # never fall back to a work from another session: that reads as "wrong data"
-    active = next((item for item in session_works if item.get("state") != "closed"), None)
+    active = next((item for item in session_works if item.get("state") == "open"), None)
+    pending_work = next((item for item in session_works if item.get("state") == "pending_confirm"), None)
     ended = next((item for item in session_works if item.get("state") == "closed"), None)
+    if pending_work:
+        pending_work = {**pending_work,
+                        "report": _latest_work_summary(events, str(pending_work.get("work_id") or ""))}
     if ended:
         ended = {**ended, "report": _latest_work_summary(events, str(ended.get("work_id") or ""))}
 
@@ -2604,6 +2718,7 @@ def session_summary(sid: str, now: int | None = None) -> dict:
         "sid": sid,
         "active_work": active,
         "session_works": session_works,
+        "pending_work": pending_work,
         "ended_work": ended,
         "recent_blocks": recent[-5:][::-1],
         "session_started_at": int(events[0].get("t") or 0) if events else 0,
@@ -2823,8 +2938,10 @@ def work_health(work_id: str | None = None) -> dict | None:
         "expect_changes": len(task.get("expect_history") or []),
         "expect_set_at": task.get("expect_set_at"),
         "expect_revised_at": task.get("expect_revised_at"),
-        "state": "closed" if str(task.get("status") or "") == "closed" else "open",
+        "state": ("pending_confirm" if str(task.get("status") or "") == "pending_confirm"
+                  else ("closed" if str(task.get("status") or "") == "closed" else "open")),
         "closed_at": int(task.get("closed_at") or 0) or None,
+        "pending_at": int(task.get("pending_at") or 0) or None,
     }
 
 

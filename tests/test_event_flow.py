@@ -64,12 +64,17 @@ class EventFlowTest(unittest.TestCase):
         summary = self.core.session_summary(self.sid)
         self.assertIsNone(summary["active_work"])
         self.assertTrue(summary["session_works"], "已收尾的工作也要留在列表里")
-        self.assertEqual(summary["session_works"][0]["state"], "closed")
-        ended = summary["ended_work"]
-        self.assertIsNotNone(ended, "收尾的工作要单列出来")
-        self.assertEqual(ended["work_id"], "flow-work")
-        self.assertEqual(ended["report"]["what"], "把码存进钥匙串")
-        self.assertEqual(ended["report"]["next_time"], "先 base64 成单行")
+        self.assertEqual(summary["session_works"][0]["state"], "pending_confirm")
+        pending = summary["pending_work"]
+        self.assertIsNotNone(pending, "提交收尾的工作要单列待确认")
+        self.assertEqual(pending["work_id"], "flow-work")
+        self.assertEqual(pending["report"]["what"], "把码存进钥匙串")
+        self.assertEqual(pending["report"]["next_time"], "先 base64 成单行")
+        # 人类确认后才算真正结束
+        self.core.confirm_works(["flow-work"], self.sid)
+        again = self.core.session_summary(self.sid)
+        self.assertIsNone(again["pending_work"])
+        self.assertEqual(again["ended_work"]["work_id"], "flow-work")
 
     # -- 2. waiting vs leaving --------------------------------------------
     def test_short_gap_is_user_wait(self):
@@ -198,10 +203,16 @@ class EventFlowTest(unittest.TestCase):
         self.report(phase="start", summary="又开一件")
         self.assertNotEqual(self.core.miss_nudge(2, self.sid), "")
 
-    def test_end_report_writes_summary_and_closes(self):
+    def test_end_report_writes_summary_and_waits_for_confirm(self):
         self.report(phase="start")
         self.report(phase="end", what="做完了", cost="查资料", next_time="先画图", verdict="justified")
         self.assertIn("work_summary", self.kinds())
+        self.assertIn("work_pending", self.kinds())
+        self.assertNotIn("work_close", self.kinds())
+        task = self.core.load_open()["tasks"]["flow-work"]
+        self.assertEqual(task["status"], "pending_confirm")
+        self.core.confirm_works(["flow-work"], self.sid)
+        self.assertIn("work_close", self.kinds())
         self.assertNotIn("flow-work", self.core.load_open()["tasks"])
 
     # -- 4. no double counting --------------------------------------------
@@ -247,11 +258,14 @@ class EventFlowTest(unittest.TestCase):
             self.core.record_review({"rework": "bad"}, {"sid": self.sid})
 
     # -- 6. bindings and lifecycle events ---------------------------------
-    def test_start_opens_and_binds_then_end_closes(self):
+    def test_start_opens_and_binds_then_end_waits_for_confirm(self):
         self.report(phase="start", goal="甲")
         self.assertIn("work_open", self.kinds())
         self.assertEqual(self.core.resolve_binding(self.sid), "flow-work")
         self.report(phase="end", what="完")
+        self.assertIn("work_pending", self.kinds())
+        self.assertNotIn("work_close", self.kinds())
+        self.core.confirm_works(["flow-work"], self.sid)
         self.assertIn("work_close", self.kinds())
         # #43：绑定保留但标记已收尾，下一轮不再被催 start。
         self.assertEqual(self.core.resolve_binding(self.sid), "flow-work")
@@ -363,6 +377,76 @@ class EventFlowTest(unittest.TestCase):
         self.assertIn("work_archive", self.kinds())
         self.assertNotIn("flow-work", self.core.load_open()["tasks"])
 
+
+    # -- B 方案：end 需人类确认 -------------------------------------------
+    def test_confirm_batch_closes_multiple_pending_works(self):
+        for work in ("batch-a", "batch-b"):
+            self.core.record_report({"phase": "start", "task_id": work, "summary": "开工"},
+                                    {"sid": self.sid, "workspace": "/tmp/ws"})
+            self.core.record_report({"phase": "end", "task_id": work, "summary": "收尾", "what": "完"},
+                                    {"sid": self.sid, "workspace": "/tmp/ws"})
+        pending = [task["task_id"] for task in self.core.load_open()["tasks"].values()
+                   if task.get("status") == "pending_confirm"]
+        self.assertEqual(len(pending), 2)
+        result = self.core.confirm_works(["batch-a", "batch-b"], self.sid)
+        self.assertEqual(set(result["confirmed"]), {"batch-a", "batch-b"})
+        self.assertFalse([task for task in self.core.load_open()["tasks"].values()
+                          if task.get("status") == "pending_confirm"])
+
+    def test_switch_keeps_pending_confirm_alive(self):
+        self.core.record_report({"phase": "start", "task_id": "old-work", "summary": "旧"},
+                                {"sid": self.sid, "workspace": "/tmp/ws"})
+        self.core.record_report({"phase": "end", "task_id": "old-work", "summary": "旧收尾", "what": "完"},
+                                {"sid": self.sid, "workspace": "/tmp/ws"})
+        self.core.record_report({"phase": "start", "task_id": "new-work", "summary": "新"},
+                                {"sid": self.sid, "workspace": "/tmp/ws"})
+        task = self.core.load_open()["tasks"]["old-work"]
+        self.assertEqual(task["status"], "pending_confirm", "切换不能替人类确认旧工作")
+        switches = [event for event in self.kinds() if event == "work_switch"]
+        self.assertEqual(len(switches), 1)
+
+    def test_confirm_rejects_unknown_work(self):
+        result = self.core.confirm_works(["nope"], self.sid)
+        self.assertEqual(result["missing"], ["nope"])
+
+
+    def test_pending_confirm_hint_is_sent_once(self):
+        self.report(phase="start", goal="甲")
+        self.report(phase="end", what="完")
+        hint = self.core.pending_confirm_hint({"sid": self.sid})
+        self.assertIn("已提交收尾", hint)
+        self.assertIn("crop_confirm", hint)
+        self.assertEqual(self.core.pending_confirm_hint({"sid": self.sid}), "", "只提醒一次")
+
+    def test_pending_confirm_hint_reminds_timeout(self):
+        self.report(phase="start", goal="甲")
+        self.report(phase="end", what="完")
+        value = self.core.load_open()
+        value["tasks"]["flow-work"]["pending_at"] -= 31 * 60000
+        self.core.save_open(value)
+        self.core.pending_confirm_hint({"sid": self.sid})  # 消耗首轮提醒
+        hint = self.core.pending_confirm_hint({"sid": self.sid})
+        self.assertIn("分钟", hint)
+        self.assertIn("crop_confirm", hint)
+
+    def test_switch_from_pending_marks_switched_pending(self):
+        self.core.record_report({"phase": "start", "task_id": "old-work", "summary": "旧"},
+                                {"sid": self.sid, "workspace": "/tmp/ws"})
+        self.core.record_report({"phase": "end", "task_id": "old-work", "summary": "旧收尾", "what": "完"},
+                                {"sid": self.sid, "workspace": "/tmp/ws"})
+        record = self.core.record_report({"phase": "start", "task_id": "new-work", "summary": "新"},
+                                         {"sid": self.sid, "workspace": "/tmp/ws"})
+        self.assertEqual(record.get("switched_pending"), "old-work")
+        again = self.core.record_report({"phase": "start", "task_id": "new-work", "summary": "新"},
+                                        {"sid": self.sid, "workspace": "/tmp/ws"})
+        self.assertIsNone(again.get("switched_pending"), "只建议一次")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+if __name__ == "__main__":
+    unittest.main()
 
 if __name__ == "__main__":
     unittest.main()
