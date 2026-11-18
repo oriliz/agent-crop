@@ -54,7 +54,8 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 | `user_wait` | 从回合结束到用户回话 | `sid` `waiting_ms` `within_work_hours` `active_work_id` | D2 |
 | `idle_gap` | 用户回话间隔超阈值 | `sid` `gap_ms` `reason`(idle/off-hours) | D2 |
 | `side_issue` | 发现主线外的枝节 | `work_id` `note` `suggest`(new_session/later) | D4 / D10 |
-| `adjustment` | 采纳了一个改进（只记声明，不记数值） | `work_id` `metric` `direction` `evidence` `window` `adopted_at` `note`（`before`/`after` 由报表从事件派生，不落盘） | D13 |
+| `adjustment` | 采纳了一个改进（只记声明，不记数值） | `work_id` `metric` `direction` `evidence` `window` `adopted_at` `note` `adjustment_id` `workspace` `artifact`(kind/path/anchor/delivery)（`before`/`after` 由报表从事件派生，不落盘） | D13 |
+| `artifact_hit` | 读取类工具命中已登记的改进产物 | `sid` `work_id` `tool` `target` `adjustment_id` `artifact` | 验证「改进 → 产物 → 会话读到」的归因；只对 `delivery=read` 的产物计命中，`injected` 载体是结构性注入，不记逐次 |
 | `tool_churn` | 工具层的重复/失败（事实信号，**不是返工**） | `kind`(repeat-tool) `tool` `count` `failures` | D3 |
 | `self_review` | AI 判断的返工档次（redo/major/minor/none） | `work_id` `rework` `sentiment` `reason` | D3 / D5 |
 | `work_summary` | 工作结束时趁记忆热写的复盘 | `work_id` `what` `cost` `next_time` `artifact` | D1 / D13 |
@@ -73,6 +74,7 @@ Crop 要补的就是这一层：**给一次「工作」打一条 trace**。
 - **返工档次**：`self_review.rework`（AI 判断），工具重复单独看 `tool_churn`
 - **估准率**：`difficulty_est` vs `difficulty_actual`
 - **情绪痕迹**：纠正次数、重复提问次数——从 `prompt` 序列里数，不读语义
+- **产物验证**：`adjustment.artifact` + `artifact_hit` 派生。台账每条改进显示：产物是否存在（`file` 类查文件）、被哪些会话读到、首次命中时间；`injected` 载体（AGENTS.md / hook / 系统提示）每会话自动加载，标「结构性注入」而不是逐次命中。没有产物或零命中的改进在台账里显式标「未验证」——「采纳」与「生效」是两件事，不能混。
 
 ### 1.4 建议补上：给 `tool` 事件加 span 结构
 

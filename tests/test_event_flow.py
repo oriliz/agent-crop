@@ -54,6 +54,23 @@ class EventFlowTest(unittest.TestCase):
         self.assertEqual(len(blocks), 1)
         self.assertEqual(blocks[0]["sid"], self.sid)
 
+    # -- ended work stays on the session page ------------------------------
+    def test_ended_work_stays_visible_in_session_panel(self):
+        self.core.record_session_start(self.sid, "/tmp/ws")
+        self.core.record_prompt(self.sid, "开始", "/tmp/ws")
+        self.report(phase="start", expect_min=5)
+        self.report(phase="end", summary="收尾", what="把码存进钥匙串",
+                    cost="花在多行口令编码上", next_time="先 base64 成单行")
+        summary = self.core.session_summary(self.sid)
+        self.assertIsNone(summary["active_work"])
+        self.assertTrue(summary["session_works"], "已收尾的工作也要留在列表里")
+        self.assertEqual(summary["session_works"][0]["state"], "closed")
+        ended = summary["ended_work"]
+        self.assertIsNotNone(ended, "收尾的工作要单列出来")
+        self.assertEqual(ended["work_id"], "flow-work")
+        self.assertEqual(ended["report"]["what"], "把码存进钥匙串")
+        self.assertEqual(ended["report"]["next_time"], "先 base64 成单行")
+
     # -- 2. waiting vs leaving --------------------------------------------
     def test_short_gap_is_user_wait(self):
         self.core.record_prompt(self.sid, "一", "/tmp/ws")

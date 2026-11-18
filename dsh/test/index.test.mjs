@@ -566,3 +566,38 @@ test('a wrong tool call returns a contextual error instead of a bare failure', a
       && /missing: phase, task_id, summary/.test(error.message),
   );
 });
+
+test('tool/call arguments attribute the artifact hit to the adjustment', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'probe-dsh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  process.env.KIT_DATA_DIR = directory;
+  const spec = join(directory, 'spec.md');
+  await writeFile(spec, '# spec');
+
+  const ctx = fakeCtx();
+  apply(ctx, { python: 'python3' });
+  const session = { id: 's-artifact', header: { cwd: directory }, snapshotEvents: () => [] };
+  const adjust = ctx.registered.find((item) => item.name === 'crop_adjust');
+  await adjust.execute({
+    action: 'record', metric: 'work_minutes', evidence: 'PR #x', note: '更短的收尾路径',
+    artifact: { kind: 'file', path: spec },
+  }, { agent: { session } });
+
+  const event = ctx.handlers.get('session/event');
+  event(session, {
+    type: 'tool/call',
+    data: { callId: 'call-a', name: 'read', arguments: JSON.stringify({ file_path: spec }) },
+  });
+  event(session, {
+    type: 'tool/result',
+    data: { message: { toolCallId: 'call-a' } },
+  });
+
+  const text = await readFile(join(directory, 'events.jsonl'), 'utf8');
+  const rows = text.trim().split('\n').map((line) => JSON.parse(line));
+  const hit = rows.find((row) => row.ev === 'artifact_hit');
+  assert.ok(hit, 'artifact_hit event should be recorded');
+  assert.equal(hit.sid, 's-artifact');
+  assert.equal(hit.target, spec);
+  assert.match(hit.adjustment_id, /^adj-/);
+});

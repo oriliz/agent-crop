@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: write # gh release create
-  id-token: write # npm --provenance
+  id-token: write # npm Trusted Publishing (OIDC) + provenance
 
 concurrency:
   group: release-${{ github.ref }}
@@ -65,10 +65,26 @@ jobs:
       url: https://www.npmjs.com/package/agent-crop-dsh
     steps:
       - uses: actions/checkout@v5
+      # 可信发布（OIDC）：npm 用 Actions 的 id-token 换短期发布凭据，仓库里不存 NPM_TOKEN。
+      # 三个硬性条件（错一个就报 ENEEDAUTH）：
+      #   1. npm >= 11.5.1 → 用 Node 24；Node 22 自带 npm 10，不支持 OIDC
+      #   2. 不设 registry-url：setup-node 会写 _authToken=${NODE_AUTH_TOKEN} 的 .npmrc，
+      #      空 token 也会让 npm 优先走 token 认证，直接绕过 OIDC
+      #   3. 不设 NODE_AUTH_TOKEN（含空串）
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
+          node-version: 24
+      - name: npm 版本必须 >= 11.5.1（Trusted Publishing 要求）
+        run: |
+          npm_version=$(npm --version)
+          major=${npm_version%%.*}
+          minor=${npm_version#*.}
+          minor=${minor%%.*}
+          echo "npm ${npm_version}"
+          if [ "${major}" -lt 11 ] || { [ "${major}" -eq 11 ] && [ "${minor}" -lt 5 ]; }; then
+            echo "::error::npm ${npm_version} 不支持 Trusted Publishing，需要 >= 11.5.1。请用 Node 24 或先 npm install -g npm@^11.5.1。"
+            exit 1
+          fi
       - name: 该版本是否已发布
         id: state
         run: |
@@ -80,22 +96,10 @@ jobs:
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: 检查 NPM_TOKEN（缺失即失败，不静默跳过）
-        if: steps.state.outputs.published != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NODE_AUTH_TOKEN}" ]; then
-            echo "::error::缺少 repository secret NPM_TOKEN，发布中止。请在 Settings -> Secrets and variables -> Actions 添加 NPM_TOKEN（npm Automation token，具备 publish 权限）。"
-            exit 1
-          fi
-          echo "NPM_TOKEN 已配置（长度 ${#NODE_AUTH_TOKEN}）"
       - name: npm pack --dry-run 自检
         run: npm pack --dry-run
       - name: npm publish --provenance --access public
         if: steps.state.outputs.published != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public
       - name: 确保 GitHub Release 存在（幂等）
         env:

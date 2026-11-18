@@ -10,6 +10,8 @@
 
 <sub>测量 → 归因 → 优化 → 验证 · 本地 JSONL · 不上传</sub>
 
+<sub>[中文](README.md) · [English](README.en.md)</sub>
+
 [![CI](https://github.com/oriliz/agent-crop/actions/workflows/ci.yml/badge.svg)](https://github.com/oriliz/agent-crop/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/agent-crop-dsh.svg)](https://www.npmjs.com/package/agent-crop-dsh)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -309,5 +311,7 @@ MIT — 随便用，随便改。
 **能动手的事，为什么要动口呢？** 😏
 
 ![蓝发鲸鱼娘女仆双手推着石磨的磨杆，眼泪汪汪，一只手握着马鞭指向她](docs/assets/ending.jpg)
+
+*feel free to contribute*
 
 </div>

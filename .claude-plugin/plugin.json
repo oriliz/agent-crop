@@ -1,7 +1,7 @@
 {
   "name": "agent-crop",
   "version": "0.4.0",
-  "description": "Agent Crop：机械计时长任务，让 AI 调用 crop_update 记录任务上下文；数据只落本机。",
+  "description": "Agent Crop：机械计时长任务，让 AI 调用 crop_update 记录任务上下文；数据只落本机。 | Mechanical long-task timing; the AI reports context via crop_update; data stays local.",
   "author": {
     "name": "生意AI技术"
   },
