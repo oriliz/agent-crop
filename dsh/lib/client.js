@@ -1686,21 +1686,27 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             const value = trendValue(day) || 0;
             return { x: pad + index * step, y: height - pad - value * (height - pad * 2), value, date: day.date };
           });
-          const parts = [];
-          for (let index = 1; index < points.length; index += 1) {
-            const from = points[index - 1];
-            const to = points[index];
-            const id = `crop-trend-${String(row.tool || '').replace(/[^a-zA-Z0-9-]/g, '')}-${index}`;
-            parts.push(h('defs', { key: `d${index}` },
-              h('linearGradient', { id, x1: 0, y1: 0, x2: 1, y2: 0 }, [
-                h('stop', { key: 's1', offset: 0, stopColor: trendColor(from.value, row['class']) }),
-                h('stop', { key: 's2', offset: 1, stopColor: trendColor(to.value, row['class']) }),
-              ])));
-            parts.push(h('line', {
-              key: `l${index}`, x1: from.x, y1: from.y, x2: to.x, y2: to.y,
-              stroke: `url(#${id})`, strokeWidth: 1.8, strokeLinecap: 'round',
-            }));
-          }
+          const gradient = `crop-trend-${String(row.tool || '').replace(/[^a-zA-Z0-9-]/g, '')}`;
+          const stops = points.map((point, index) => h('stop', {
+            key: `s${index}`,
+            offset: `${((point.x - pad) / (width - pad * 2)) * 100}%`,
+            stopColor: trendColor(point.value, row['class']),
+          }));
+          const parts = [
+            // userSpaceOnUse：水平线段的 bbox 高度为 0，objectBoundingBox 渐变在 Chrome 下会被吞掉。
+            h('defs', { key: 'defs' },
+              h('linearGradient', { id: gradient, gradientUnits: 'userSpaceOnUse',
+                x1: pad, y1: 0, x2: width - pad, y2: 0 }, stops)),
+            h('polyline', {
+              key: 'line',
+              points: points.map((point) => `${point.x},${point.y}`).join(' '),
+              fill: 'none',
+              stroke: `url(#${gradient})`,
+              strokeWidth: 1.8,
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            }),
+          ];
           points.forEach((point, index) => {
             const outgoing = point.date === today;
             parts.push(h('circle', {
