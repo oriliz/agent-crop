@@ -448,5 +448,22 @@ if __name__ == "__main__":
 if __name__ == "__main__":
     unittest.main()
 
+
+
+    # -- 实验性：鞭打/情绪反馈 --------------------------------------------
+    def test_emotion_records_and_hints_once(self):
+        record = self.core.record_emotion({"intensity": 3, "count": 6}, {"sid": self.sid})
+        self.assertTrue(record["recorded"])
+        self.assertEqual(record["intensity"], 3)
+        hint = self.core.emotion_hint({"sid": self.sid})
+        self.assertIn("非常不满", hint)
+        self.assertEqual(self.core.emotion_hint({"sid": self.sid}), "", "只注入一次")
+
+    def test_emotion_hint_ignores_old_events(self):
+        self.core.append_event({"ev": "emotion", "sid": self.sid, "intensity": 2, "count": 3,
+                                "t": self.core.now_ms() - 10 * 60000})
+        self.assertEqual(self.core.emotion_hint({"sid": self.sid}), "")
+
+
 if __name__ == "__main__":
     unittest.main()

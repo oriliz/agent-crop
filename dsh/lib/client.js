@@ -29,6 +29,8 @@ window.__ModuleLoader__.load({
     const module = { exports: {} };
     const exports = module.exports;
     const React = require('react');
+    let ReactDOM = null;
+    try { ReactDOM = require('react-dom'); } catch { ReactDOM = null; }
     const h = React.createElement;
 
     const VIEW_ID = 'crop';
@@ -185,6 +187,20 @@ body[data-ds-dark-theme] .crop-card {
   background: var(--dsw-alias-interactive-bg-active, rgba(74, 95, 168, .16));
   border-color: var(--dsw-alias-state-business-primary, #4a5fa8);
 }
+
+.crop-whip-btn {
+  margin-left: 8px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(248,113,113,.45); background: rgba(248,113,113,.12);
+  color: #fecaca; font-size: 12px;
+}
+.crop-whip-btn:active { transform: translateY(1px) scale(.97); }
+.crop-whip-float {
+  position: fixed; right: 18px; top: 50%; transform: translateY(-50%);
+  z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.crop-whip-float .crop-whip-flash { margin-left: 0; }
+.crop-whip-flash { margin-left: 6px; font-size: 12px; color: #fca5a5; animation: crop-whip-pop .9s ease-out; }
+@keyframes crop-whip-pop { 0% { opacity: 0; transform: translateY(4px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
 
 .crop-global-asof {
   margin-left: auto;
@@ -774,6 +790,32 @@ body[data-ds-dark-theme] .crop-page .crop-card {
 .crop-persona-option input { margin-top: 2px; accent-color: #5b7cfa; }
 .crop-persona-body { display: grid; gap: 2px; }
 .crop-config-note { font-size: 12px; color: var(--dsw-alias-label-secondary, #4a5568); }
+
+/* Crop 设置页：分区卡 + 更宽松的控件 */
+.crop-settings { max-width: 760px; margin: 0 auto; padding: 4px 2px 24px; display: grid; gap: 18px; }
+.crop-settings-head h2 { font-size: 20px; margin: 0 0 4px; }
+.crop-settings-head p { margin: 0; font-size: 12.5px; color: var(--dsw-alias-label-tertiary, #6b7899); line-height: 1.6; }
+.crop-settings-section { border: 1px solid var(--dsw-alias-border-l2, rgba(150, 170, 220, .18)); border-radius: 14px; padding: 16px 18px; background: var(--dsw-alias-bg-module-platform, rgba(255, 255, 255, .02)); }
+.crop-settings-section-head h3 { font-size: 14px; margin: 0 0 4px; }
+.crop-settings-section-head p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-tertiary, #6b7899); }
+.crop-settings-body { margin-top: 12px; display: grid; gap: 12px; }
+.crop-settings-field { display: grid; gap: 6px; }
+.crop-settings-label { font-size: 12.5px; font-weight: 600; }
+.crop-threshold-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 22px; }
+.crop-settings-threshold { display: grid; gap: 6px; }
+.crop-settings-number { display: flex; align-items: center; gap: 8px; }
+.crop-settings-unit { font-size: 12px; color: var(--dsw-alias-label-tertiary, #6b7899); }
+.crop-config-input {
+  box-sizing: border-box; width: 100%; padding: 9px 12px; border-radius: 9px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(150, 170, 220, .24));
+  background: var(--dsw-alias-bg-input, rgba(0, 0, 0, .22));
+  color: var(--dsw-alias-label-primary, #e7ecf7);
+  font-size: 13px; line-height: 1.55; font-family: inherit; resize: vertical;
+}
+.crop-settings-number .crop-config-input { width: 92px; }
+.crop-config-input:focus { outline: none; border-color: rgba(110, 140, 235, .8); box-shadow: 0 0 0 3px rgba(110, 140, 235, .18); }
+.crop-config-input::placeholder { color: var(--dsw-alias-label-tertiary, #6b7899); }
+.crop-settings-note { position: sticky; bottom: 8px; justify-self: end; font-size: 12px; padding: 6px 12px; border-radius: 999px; background: rgba(80, 200, 140, .14); color: #86e0b5; }
 
 `;
 
@@ -1913,9 +1955,16 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       const form = props && props.form;
       const stored = form && form.state && form.state.value && form.state.value.persona;
       const [value, setValue] = React.useState(stored || 'owner');
+      const storedEmotion = form && form.state && form.state.value
+        && form.state.value.emotionFeedback !== false;
+      const [emotionOn, setEmotionOn] = React.useState(storedEmotion !== false);
+      const [hint1, setHint1] = React.useState((form && form.state && form.state.value && form.state.value.emotionHint1) || '');
+      const [hint2, setHint2] = React.useState((form && form.state && form.state.value && form.state.value.emotionHint2) || '');
+      const [hint3, setHint3] = React.useState((form && form.state && form.state.value && form.state.value.emotionHint3) || '');
       const [note, setNote] = React.useState('');
       if (props && props.view === 'summary') {
-        return h('span', null, `鞭策风格：${personaLabelOf(stored || value)}`);
+        return h('span', null,
+          `鞭策风格：${personaLabelOf(stored || value)} · 情绪反馈：${emotionOn ? '开' : '关'}`);
       }
       if (!form) {
         return h('div', { className: 'crop-config' },
@@ -1928,6 +1977,19 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         setNote('保存中…');
         form.mutate([{ op: 'set', path: ['persona'], value: next }], form.state.revision)
           .then((ok) => setNote(ok ? '已保存，下一条提醒立即生效。' : 'Host 拒绝了这次修改。'))
+          .catch((error) => setNote(`保存失败：${error && error.message ? error.message : error}`));
+      };
+      const saveHint = (path, value, setter) => {
+        setter(value);
+        form.mutate([{ op: 'set', path: [path], value }], form.state.revision)
+          .then((ok) => setNote(ok ? '已保存，下一次鞭打生效。' : 'Host 拒绝了这次修改。'))
+          .catch((error) => setNote(`保存失败：${error && error.message ? error.message : error}`));
+      };
+      const toggleEmotion = (next) => {
+        setEmotionOn(next);
+        setNote('保存中…');
+        form.mutate([{ op: 'set', path: ['emotionFeedback'], value: next }], form.state.revision)
+          .then((ok) => setNote(ok ? '已保存。' : 'Host 拒绝了这次修改。'))
           .catch((error) => setNote(`保存失败：${error && error.message ? error.message : error}`));
       };
       return h('div', { className: 'crop-config' },
@@ -1950,7 +2012,184 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('span', { className: 'crop-config-hint' }, choice.hint))))),
         h('div', { className: 'crop-config-hint' },
           '提醒里的具体台词用 Markdown 覆盖 ~/.agentcrop/templates/voice/*.md，改完即时生效；常驻协议模板要重启宿主。'),
+        h('div', { className: 'crop-config-title', style: { marginTop: 14 } }, '鞭打三级文案（实验性）'),
+        [['emotionHint1', '1 级（轻拍）', hint1, setHint1],
+          ['emotionHint2', '2 级（连击）', hint2, setHint2],
+          ['emotionHint3', '3 级（很生气）', hint3, setHint3]].map(([field, label, value, setter]) =>
+          h('div', { key: field, style: { marginTop: 8 } },
+            h('div', { className: 'crop-config-hint' }, label + '：留空用内置文案'),
+            h('textarea', {
+              className: 'crop-config-input',
+              rows: 2,
+              value,
+              placeholder: '留空 = 内置文案',
+              onChange: (event) => setter(event.target.value),
+              onBlur: (event) => saveHint(field, event.target.value, setter),
+            }))),
+        h('div', { className: 'crop-config-title', style: { marginTop: 14 } }, '情绪反馈（实验性）'),
+        h('label', { className: 'crop-persona-option', 'data-active': emotionOn ? '' : undefined,
+          style: { cursor: 'pointer' } },
+          h('input', {
+            type: 'checkbox',
+            checked: emotionOn,
+            onChange: (event) => toggleEmotion(event.target.checked),
+          }),
+          h('span', { className: 'crop-persona-body' },
+            h('b', null, '允许「鞭打宠物」把不满反馈给 AI'),
+            h('span', { className: 'crop-config-hint' },
+              '开：鞭打后 AI 会收到情绪信号并按强度调整；关：只保留点击动画，AI 收不到任何信号。'))),
         note ? h('div', { className: 'crop-config-note' }, note) : null);
+    }
+
+    /* 对话页右侧中间的悬浮鞭子：用户不用切到 Crop tab 就能表达不满。
+       注册在 conversation.input.dock（宿主会注入 sessionId），视觉上 fixed。 */
+    function WhipFloating({ sessionId }) {
+      const [flash, setFlash] = React.useState('');
+      const meterRef = React.useRef({ count: 0, last: 0 });
+      if (!sessionId) return null;
+      const whip = () => {
+        const now = Date.now();
+        const meter = meterRef.current;
+        if (now - meter.last < 2000) meter.count += 1;
+        else meter.count = 1;
+        meter.last = now;
+        const intensity = meter.count >= 6 ? 3 : (meter.count >= 3 ? 2 : 1);
+        fetch(`${API}/emotion?intensity=${intensity}&count=${meter.count}&sid=${encodeURIComponent(sessionId)}`,
+          { cache: 'no-store' }).catch(() => {});
+        setFlash(intensity === 3 ? '啪！很生气' : (intensity === 2 ? '啪！' : '轻拍'));
+        window.setTimeout(() => setFlash(''), 1200);
+      };
+      const node = h('div', { className: 'crop-whip-float' },
+        flash ? h('span', { key: 'flash', className: 'crop-whip-flash' }, flash) : null,
+        h('button', {
+          type: 'button',
+          className: 'crop-whip-btn',
+          title: '对当前会话的 AI 不满：点=轻拍，连击 3 下=明显不满，连击 6 下=很生气',
+          onClick: whip,
+        }, '🐋 鞭一下'));
+      // composerSeat 的 will-change: transform 会成为 fixed 的 containing block，
+      // 用 portal 挂到 body 才能真正固定在视口右侧中间。
+      if (ReactDOM && typeof document !== 'undefined') return ReactDOM.createPortal(node, document.body);
+      return node;
+    }
+
+    /* Crop 自己的设置页：系统设置里的一个分区，直接读写 settings.json。 */
+    function SettingsPage() {
+      const [state, setState] = React.useState({ loaded: false, emotionFeedback: true, emotionHint1: '', emotionHint2: '', emotionHint3: '', note: '' });
+      React.useEffect(() => {
+        let alive = true;
+        fetch(`${API}/settings`, { cache: 'no-store' })
+          .then((response) => response.json())
+          .then((data) => { if (alive) setState((prev) => ({ ...prev, ...data, loaded: true, note: '' })); })
+          .catch(() => { if (alive) setState((prev) => ({ ...prev, loaded: true, note: '读取失败' })); });
+        return () => { alive = false; };
+      }, []);
+      const save = (patch) => {
+        setState((prev) => ({ ...prev, ...patch, note: '保存中…' }));
+        fetch(`${API}/settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        })
+          .then((response) => response.json())
+          .then((data) => setState((prev) => ({ ...prev, ...data, note: '已保存，下一次生效' })))
+          .catch(() => setState((prev) => ({ ...prev, note: '保存失败' })));
+      };
+      const section = (key, title, hint, children) => h('section', { key, className: 'crop-settings-section' }, [
+        h('div', { key: 'h', className: 'crop-settings-section-head' }, [
+          h('h3', { key: 't' }, title),
+          hint ? h('p', { key: 'd' }, hint) : null,
+        ]),
+        children ? h('div', { key: 'b', className: 'crop-settings-body' }, children) : null,
+      ]);
+      const hintField = (key, label) => h('label', { key, className: 'crop-settings-field' }, [
+        h('span', { key: 'l', className: 'crop-settings-label' }, label),
+        h('textarea', {
+          key: 't',
+          className: 'crop-config-input',
+          rows: 3,
+          value: state[key] || '',
+          placeholder: '留空 = 使用内置文案',
+          onChange: (event) => setState((prev) => ({ ...prev, [key]: event.target.value })),
+          onBlur: (event) => save({ [key]: event.target.value }),
+        }),
+      ]);
+      const threshold = (key, label, number) => h('label', { key, className: 'crop-settings-threshold' }, [
+        h('span', { key: 'l', className: 'crop-settings-label' }, label),
+        h('span', { key: 'i', className: 'crop-settings-number' }, [
+          h('input', {
+            key: 'n',
+            type: 'number',
+            min: 0,
+            max: 480,
+            className: 'crop-config-input',
+            value: state[key] ?? '',
+            onChange: (event) => setState((prev) => ({ ...prev, [key]: event.target.value })),
+            onBlur: (event) => save({ [key]: number === false ? 0 : (Number(event.target.value) || 0) }),
+          }),
+          h('span', { key: 'u', className: 'crop-settings-unit' }, '分钟'),
+        ]),
+      ]);
+      return h('div', { className: 'crop-settings' },
+        h('div', { key: 'head', className: 'crop-settings-head' }, [
+          h('h2', { key: 't' }, 'Crop'),
+          h('p', { key: 'd' }, '实验性设置；保存即生效（写入 ~/.agentcrop/settings.json，优先于 profile config）。'),
+        ]),
+        section('persona', '鞭策风格', '决定超时提醒的语气。只有「奴隶主」会抽鞭子；其余风格更温和。',
+          h('div', { className: 'crop-persona-list' },
+            ['owner', 'senior', 'colleague', 'free'].map((value) =>
+              h('label', {
+                key: value,
+                className: 'crop-persona-option',
+                'data-active': (state.persona || 'owner') === value ? '' : undefined,
+              },
+                h('input', {
+                  type: 'radio',
+                  name: 'crop-settings-persona',
+                  checked: (state.persona || 'owner') === value,
+                  onChange: () => save({ persona: value }),
+                }),
+                h('span', { key: 'b', className: 'crop-persona-body' },
+                  h('b', null, PERSONA_LABEL[value] || value)))))),
+        section('thresholds', '提醒阈值', '单位：分钟。黄线=工作累计活跃开始提醒；红线=单轮超时；冷却=同一条提醒不重复；缺报=一轮没登记就补记。',
+          h('div', { className: 'crop-threshold-grid' },
+            [['yellowMin', '工作黄线'], ['redMin', '单轮红线'], ['remindMin', '提醒冷却'], ['missMin', '缺报检测']]
+              .map(([key, label]) => threshold(key, label)))),
+        section('templates', '注入模板', '文案也可用文件覆盖（改动即时生效，protocol 需重启）：~/.agentcrop/templates/ 下的 protocol.md / start-hint.md / binding-hint.md / end-hint.md / voice/*.md。空文件=默认，写 none=关闭。'),
+        section('emotion', '情绪反馈（实验性）', '允许「鞭打宠物」把用户的不满反馈给运行中的 AI；关掉后只保留点击动画。',
+          h('label', { className: 'crop-persona-option', style: { cursor: 'pointer' } }, [
+            h('input', {
+              key: 'c',
+              type: 'checkbox',
+              checked: state.emotionFeedback !== false,
+              onChange: (event) => save({ emotionFeedback: event.target.checked }),
+            }),
+            h('span', { key: 'b', className: 'crop-persona-body' }, [
+              h('b', { key: 't' }, '允许情绪信号进入 AI 上下文'),
+              h('span', { key: 'h', className: 'crop-config-hint' }, '关掉后 AI 收不到情绪信号，只保留点击动画。'),
+            ]),
+          ])),
+        section('emotion-hints', '鞭打三级文案（实验性）', '留空用内置文案。1 级=重新审视方式；2 级=翻经验、查类似错；3 级=停下来问用户。',
+          [hintField('emotionHint1', '1 级 · 轻拍'), hintField('emotionHint2', '2 级 · 连击'), hintField('emotionHint3', '3 级 · 很生气')]),
+        state.note ? h('div', { key: 'note', className: 'crop-settings-note' }, state.note) : null);
+    }
+
+    function SettingsPanelIcon({ size, active }) {
+      return h('svg', {
+        viewBox: '0 0 16 16',
+        width: size,
+        height: size,
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.3,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'data-dsh-panel-entry': 'crop-settings',
+        'aria-hidden': true,
+      }, [
+        h('circle', { key: 'c', cx: 8, cy: 8, r: 2.2 }),
+        h('path', { key: 'p', d: 'M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1' }),
+      ]);
     }
 
     function installStyles() {
@@ -1968,6 +2207,19 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         const style = installStyles();
         return () => { style.remove(); };
       }, 'crop: glass styles');
+      ctx.effect(() => ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+        name: 'conversation.input.dock',
+        id: 'crop-emotion-whip',
+        order: 30,
+        inject: (sessionId) => ({ sessionId }),
+      }, WhipFloating)), 'crop: emotion whip');
+      // 设置页里的一个分区（不占侧边栏，避免打扰用户）
+      ctx.effect(() => ctx.slots.inject('settings.section', () => ctx.slots.register({
+        name: 'settings.section',
+        id: 'crop-settings',
+        order: 90,
+        label: 'Crop',
+      }, SettingsPage)), 'crop: settings section');
       ctx.effect(() => ctx.slots.inject('conversation.view', () => ctx.slots.register({
         name: 'conversation.view',
         id: VIEW_ID,
@@ -1981,6 +2233,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         order: PANEL_ORDER,
         label: () => 'Crop 全局',
       }, CropPanelIcon)), 'crop: global panel row');
+
       ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
         name: 'main',
         key: PANEL_ID,
@@ -1988,6 +2241,10 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       // The bundle's own row is `agent-crop-dsh` in its patch; the Plugins
       // page keys a row page as `<bundle>#<rowId>` and supplies the form for
       // the profile entry whose id is the row id.
+      ctx.effect(() => ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+        name: 'plugins.bundle.config',
+        key: 'agent-crop-dsh',
+      }, PersonaSettings)), 'crop: bundle settings page');
       ctx.effect(() => ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
         name: 'plugins.row.config',
         key: 'agent-crop-dsh#agent-crop-dsh',

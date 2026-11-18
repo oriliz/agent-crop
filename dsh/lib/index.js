@@ -6,8 +6,8 @@
  * the returned notes at the next model step.  Zero runtime dependencies.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
-import { readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import z from '@deepseek-ai/schemastery';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -155,6 +155,14 @@ export const Config = z.object({
     .description('缺报检测：一轮超过多少分钟且没有上报，下一轮提醒补记'),
   persona: z.string().default('owner').volatile()
     .description('鞭策风格：owner 奴隶主（重时间效率）/ senior 和蔼的前辈（鼓励提问）/ colleague 经验丰富的同事（建议拆解）/ free 放任自由的家长（不鞭策）'),
+  emotionHint1: z.string().default('').volatile()
+    .description('实验性：轻拍时的注入文案（留空用内置：重新审视当前方式是否正确）'),
+  emotionHint2: z.string().default('').volatile()
+    .description('实验性：连击时的注入文案（留空用内置：翻经验、查是否犯过类似错）'),
+  emotionHint3: z.string().default('').volatile()
+    .description('实验性：很生气时的注入文案（留空用内置：停下来问用户）'),
+  emotionFeedback: z.boolean().default(true).volatile()
+    .description('实验性：允许「鞭打宠物」把用户的不满反馈给运行中的 AI；关闭后 AI 不再收到情绪信号'),
   askHumanTools: z.string().default('ask_user_question,ask_human,askHuman')
     .description('哪些工具名算“在等用户回答”，逗号分隔；不同宿主名字不同，在这里加'),
 });
@@ -165,7 +173,17 @@ function setting(value, fallback) {
 }
 
 export function apply(ctx, config = {}) {
+  const settingsFile = () => join(homedir(), '.agentcrop', 'settings.json');
+  const readSettings = () => {
+    try { return JSON.parse(readFileSync(settingsFile(), 'utf8')); } catch { return {}; }
+  };
+  const writeSettings = (value) => {
+    mkdirSync(dirname(settingsFile()), { recursive: true });
+    writeFileSync(settingsFile(), JSON.stringify(value, null, 2) + '\n');
+  };
+
   const python = setting(config?.python, 'python3');
+  const emotionFeedback = setting(config?.emotionFeedback, true);
   const states = new Map();
 
 
@@ -199,10 +217,14 @@ export function apply(ctx, config = {}) {
         env: {
           ...process.env,
           KIT_HOST: 'dsh',
-          KIT_TASK_YELLOW_MIN: String(setting(config.yellowMin, 10)),
-          KIT_TASK_RED_MIN: String(setting(config.redMin, 30)),
-          KIT_TASK_REMIND_MIN: String(setting(config.remindMin, 15)),
-          KIT_TASK_PERSONA: String(setting(config.persona, 'owner')),
+          // 设置页写 settings.json，优先于 profile config
+          KIT_TASK_YELLOW_MIN: String(readSettings().yellowMin ?? setting(config.yellowMin, 10)),
+          KIT_TASK_RED_MIN: String(readSettings().redMin ?? setting(config.redMin, 30)),
+          KIT_TASK_REMIND_MIN: String(readSettings().remindMin ?? setting(config.remindMin, 15)),
+          KIT_TASK_PERSONA: String(readSettings().persona || setting(config.persona, 'owner')),
+          KIT_EMOTION_HINT1: String(setting(config.emotionHint1, '')),
+          KIT_EMOTION_HINT2: String(setting(config.emotionHint2, '')),
+          KIT_EMOTION_HINT3: String(setting(config.emotionHint3, '')),
         },
       });
       if (process.env.KIT_DEBUG_CALLS) {
@@ -299,6 +321,25 @@ export function apply(ctx, config = {}) {
       res.end();
       return true;
     };
+    const settingsHandler = (req, res) => {
+      if (rejected(req, res)) return;
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const patch = JSON.parse(body || '{}');
+            const next = { ...readSettings(), ...patch };
+            writeSettings(next);
+            reply(res, 200, next);
+          } catch (error) {
+            reply(res, 400, { error: String(error?.message ?? error) });
+          }
+        });
+        return;
+      }
+      reply(res, 200, readSettings());
+    };
     const relay = (payloadOf) => (req, res) => {
       if (rejected(req, res)) return;
       try {
@@ -312,6 +353,23 @@ export function apply(ctx, config = {}) {
       const disposers = [
         webServer.register({
           kind: 'exact',
+          path: '/api/agent-crop/settings',
+          handler: settingsHandler,
+        }),
+        webServer.register({
+          kind: 'exact',
+          path: '/api/agent-crop/emotion',
+          handler: relay((url) => ({
+            op: 'emotion',
+            args: {
+              intensity: Number(url.searchParams.get('intensity') ?? 1) || 1,
+              count: Number(url.searchParams.get('count') ?? 1) || 1,
+              reason: url.searchParams.get('reason') ?? '',
+            },
+            context: { sid: url.searchParams.get('sid') ?? '' },
+          })),
+        }),
+        webServer.register({
           path: '/api/agent-crop/global',
           handler: relay((url) => ({
             op: 'global',
@@ -1022,6 +1080,11 @@ export function apply(ctx, config = {}) {
         state.forceInject = false;
         const status = callCore({ op: 'work_status', context: { sid, workspace } });
         if (status) notes.push(status);
+      }
+
+      if (readSettings().emotionFeedback !== false) {
+        const emotionHint = callCore({ op: 'emotion_hint', context: { sid, workspace } });
+        if (emotionHint) notes.push(emotionHint);
       }
 
       const pendingHint = callCore({ op: 'pending_confirm_hint', context: { sid, workspace } });

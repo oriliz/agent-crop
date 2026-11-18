@@ -2957,6 +2957,107 @@ def format_work_reminder(health: dict, config: dict) -> str:
     return _nudge(tier, _nudge_meta(health, config))
 
 
+def record_emotion(args: dict, context: dict | None = None) -> dict:
+    """用户对运行中 AI 的不满（实验性）：鞭打宠物的点击/连击。"""
+    context = context or {}
+    sid = str(context.get("sid") or "")
+    if not sid:
+        # 没有目标会话就不记：情绪信号必须落在用户正在骂的那个会话上。
+        return {"recorded": False, "error": "missing sid"}
+    workspace = str(context.get("workspace") or "")
+    try:
+        intensity = int(args.get("intensity") or 1)
+    except Exception:
+        intensity = 1
+    intensity = max(1, min(3, intensity))
+    try:
+        count = int(args.get("count") or 1)
+    except Exception:
+        count = 1
+    count = max(1, count)
+    reason = str(args.get("reason") or "")[:120]
+    event = {
+        "ev": "emotion",
+        "t": now_ms(),
+        "host": host(),
+        "sid": sid,
+        "workspace": workspace,
+        "intensity": intensity,
+        "count": count,
+        "reason": reason,
+    }
+    append_event(event)
+    return {"recorded": True, "intensity": intensity, "count": count, "at": event["t"]}
+
+
+def load_settings() -> dict:
+    """用户设置（~/.agentcrop/settings.json），设置页写入。"""
+    path = os.path.join(os.path.expanduser("~/.agentcrop"), "settings.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            value = json.load(handle)
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _emotion_enabled(settings: dict) -> bool:
+    value = settings.get("emotionFeedback")
+    return True if value is None else bool(value)
+
+
+def _emotion_delivered(at: int) -> bool:
+    return any(event.get("ev") == "emotion_delivered"
+               and int(event.get("at") or 0) >= int(at or 0)
+               for event in load_events(limit=500))
+
+
+def emotion_hint(context: dict | None = None) -> str:
+    """把最近一次未被消费的情绪事件变成给 AI 的一句话（5 分钟内有效）。"""
+    context = context or {}
+    sid = str(context.get("sid") or "")
+    events = [event for event in load_events(sid=sid or None) if event.get("ev") == "emotion"]
+    if not events:
+        return ""
+    last = events[-1]
+    at = int(last.get("t") or 0)
+    if not at or now_ms() - at > 5 * 60000:
+        return ""
+    if _emotion_delivered(at):
+        return ""
+    intensity = int(last.get("intensity") or 1)
+    reason = str(last.get("reason") or "")
+    # 按用户定义的严重程度给明确动作；设置页可用 KIT_EMOTION_HINT1/2/3 覆盖内置文案。
+    scripts = {
+        1: "用户轻拍了一下：对当前这步有点不满。重新想想现在的方式是不是正确的（方向/方法），再继续；",
+        2: "用户连击了鞭子：明显对当前这步不满。先别急着继续——翻翻以前的记录和经验（crop 台账/sediment/improve），"
+           "这个场景是不是犯过类似的错、有没有按既定的经验或规范来？找到依据再继续；",
+        3: "用户很用力地鞭了：非常不满。停下来，直接问用户具体哪里不对、要不要回退或换方式，别自己猜着继续；",
+    }
+    # 自定义优先级：设置页（settings.json）> 模板文件（~/.agentcrop/templates/emotion/<level>.md）
+    # > 环境变量 > 内置。
+    settings = load_settings()
+    templates_root = os.path.join(os.path.expanduser("~/.agentcrop"), "templates", "emotion")
+    for level, key in ((1, "KIT_EMOTION_HINT1"), (2, "KIT_EMOTION_HINT2"), (3, "KIT_EMOTION_HINT3")):
+        custom = str(settings.get(f"emotionHint{level}") or "").strip()[:2000]
+        if not custom:
+            try:
+                with open(os.path.join(templates_root, f"{level}.md"), encoding="utf-8") as handle:
+                    custom = handle.read().strip()[:2000]
+            except Exception:
+                custom = ""
+        if not custom:
+            custom = str(os.environ.get(key) or "").strip()
+        if custom:
+            scripts[level] = custom
+    text = f"[crop] {scripts.get(intensity, scripts[1])}"
+    if reason:
+        text += f"（用户选的原因：{reason}）"
+    text += "先说明判断再往下做。"
+    append_event({"ev": "emotion_delivered", "sid": sid, "at": now_ms(), "intensity": intensity})
+    return text
+
+
 def record_review(args: dict, context: dict | None = None) -> dict:
     """AI-judged rework level after user feedback. No keyword matching anywhere."""
     context = context or {}
