@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "agent-crop",
-  "description": "Local marketplace for Agent Crop.",
+  "description": "Agent Crop 的本地插件市场 | Local marketplace for Agent Crop.",
   "owner": {
     "name": "lizhi"
   },
@@ -9,7 +9,7 @@
     {
       "name": "agent-crop",
       "source": "./",
-      "description": "Agent Crop：长任务提醒 + crop_update 工具 + 共享工作数据。",
+      "description": "Agent Crop：长任务提醒 + crop_update 工具 + 共享工作数据。 | Long-task nudges, crop_update, and shared work data.",
       "category": "productivity"
     }
   ]

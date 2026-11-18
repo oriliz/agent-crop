@@ -1,7 +1,7 @@
 {
   "name": "agent-crop-dsh",
-  "version": "0.8.1",
-  "description": "Agent Crop: local probe for coding agents — task-block timing, red-line nudges, structured self-reports and a live panel.",
+  "version": "0.8.2",
+  "description": "Agent Crop（给 AI 编程助手一根马鞭）：本地记录时间去向，把复盘写回 agent 指令/技能/工具，改没改好用数据说话 | local probe for coding agents — task-block timing, red-line nudges, self-reports and a live panel.",
   "type": "module",
   "license": "MIT",
   "repository": {

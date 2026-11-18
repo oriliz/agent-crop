@@ -14,6 +14,8 @@
 - 同一功能的一次迭代只用一个 `task_id`；截图、验证、合并算 `progress`，不单开工作。
 - `expect_min` 只在范围真的变了时改，并写进 `expect_why`；不要为了催自己把预期改小。
 - `end` 之后交付、汇报、截图不用重新绑定；只是收尾追问就记 `category="side-issue"`。
+- 改进要带产物、验证要看读取：`crop_adjust` 记改进时填 `artifact`（file/skill/hook + read/injected）；
+  `crop ledger` 必须能看到产物是否存在、被哪些会话读到——没有产物或零命中就是「未验证」，别把采纳当生效。
 
 ## 事实来源
 

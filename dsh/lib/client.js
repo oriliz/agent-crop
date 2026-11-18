@@ -1232,13 +1232,14 @@ body[data-ds-dark-theme] .crop-page .crop-card {
       return out;
     }
 
-    function useGlobal(days) {
+    function useGlobal(days, host) {
       const [state, setState] = React.useState({ data: null, error: null, at: 0 });
       React.useEffect(() => {
         let alive = true;
         const tick = async () => {
           try {
-            const response = await fetch(`${API}/global?days=${days}`, { cache: 'no-store' });
+            const query = `days=${days}${host ? `&host=${encodeURIComponent(host)}` : ''}`;
+            const response = await fetch(`${API}/global?${query}`, { cache: 'no-store' });
             const data = await response.json();
             if (alive) setState({ data, error: null, at: Date.now() });
           } catch (error) {
@@ -1248,7 +1249,7 @@ body[data-ds-dark-theme] .crop-page .crop-card {
         tick();
         const timer = setInterval(tick, 5000);
         return () => { alive = false; clearInterval(timer); };
-      }, [days]);
+      }, [days, host]);
       return state;
     }
 
@@ -1298,10 +1299,11 @@ body[data-ds-dark-theme] .crop-page .crop-card {
 
     function GlobalPanel() {
       const [days, setDays] = React.useState(7);
+      const [host, setHost] = React.useState('');
       const [selected, setSelected] = React.useState(null);
       const [detail, setDetail] = React.useState(null);
       const [showAll, setShowAll] = React.useState(false);
-      const global = useGlobal(days);
+      const global = useGlobal(days, host);
       const [mode, setMode] = React.useState('overview');
       const health = useHealth(days);
       const ledger = useLedger(days);
@@ -1349,7 +1351,18 @@ body[data-ds-dark-theme] .crop-page .crop-card {
               className: 'crop-chip',
               'data-on': days === value ? '' : undefined,
               onClick: () => { setDays(value); setSelected(null); },
-            }, label))),
+            }, label)),
+            h('select', {
+              key: 'host',
+              className: 'crop-chip',
+              value: host,
+              title: '按宿主应用过滤',
+              onChange: (event) => { setHost(event.target.value); setSelected(null); },
+            }, [
+              h('option', { key: '', value: '' }, '全部宿主'),
+              ...(((data && data.hosts) || []).map((item) =>
+                h('option', { key: item, value: item }, item))),
+            ])),
           h('div', { className: 'crop-modes' },
             [['overview', '概览'], ['health', '健康度']].map(([value, label]) => h('button', {
               key: value,
