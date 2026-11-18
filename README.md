@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/assets/repo-icon.jpg" width="112" alt="Agent Crop 图标：跪坐认错的鲸鱼娘和冒烟的鞭子">
-
 # Agent Crop
 
 ![一只愤怒的手握着长马鞭指向跪坐的蓝发鲸鱼娘女仆，背景是船坞里造了一半的航空母舰；对话框写着「我只是要到对面去，你怎么造了个航母？」和「你让我造个船啊……」](docs/assets/banner.jpg)
