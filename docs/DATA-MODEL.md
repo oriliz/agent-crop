@@ -73,15 +73,16 @@ CREATE TABLE work (
   state TEXT NOT NULL DEFAULT 'open',   -- open|suspended|closed
   confirmed INTEGER NOT NULL DEFAULT 0, -- 0=等人类确认, 1=已确认
   parent_work_id TEXT,                  -- 子代理/子工作（M6）
-  expect_first REAL, expect_final REAL, -- 从 estimate 物化，供快查（M5）
+  expect_first REAL,                    -- 从 estimate 首行物化（work_open 时写首行，R4）；当前预期用 expect_min
   workspace TEXT, created_at INTEGER, updated_at INTEGER,
   pending_at INTEGER, closed_at INTEGER, confirmed_by TEXT
 );
 
 CREATE TABLE event (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id INTEGER PRIMARY KEY,              -- 自增；append-only 不需要 AUTOINCREMENT（R7）
   ts INTEGER NOT NULL, host TEXT NOT NULL, session_id TEXT,
-  work_id TEXT REFERENCES work(work_id), kind TEXT NOT NULL,
+  work_id TEXT,                        -- 逻辑关联，不加外键（R2：写入顺序/ purge）
+  kind TEXT NOT NULL,
   phase TEXT GENERATED ALWAYS AS (json_extract(payload,'$.phase')) VIRTUAL,
   summary TEXT GENERATED ALWAYS AS (json_extract(payload,'$.summary')) VIRTUAL,
   cause TEXT GENERATED ALWAYS AS (json_extract(payload,'$.cause')) VIRTUAL,
@@ -116,13 +117,16 @@ CREATE TABLE binding (
 
 CREATE TABLE session (
   session_id TEXT PRIMARY KEY, host TEXT, workspace TEXT,
-  started_at INTEGER NOT NULL, ended_at INTEGER
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER                      -- derived：COALESCE(session_end.ts, MAX(event.ts)+IDLE_MIN)（R6）
 );
 
 CREATE TABLE estimate (              -- 预估改口时间序列（M5）
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   work_id TEXT NOT NULL, from_min REAL, to_min REAL,
-  at INTEGER NOT NULL, reason TEXT, elapsed_min REAL
+  at INTEGER NOT NULL, reason TEXT,
+  elapsed_min REAL,                   -- 落盘值，报表按 calc_ver 标注口径（R5）
+  calc_ver INTEGER NOT NULL DEFAULT 1 -- 活跃时长算法的版本
 );
 CREATE INDEX idx_estimate_work ON estimate(work_id, at);
 
@@ -179,7 +183,7 @@ CREATE TABLE adjustment (
 ## 6. 设计原则
 
 1. **event 是唯一事实源**：一切可重建；`crop rebuild` 是恢复手段；
-2. **追加写 + 幂等**：`idem_key = hash(kind+work_id+ts+关键字段)`；
+2. **追加写 + 幂等**：`idem_key = hash(kind, work_id, 语义字段)`——**ts 不进 hash**（重试时 ts 必然不同，含 ts 等于永不命中）；
 3. **单写者并发**：进程内攒批（100ms / 50 条）单事务提交；`busy_timeout=5000` 兜底；
 4. **NULL ≠ 0**：每个数值字段标注 0 的语义（未采集 vs 没干活）；
 5. **事件优先于快照**：binding 可由事件流校正；
@@ -195,7 +199,8 @@ CREATE TABLE adjustment (
 0. **前置核查**：扫描所有候选 data_dir，列出找到的 `events*.jsonl` 的条数 / 时间跨度 / `schema_ver` 分布，打印给用户确认（避免「探测到另一个目录、只迁了一半」）；
 1. 提示 + 迁移前后各打一条 event（历史里能看到断点）；
 2. 暂停写入（hook 只读）→ 导入（游标 + 幂等断点）→ 切读 → 恢复写入；13k 事件 <30s；
-3. 失败自动回滚 JSONL；旧文件归档 `archive/`，保留 `KIT_STORAGE=jsonl` 一个版本周期；发布时发破坏性变更公告。
+3. 失败自动回滚 JSONL；**切换后保留 7 天双写**（SQLite 为主 + 每日 `crop export --format jsonl` 全量快照），否则「可回滚」只覆盖迁移那一刻、不覆盖迁移后发现问题；
+4. 旧文件归档 `archive/`，保留 `KIT_STORAGE=jsonl` 一个版本周期；发布时发破坏性变更公告。
 
 ## 8. 性能目标
 
@@ -248,6 +253,13 @@ CREATE TABLE adjustment (
 | M4 事实表不应有 UNIQUE | 采纳：idem_key 普通索引，去重进写入层 |
 | M5 预估改口是时间序列 | 采纳：独立 estimate 表 + work 物化首末值 |
 | M6 缺 parent_work_id | 采纳：加列，总耗时用递归 CTE |
+| R1 幂等公式文档不一致 | 采纳：原则 2 改 `hash(kind, work_id, 语义字段)`，ts 不进 hash |
+| R2 event.work_id 外键冲突 | 采纳：去掉外键，逻辑关联；purge 顺序写进文档 |
+| R3 回滚只覆盖迁移失败 | 采纳：切换后 7 天双写 + 每日 JSONL 快照 |
+| R4 expect_first 无源 | 采纳：`work_open` 写首行 estimate；去掉 expect_final 物化列 |
+| R5 elapsed_min 冻结口径 | 采纳：落盘 + `calc_ver` 标注 |
+| R6 session.ended_at 无填充规则 | 采纳：文档写死 `COALESCE(session_end, MAX(event.ts)+IDLE_MIN)` |
+| R7 AUTOINCREMENT 无收益 | 采纳：去掉，`INTEGER PRIMARY KEY` 自增 |
 
 ## 10. 讨论结论（2026-11-18）
 
@@ -266,7 +278,7 @@ CREATE TABLE adjustment (
 
 | 场景 | 现在的问题 | 建议的预留 |
 |---|---|---|
-| 多设备/多机 | 无 `device_id`，事件无 `(device_id, seq)`；work_id 会撞、event.id 会冲突、binding 会打架 | event 增加 `device_id` 可空列 + `(device_id, seq)` 唯一索引；同步时按 seq 拉取，冲突以事件时间为准 |
+| 多设备/多机 | 无 `device_id`，事件无 `(device_id, seq)`；work_id 会撞、event.id 会冲突、binding 会打架 | event 增加 `device_id` 可空列 + `(device_id, seq)` 唯一索引；**这不违反 M4**：seq 是设备单调计数器、语义唯一，与内容 hash 派生不同 |
 | 分析型查询（OLAP） | 面板聚合直接打在热库上 | 主库只做点查/时间窗；聚合查询走 `ATTACH archive/` 或导出 DuckDB；明确「主库不做全表扫描」 |
 | 数据可调试性 | SQLite + JSON payload，人工排查比 JSONL 难 | 提供 `crop inspect <event-id>` / `crop export --format jsonl`；错误日志带 event id |
 | 数据删除 | 没有「删除某个工作及其事件」路径 | 提供 `crop purge --work <id>`（硬删 + 审计事件），响应误操作与隐私要求 |
@@ -280,6 +292,8 @@ CREATE TABLE adjustment (
 | M4（事实表去 UNIQUE）× 写入层去重 | 去重逻辑漏一处，重复事件静默进库 | 写入层统一 `append_event()` 入口 + 并发重复写测试 |
 | M5（estimate 表）× 事件唯一源 | 表与事件两份数据 | estimate 只由 `work_update` 事件派生，写入同事务；rebuild 校验一致 |
 | M3（state+confirmed 拆列）× 迁移 | 迁移时需翻译 pending_confirm | 迁移脚本单测：pending_confirm → open + confirmed=0 |
+| R4 expect_first 物化 | 未改口的 work 在 estimate 里 0 行 → 首值无源 | `work_open` 时写一条 `estimate(from_min=NULL, to_min=初始值)` |
+| R5 elapsed_min 口径 | 历史值与当前算法不可比 | 落盘 + `calc_ver`；报表标注口径版本 |
 
 ### 11.4 长期需要的机制（比表结构更重要）
 
