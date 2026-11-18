@@ -570,6 +570,10 @@ body[data-ds-dark-theme] .crop-donut-hole {
   font-weight: 500;
 }
 
+.crop-row-warn td {
+  background: rgba(234,179,8,.055);
+}
+
 .crop-row-red td {
   background: rgba(239, 68, 68, .10);
 }
@@ -1641,10 +1645,69 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           h('th', { key: 't', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '工具'),
           h('th', { key: 's', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '口径'),
           h('th', { key: 'e', style: { ...cellRight, fontSize: '11.5px' } }, '事件'),
-          h('th', { key: 'c', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '覆盖'),
+          h('th', { key: 'c', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '趋势'),
           h('th', { key: 'f', style: { ...cellRight, fontSize: '11.5px' } }, '完整'),
           showClosure ? h('th', { key: 'cl', style: { ...cell, textAlign: 'left', fontSize: '11.5px' } }, '闭环') : null,
         ]));
+
+        const trendColor = (value, klass) => {
+          const threshold = { session: .8, work: .7, ended: .8, call: .9 }[klass] || .8;
+          if (value == null) return '#64748b';
+          if (value >= threshold) return '#4ade80';
+          if (value >= threshold * 0.75) return '#eab308';
+          if (value >= threshold * 0.5) return '#fb923c';
+          return '#ef4444';
+        };
+        const trendValue = (day) => (day.coverage != null ? day.coverage : day.completeness);
+        const latestComplete = (daily) => {
+          const rows = (daily || []).filter((day) => day && day.events);
+          if (!rows.length) return null;
+          const today = new Date().toISOString().slice(0, 10);
+          const complete = rows.filter((day) => day.date !== today);
+          return complete.length ? complete[complete.length - 1] : null;
+        };
+        const TrendSpark = ({ row }) => {
+          const daily = (row.daily || []).filter((day) => day && day.events);
+          if (!daily.length) {
+            return h('svg', { width: 140, height: 24, viewBox: '0 0 140 24' },
+              h('line', { x1: 4, y1: 12, x2: 136, y2: 12, stroke: '#64748b', strokeWidth: 1.4, strokeDasharray: '3 3' }));
+          }
+          const width = 140;
+          const height = 24;
+          const pad = 6;
+          const today = new Date().toISOString().slice(0, 10);
+          const step = daily.length > 1 ? (width - pad * 2) / (daily.length - 1) : 0;
+          const points = daily.map((day, index) => {
+            const value = trendValue(day) || 0;
+            return { x: pad + index * step, y: height - pad - value * (height - pad * 2), value, date: day.date };
+          });
+          const parts = [];
+          for (let index = 1; index < points.length; index += 1) {
+            const from = points[index - 1];
+            const to = points[index];
+            const id = `crop-trend-${String(row.tool || '').replace(/[^a-zA-Z0-9-]/g, '')}-${index}`;
+            parts.push(h('defs', { key: `d${index}` },
+              h('linearGradient', { id, x1: 0, y1: 0, x2: 1, y2: 0 }, [
+                h('stop', { key: 's1', offset: 0, stopColor: trendColor(from.value, row['class']) }),
+                h('stop', { key: 's2', offset: 1, stopColor: trendColor(to.value, row['class']) }),
+              ])));
+            parts.push(h('line', {
+              key: `l${index}`, x1: from.x, y1: from.y, x2: to.x, y2: to.y,
+              stroke: `url(#${id})`, strokeWidth: 1.8, strokeLinecap: 'round',
+            }));
+          }
+          points.forEach((point, index) => {
+            const outgoing = point.date === today;
+            parts.push(h('circle', {
+              key: `p${index}`, cx: point.x, cy: point.y,
+              r: outgoing ? 2.2 : 2.6,
+              fill: outgoing ? 'none' : trendColor(point.value, row['class']),
+              stroke: trendColor(point.value, row['class']),
+              strokeWidth: outgoing ? 1.2 : 0,
+            }));
+          });
+          return h('svg', { width, height, viewBox: `0 0 ${width} ${height}` }, parts);
+        };
 
         const rowEl = (row, showClosure) => {
           const red = row.lamp === 'red' || (row.events > 0 && row.session_coverage === 0);
@@ -1654,7 +1717,12 @@ body[data-ds-dark-theme] .crop-page .crop-card {
           const meter = (value, fill) => h('div', { className: 'crop-meter', style: { background: fill === '#ef4444' ? 'rgba(239,68,68,.20)' : 'rgba(100,116,160,.16)' } },
             h('i', { style: { width: pctWidth(value), background: fill } }),
             h('b', null, pctText(value)));
-          return h('tr', { key: row.tool, className: red ? 'crop-row-red' : undefined }, [
+          const latest = latestComplete(row.daily);
+          const latestTone = latest ? trendColor(trendValue(latest), row['class']) : null;
+          const rowClass = red || latestTone === '#ef4444'
+            ? 'crop-row-red'
+            : (latestTone === '#eab308' || latestTone === '#fb923c' ? 'crop-row-warn' : undefined);
+          return h('tr', { key: row.tool, className: rowClass }, [
             h('td', { key: 'n', style: cell }, [
               h('div', { key: 't' }, [
                 row.label,
@@ -1667,8 +1735,11 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             h('td', { key: 'cv', style: cell }, [
               row.status === 'not-shipped' ? h('span', { key: 'x', className: 'crop-muted' }, '未上线')
                 : row['class'] === 'on_demand' ? h('span', { key: 'x', className: 'crop-muted' }, '—')
-                  : meter(row.session_coverage, color),
-              coverageNote ? h('div', { key: 'cd', className: 'crop-mini' }, coverageNote) : null,
+                  : h('div', { key: 'tr' }, [
+                      h(TrendSpark, { key: 's', row }),
+                      h('div', { key: 'v', className: 'crop-mini' },
+                        `${coverageNote ? coverageNote + ' · ' : ''}${row.session_coverage == null ? '—' : pctText(row.session_coverage)}`),
+                    ]),
             ]),
             h('td', { key: 'f', style: { ...cellRight, color: row.events && row.field_completeness < .95 ? '#b45309' : undefined } }, [
               row.events ? pctText(row.field_completeness) : '—',

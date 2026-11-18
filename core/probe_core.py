@@ -3178,6 +3178,45 @@ def _health_trend(events: list[dict], start: int, end: int, days: int) -> list[d
     return rows
 
 
+def _health_daily(rows: list[dict], start: int, end: int, klass: str,
+                  fields: tuple[str, ...], days: int = 7) -> list[dict]:
+    """Per-day coverage/completeness for the trend sparkline (#58).
+
+    Coverage only makes sense for "call" tools (did the event carry a work_id);
+    other classes return None so the panel can draw a dashed line instead of
+    pretending the value was 0.
+    """
+    buckets: dict[str, dict] = {}
+    for event in rows:
+        stamp = int(event.get("t") or 0)
+        if not stamp:
+            continue
+        day = datetime.fromtimestamp(stamp / 1000).strftime("%Y-%m-%d")
+        bucket = buckets.setdefault(day, {"events": 0, "covered": 0, "complete": 0})
+        bucket["events"] += 1
+        if klass == "call" and _health_field_ok(event, "work_id"):
+            bucket["covered"] += 1
+        if all(_health_field_ok(event, field) for field in fields):
+            bucket["complete"] += 1
+    out = []
+    span = max(1, min(30, int(days)))
+    for offset in range(span - 1, -1, -1):
+        stamp = end - offset * 86400000
+        day = datetime.fromtimestamp(stamp / 1000).strftime("%Y-%m-%d")
+        bucket = buckets.get(day)
+        if not bucket or not bucket["events"]:
+            out.append({"date": day, "events": 0, "coverage": None, "completeness": None})
+            continue
+        events = bucket["events"]
+        out.append({
+            "date": day,
+            "events": events,
+            "coverage": round(bucket["covered"] / events, 3) if klass == "call" else None,
+            "completeness": round(bucket["complete"] / events, 3),
+        })
+    return out
+
+
 def _health_delta(current: int, previous: int) -> float | None:
     if not previous:
         return None
@@ -3358,6 +3397,7 @@ def health_summary(
             "field_completeness": round(completeness, 3),
             "missing_fields": {k: v for k, v in missing.items() if v},
             "trend": _health_trend(rows, start, end, min(window_days, 30)),
+            "daily": _health_daily(rows, start, end, klass, fields, min(window_days, 30)),
             "delta_vs_previous": _health_delta(len(rows), prev_by_kind.get(kind, 0)),
             "card": card,
             "lamp": _health_lamp(klass, lamp_events, coverage, completeness,
