@@ -1423,7 +1423,6 @@ body[data-ds-dark-theme] .crop-page .crop-card {
               ...(((data && data.hosts) || []).map((item) =>
                 h('option', { key: item, value: item }, item))),
             ])),
-          whipFlash ? h('span', { key: 'whip-flash', className: 'crop-whip-flash' }, whipFlash) : null,
           h('button', {
             key: 'whip',
             type: 'button',
@@ -1431,6 +1430,8 @@ body[data-ds-dark-theme] .crop-page .crop-card {
             title: '对 AI 不满：点一下=轻拍（1 级），连击 3 下=明显不满（2 级），连击 6 下=很生气（3 级）',
             onClick: whip,
           }, '🐋 鞭一下'),
+          // flash 放在按钮后面：放前面会把按钮推走，连击会打空。
+          whipFlash ? h('span', { key: 'whip-flash', className: 'crop-whip-flash' }, whipFlash) : null,
           h('div', { className: 'crop-modes' },
             [['overview', '概览'], ['health', '健康度']].map(([value, label]) => h('button', {
               key: value,
