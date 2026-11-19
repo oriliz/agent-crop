@@ -1437,6 +1437,79 @@ def _nudge_meta(health: dict, config: dict) -> dict:
     return meta
 
 
+_NUDGE_TIER_ORDER = ("warm", "yellow", "red", "overdue")
+
+
+def _reminder_cooldown_min(health: dict, config: dict) -> float:
+    """Spacing between two work nudges, scaled to the estimate (#68).
+
+    A flat 15-minute cooldown collapses the ladder for short works: with
+    ``E=5`` the tiers sit at 4 / 5 / 7.5 / 12.5 minutes, so a single 15-minute
+    silence skips straight to overdue. ``0.2E`` is the narrowest gap in the
+    ladder (warm -> yellow), so a cooldown at or below it lets every notch
+    fire; the global cadence stays the ceiling for long works.
+    """
+    base = float(config.get("remind_min", 15.0))
+    expect = health.get("expect_min")
+    if not expect:
+        return base
+    try:
+        return min(base, max(1.0, 0.2 * float(expect)))
+    except Exception:
+        return base
+
+
+def _revision_grace_min(health: dict, config: dict) -> float:
+    """How long a revised estimate gets before the ladder resumes (#68).
+
+    The grace used to be the global ``remind_min`` (15 min) no matter the
+    estimate: at ``E=5`` that is 3E, so the whole short task passed without a
+    single nudge and the first one after the grace was already overdue. Scale
+    it to the estimate, with a one-minute floor and the global cadence as the
+    ceiling; a work without an estimate keeps the old behaviour.
+    """
+    base = float(config.get("remind_min", 15.0))
+    expect = health.get("expect_min")
+    if not expect:
+        return base
+    try:
+        return min(base, max(1.0, 0.2 * float(expect)))
+    except Exception:
+        return base
+
+
+def _last_tier_since(sid: str, work_id: str, since_ms: int) -> str:
+    """The newest work-nudge tier recorded for this work after a revision."""
+    for event in reversed(load_events(sid=sid)):
+        if event.get("ev") != "reminder":
+            continue
+        if event.get("work_id") not in (None, work_id):
+            continue
+        if int(event.get("t") or 0) < since_ms:
+            break
+        return str(event.get("tier") or "")
+    return ""
+
+
+def _cap_tier_after_revision(sid: str, work_id: str, since_ms: int, tier: str) -> str:
+    """Resume the ladder one notch at a time instead of landing on overdue (#68).
+
+    A revision can leave the ratio far past 2.5E (the AI was honest about a
+    number that no longer fits). Jumping straight to the heaviest nudge both
+    punishes the honesty and skips the gradual pressure the tiers exist for:
+    the first nudge after a revision is at most ``yellow``, and each later one
+    may climb one notch.
+    """
+    if tier not in ("red", "overdue"):
+        return tier
+    last = _last_tier_since(sid, work_id, since_ms)
+    if last in _NUDGE_TIER_ORDER:
+        cap = min(_NUDGE_TIER_ORDER.index(last) + 1, len(_NUDGE_TIER_ORDER) - 1)
+    else:
+        cap = _NUDGE_TIER_ORDER.index("yellow")
+    return _NUDGE_TIER_ORDER[min(_NUDGE_TIER_ORDER.index(tier), cap)]
+
+
 def maybe_work_reminder(sid: str) -> str:
     config = load_config()
     # The human just came back from idle/ask-human: not the moment to crack the
@@ -1453,17 +1526,28 @@ def maybe_work_reminder(sid: str) -> str:
     if not health:
         return ""
     # 刚刚改口：先按新数字重新起算，别在同一分钟里把旧预期攒下的超时全砸出来。
+    # 窗口跟 E 走（#68）：短任务不再整段免鞭，长任务也不会因为 15 分钟就丢阶梯。
     revised_at = health.get("expect_revised_at")
     if revised_at:
         try:
-            if now_ms() - int(revised_at) < float(config["remind_min"]) * 60000:
+            grace = _revision_grace_min(health, config)
+            if now_ms() - int(revised_at) < grace * 60000:
                 return ""
         except Exception:
             pass
     tier = reminder_tier(health, config)
     if not tier:
         return ""
-    if _cooldown_active(sid, float(config["remind_min"]), tier, work_id=task_id):
+    if revised_at:
+        tier = _cap_tier_after_revision(sid, task_id, int(revised_at), tier)
+    # Upgrade the tier on the scaled cadence, but repeat the same tier on the
+    # global one: a short work may climb warm -> yellow -> red quickly, while
+    # a stuck overdue does not become a once-a-minute drum.
+    cooldown_min = _reminder_cooldown_min(health, config)
+    last_tier = _last_tier_since(sid, task_id, 0)
+    if last_tier and last_tier == tier:
+        cooldown_min = max(cooldown_min, float(config["remind_min"]))
+    if _cooldown_active(sid, cooldown_min, tier, work_id=task_id):
         return ""
     persona = str(config.get("persona") or "owner")
     if persona == "free":
