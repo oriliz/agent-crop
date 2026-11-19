@@ -154,6 +154,59 @@ class HealthSummaryTest(unittest.TestCase):
         row = next(item for item in payload["active"] if item["tool"] == "adjustment")
         self.assertEqual(row["events"], 1)
 
+    def test_tool_attribution_splits_no_binding_windows(self):
+        # A probe_report start/end pair is the window in which a tool call
+        # could carry a work_id; one inside it is a real gap, one after is not.
+        self.emit("prompt", sid="s1", minutes_ago=40)
+        self.emit("probe_report", sid="s1", minutes_ago=39, phase="start",
+                  task_id="w1", summary="做")
+        self.emit("tool", sid="s1", minutes_ago=30, name="Bash")
+        self.emit("probe_report", sid="s1", minutes_ago=20, phase="end",
+                  task_id="w1", summary="收")
+        self.emit("tool", sid="s1", minutes_ago=5, name="Bash")
+
+        payload = core.health_summary(days=7)
+        row = next(item for item in payload["passive"] if item["tool"] == "tool")
+        self.assertEqual(row["missing_split"],
+                         {"in_binding": 1, "no_binding_window": 1, "has_windows": True})
+        self.assertEqual(row["coverage_numerator"], 0)
+        self.assertEqual(row["coverage_denominator"], 1, "无绑定窗口不该进分母")
+        self.assertIn("无绑定窗口", row["note"])
+        self.assertEqual(row["lamp"], "yellow")
+
+    def test_tool_attribution_green_when_all_missing_are_outside(self):
+        self.emit("prompt", sid="s1", minutes_ago=40)
+        self.emit("probe_report", sid="s1", minutes_ago=39, phase="start",
+                  task_id="w1", summary="做")
+        self.emit("probe_report", sid="s1", minutes_ago=20, phase="end",
+                  task_id="w1", summary="收")
+        self.emit("tool", sid="s1", minutes_ago=5, name="Bash")
+
+        payload = core.health_summary(days=7)
+        row = next(item for item in payload["passive"] if item["tool"] == "tool")
+        self.assertEqual(row["missing_split"]["in_binding"], 0)
+        self.assertIsNone(row["session_coverage"])
+        self.assertEqual(row["lamp"], "green")
+
+    def test_old_attribution_gap_does_not_keep_lamp_yellow(self):
+        # Five days of clean data must not stay yellow because of one old
+        # outage: the lamp is judged on the last 48h (#39).
+        self.emit("prompt", sid="s1", minutes_ago=5 * 24 * 60)
+        self.emit("probe_report", sid="s1", minutes_ago=5 * 24 * 60 - 1,
+                  phase="start", task_id="old", summary="旧")
+        self.emit("tool", sid="s1", minutes_ago=5 * 24 * 60 - 10, name="Bash")
+        self.emit("probe_report", sid="s1", minutes_ago=5 * 24 * 60 - 20,
+                  phase="end", task_id="old", summary="收")
+
+        for offset in (50, 45, 40, 35, 30):
+            self.emit("tool", sid="s1", minutes_ago=offset, name="Bash", work_id="w2")
+
+        payload = core.health_summary(days=7)
+        row = next(item for item in payload["passive"] if item["tool"] == "tool")
+        self.assertLess(row["window_stats"]["coverage"], 0.95, "窗口里仍有历史缺口")
+        self.assertEqual(row["judged"]["coverage"], 1.0)
+        self.assertEqual(row["lamp"], "green")
+
     def test_empty_window_is_honest(self):
         payload = core.health_summary(days=7)
         self.assertEqual(payload["sessions"]["eligible"], 0)

@@ -441,6 +441,46 @@ class EventFlowTest(unittest.TestCase):
                                         {"sid": self.sid, "workspace": "/tmp/ws"})
         self.assertIsNone(again.get("switched_pending"), "只建议一次")
 
+    # -- 绑定生命周期：确认收尾不留下悬空绑定（#73/#84）-------------------
+    def test_pending_confirm_hint_is_scoped_to_its_session(self):
+        self.report(phase="start", goal="甲")
+        self.report(phase="end", what="完")
+        self.assertEqual(self.core.pending_confirm_tasks("other-sid"), [],
+                         "不能把别的会话的待确认工作拿来提醒")
+        self.assertEqual(self.core.pending_confirm_hint({"sid": "other-sid"}), "")
+        self.assertIn("已提交收尾", self.core.pending_confirm_hint({"sid": self.sid}))
+
+    def test_confirm_ends_the_binding(self):
+        self.report(phase="start", goal="甲")
+        self.assertEqual(self.core.resolve_binding(self.sid), "flow-work")
+        self.report(phase="end", what="完")
+        self.assertEqual(self.core.resolve_binding(self.sid), "flow-work",
+                         "end 保留绑定用于跨轮计时")
+        self.core.confirm_works(["flow-work"], self.sid)
+        self.assertTrue(self.core.binding_ended(self.sid),
+                        "确认收尾后必须标记绑定已结束，否则下一轮会继承别的会话")
+        rows = [row for row in self.core.load_bindings().get("bindings", [])
+                if row.get("work_id") == "flow-work"]
+        self.assertTrue(rows and rows[0].get("ended_at"))
+
+    def test_confirm_does_not_inherit_another_sessions_work(self):
+        # #73: after A confirms its card, B's active card must not become A's
+        # "current work" through the single-active fallback.
+        self.report(phase="start", goal="甲")
+        self.report(phase="end", what="完")
+        self.core.confirm_works(["flow-work"], self.sid)
+        self.core.record_report({"phase": "start", "task_id": "other-work", "summary": "乙"},
+                                {"sid": "flow-2", "workspace": "/tmp/ws"})
+        line = self.core.work_status_line("/tmp/ws", self.sid)
+        self.assertNotIn("other-work", line)
+
+    def test_normalize_bindings_drops_dead_work(self):
+        self.core.bind_session(self.sid, "gone-work")
+        self.assertEqual(self.core.resolve_binding(self.sid), "gone-work")
+        self.core.normalize_bindings()
+        self.assertEqual(self.core.resolve_binding(self.sid), "",
+                         "指向已关闭工作的绑定要被清掉")
+
 
 if __name__ == "__main__":
     unittest.main()

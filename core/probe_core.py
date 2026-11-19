@@ -483,8 +483,11 @@ def pending_confirm_tasks(sid: str | None = None) -> list[dict]:
     ]
     tasks.sort(key=lambda task: -float(task.get("pending_at") or 0))
     if sid:
-        same = [task for task in tasks if task.get("last_sid") == sid]
-        return same or tasks
+        # A pending confirmation belongs to the session that submitted it.
+        # Falling back to every session's pending work (issue #84) made each
+        # session announce other sessions' cards on every step, and the human
+        # cannot confirm a card they never saw in this conversation.
+        return [task for task in tasks if task.get("last_sid") == sid]
     return tasks
 
 
@@ -513,6 +516,13 @@ def confirm_works(task_ids: list[str], sid: str = "", actor: str = "human") -> d
         append_event({"ev": "work_close", "sid": owner_sid, "work_id": task_id,
                       "confirmed_by": actor})
         close_task(task_id)
+        # The work is gone, so every binding that still points at it must at
+        # least be flagged ended (#73): the next turn would resolve it, fail to
+        # find the task, and inherit whichever other session's work happens to
+        # be active. Flag by work id, not by the confirming session: a human
+        # may confirm a card from a different conversation than the one that
+        # submitted it.
+        end_work_bindings(task_id)
     return {"confirmed": confirmed, "missing": missing, "confirmed_at": at}
 
 
@@ -1204,10 +1214,17 @@ def miss_nudge(streak: int, sid: str | None = None) -> str:
     return fallback
 
 
-def _confirm_reminded(task_id: str, kind: str) -> bool:
+def _confirm_reminded(task_id: str, kind: str, sid: str = "") -> bool:
+    """Whether this session already got this reminder for this card.
+
+    Scoped by session (#84): the same pending card must be announced once in
+    each conversation that owns it, not once globally — otherwise the first
+    session to run silences the reminder for everybody else.
+    """
     return any(event.get("ev") == "confirm_reminder"
                and event.get("task_id") == task_id
                and event.get("kind") == kind
+               and (not sid or event.get("sid") == sid)
                for event in load_events(limit=5000))
 
 
@@ -1226,7 +1243,7 @@ def pending_confirm_hint(context: dict | None = None) -> str:
         if not task_id:
             continue
         pending_at = int(task.get("pending_at") or 0)
-        if not _confirm_reminded(task_id, "start"):
+        if not _confirm_reminded(task_id, "start", sid):
             append_event({"ev": "confirm_reminder", "sid": sid, "task_id": task_id,
                           "kind": "start", "at": now})
             parts.append(
@@ -1234,7 +1251,7 @@ def pending_confirm_hint(context: dict | None = None) -> str:
                 f'确认前不计为完成、计时继续。'
             )
             continue
-        if pending_at and now - pending_at > timeout_ms and not _confirm_reminded(task_id, "timeout"):
+        if pending_at and now - pending_at > timeout_ms and not _confirm_reminded(task_id, "timeout", sid):
             append_event({"ev": "confirm_reminder", "sid": sid, "task_id": task_id,
                           "kind": "timeout", "at": now})
             minutes = int((now - pending_at) / 60000)
@@ -3088,9 +3105,6 @@ def record_review(args: dict, context: dict | None = None) -> dict:
 # ---------------------------------------------------------------------------
 # Session <-> work bindings (many-to-many)
 
-CLAIM_TTL_MIN = 30.0
-
-
 def load_bindings() -> dict:
     path = paths()["bindings"]
     try:
@@ -3147,14 +3161,26 @@ def resolve_binding(sid: str) -> str:
 
 
 def normalize_bindings() -> int:
-    """One active binding per session: keep the newest, drop the rest."""
+    """One active binding per session: keep the newest, drop the rest.
+
+    Also drops a binding whose work no longer exists in the open ledger and
+    never got an ended marker: a close path that forgot to flag it (or a
+    hand-edited data dir) must not keep pointing sessions at a dead work.
+    """
     value = load_bindings()
     now = now_ms()
+    open_ids = set(load_open().get("tasks", {}))
     best: dict[str, dict] = {}
     dropped = 0
     for item in value.get("bindings", []):
         sid = item.get("sid")
         if not sid or float(item.get("expires_at") or 0) <= now:
+            dropped += 1
+            continue
+        if str(item.get("work_id") or "") not in open_ids and not item.get("ended_at"):
+            # A dangling row from a close path that missed the ended flag is
+            # dead weight; one that went through #43/#73 keeps its ended
+            # marker, because the session page still reads it.
             dropped += 1
             continue
         current = best.get(sid)
@@ -3176,6 +3202,34 @@ def release_binding(sid: str) -> None:
     value["bindings"] = [item for item in value.get("bindings", [])
                          if not (item.get("sid") == sid and float(item.get("expires_at") or 0) > now)]
     save_bindings(value)
+
+
+def end_work_bindings(work_id: str) -> int:
+    """Flag every session's binding to a work that is being confirmed closed.
+
+    #43 keeps the row after ``end`` so the wall clock can keep accumulating and
+    the next turn is not nudged to start again. Confirm is the same shape of
+    transition, one step later: without the flag, ``binding_ended`` stayed
+    false, the next turn fell through to the single-active-work fallback and
+    adopted another session's card (#73).
+    """
+    if not work_id:
+        return 0
+    value = load_bindings()
+    now = now_ms()
+    changed = 0
+    for item in value.get("bindings", []):
+        if item.get("work_id") != work_id:
+            continue
+        if float(item.get("expires_at") or 0) <= now:
+            continue
+        if item.get("ended_at"):
+            continue
+        item["ended_at"] = now
+        changed += 1
+    if changed:
+        save_bindings(value)
+    return changed
 
 
 def mark_binding_ended(sid: str, work_id: str) -> None:
@@ -3340,6 +3394,11 @@ HEALTH_SCOPE_LABEL = {
 
 HEALTH_COMPLETE_OK = 0.95
 HEALTH_COVERAGE_OK = {"session": 0.80, "work": 0.70, "ended": 0.80, "call": 0.90}
+# Call coverage is a liveness signal: judge it on the last two days, so a
+# week-old outage does not keep the lamp yellow after the pipeline recovered
+# (#39). Below the sample floor the window figure is the honest one.
+HEALTH_RECENT_WINDOW_MS = 2 * 86400000
+HEALTH_RECENT_MIN_SAMPLE = 5
 HEALTH_CLOSURE_OK = 0.70
 
 
@@ -3350,6 +3409,63 @@ def _health_field_ok(event: dict, field: str) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
     return True
+
+
+def _work_intervals(reports: list[dict]) -> dict[str, list[tuple[int, int]]]:
+    """Session -> [start, end] windows derived from probe_report start/end.
+
+    The ledger keeps no binding history, but every work the probe opens has a
+    start event and (usually) an end event; that pair is the window in which a
+    tool call could carry a work_id. Tool calls outside every window happened
+    before the first start, after a confirm, or in pure Q&A — they had no work
+    to attribute to.
+    """
+    starts: dict[tuple[str, str], list[int]] = {}
+    ends: dict[tuple[str, str], list[int]] = {}
+    for report in reports:
+        sid = report.get("sid")
+        task = report.get("task_id")
+        stamp = report.get("t")
+        phase = report.get("phase")
+        if not sid or not task or not isinstance(stamp, (int, float)):
+            continue
+        key = (str(sid), str(task))
+        if phase == "start":
+            starts.setdefault(key, []).append(int(stamp))
+        elif phase == "end":
+            ends.setdefault(key, []).append(int(stamp))
+    intervals: dict[str, list[tuple[int, int]]] = {}
+    for (sid, task), opened in starts.items():
+        closed = sorted(ends.get((sid, task), []))
+        for start in sorted(opened):
+            later = [stamp for stamp in closed if stamp >= start]
+            intervals.setdefault(sid, []).append((start, later[0] if later else 10**18))
+    return intervals
+
+
+def _tool_attribution_split(rows: list[dict],
+                            intervals: dict[str, list[tuple[int, int]]]) -> dict:
+    """Split missing-work_id tool calls by the work window they fell in.
+
+    Inside a window a tool call should have been attributed; outside every
+    window there was no work to attribute to. The health denominator only
+    counts the former (#39), otherwise a session that is mostly Q&A keeps the
+    lamp yellow forever.
+    """
+    split = {"in_binding": 0, "no_binding_window": 0,
+             "has_windows": any(intervals.values())}
+    if not split["has_windows"]:
+        return split
+    for row in rows:
+        if _health_field_ok(row, "work_id"):
+            continue
+        stamp = int(row.get("t") or 0)
+        sid = str(row.get("sid") or "")
+        if any(start <= stamp <= end for start, end in intervals.get(sid, [])):
+            split["in_binding"] += 1
+        else:
+            split["no_binding_window"] += 1
+    return split
 
 
 def _health_completeness(events: list[dict], fields: tuple[str, ...]) -> tuple[float, dict[str, int]]:
@@ -3601,8 +3717,85 @@ def health_summary(
         counts = coverage_counts(spec, rows)
         coverage = (counts[0] / counts[1]) if counts and counts[1] else None
         completeness, missing = _health_completeness(rows, fields)
+        split = None
+        judged = None
+        if kind == "tool":
+            intervals = _work_intervals(by_kind.get("probe_report", []))
+            split = _tool_attribution_split(rows, intervals)
+            if split["has_windows"]:
+                excluded = split["no_binding_window"]
+                if excluded:
+                    # Calls outside every work window have no work to carry;
+                    # drop them from the work_id denominator instead of
+                    # scoring the probe on events it could never attribute.
+                    other_missing = sum(count for field, count in missing.items()
+                                        if field != "work_id")
+                    adjusted_total = len(rows) * len(fields) - excluded
+                    if adjusted_total > 0:
+                        completeness = 1.0 - ((other_missing + split["in_binding"])
+                                              / adjusted_total)
+                    missing = {field: (split["in_binding"] if field == "work_id" else count)
+                               for field, count in missing.items()}
+                attributed = counts[0] if counts else 0
+                attributable = attributed + split["in_binding"]
+                if attributable:
+                    coverage = attributed / attributable
+                    counts = (attributed, attributable)
+                else:
+                    # Nothing in this window could carry a work_id; scoring
+                    # 0/total would keep a pure-Q&A host permanently yellow.
+                    coverage = None
+                    counts = None
+                recent_cut = end - HEALTH_RECENT_WINDOW_MS
+                recent_rows = [row for row in rows
+                               if int(row.get("t") or 0) >= recent_cut]
+                recent_split = _tool_attribution_split(recent_rows, intervals)
+                recent_attributed = sum(1 for row in recent_rows
+                                        if _health_field_ok(row, "work_id"))
+                recent_total = recent_attributed + recent_split["in_binding"]
+                if recent_rows and recent_total >= HEALTH_RECENT_MIN_SAMPLE:
+                    recent_completeness, recent_missing = _health_completeness(
+                        recent_rows, fields)
+                    other_missing = sum(count for field, count in recent_missing.items()
+                                        if field != "work_id")
+                    recent_denominator = (len(recent_rows) * len(fields)
+                                          - recent_split["no_binding_window"])
+                    if recent_denominator > 0:
+                        recent_completeness = 1.0 - ((other_missing
+                                                      + recent_split["in_binding"])
+                                                     / recent_denominator)
+                    judged = {
+                        "window": "48h",
+                        "coverage": recent_attributed / recent_total,
+                        "completeness": round(recent_completeness, 3),
+                        "numerator": recent_attributed,
+                        "denominator": recent_total,
+                        "samples": recent_total,
+                        "missing_in_binding": recent_split["in_binding"],
+                        "excluded_no_binding": recent_split["no_binding_window"],
+                    }
+                    # The row publishes the recent numbers; its missing_fields
+                    # must describe the same window, not the 7-day history.
+                    missing = {field: (recent_split["in_binding"] if field == "work_id"
+                                       else count)
+                               for field, count in recent_missing.items()}
+        window_stats = None
+        if judged is not None:
+            # The row publishes what it judges by, so the panel cannot show a
+            # historical percentage next to a green lamp without saying why.
+            window_stats = {
+                "coverage": None if coverage is None else round(coverage, 3),
+                "completeness": round(completeness, 3),
+                "missing_in_binding": split["in_binding"],
+                "excluded_no_binding": split["no_binding_window"],
+            }
+            coverage = judged["coverage"]
+            completeness = judged["completeness"]
+            counts = (judged["numerator"], judged["denominator"])
         support = _HEALTH_HOST_SUPPORT.get(kind)
         lamp_events = counts[0] if (support and counts) else len(rows)
+        lamp_coverage = coverage if judged is None else judged["coverage"]
+        lamp_completeness = completeness if judged is None else judged["completeness"]
         entry = {
             "tool": kind,
             "label": label,
@@ -3614,11 +3807,14 @@ def health_summary(
             "coverage_denominator": None if counts is None else counts[1],
             "field_completeness": round(completeness, 3),
             "missing_fields": {k: v for k, v in missing.items() if v},
+            **({"missing_split": split} if split is not None else {}),
+            **({"judged": judged} if judged is not None else {}),
+            **({"window_stats": window_stats} if window_stats is not None else {}),
             "trend": _health_trend(rows, start, end, min(window_days, 30)),
             "daily": _health_daily(rows, start, end, klass, fields, min(window_days, 30)),
             "delta_vs_previous": _health_delta(len(rows), prev_by_kind.get(kind, 0)),
             "card": card,
-            "lamp": _health_lamp(klass, lamp_events, coverage, completeness,
+            "lamp": _health_lamp(klass, lamp_events, lamp_coverage, lamp_completeness,
                                  (counts[1] if counts else denominators.get(klass, 0))),
             "note": "",
         }
@@ -3630,6 +3826,9 @@ def health_summary(
         if not shipped:
             entry["status"] = "not-shipped"
             entry["lamp"] = "gray"
+        if split is not None and split.get("no_binding_window"):
+            entry["note"] = (f"{split['no_binding_window']} 条缺归属发生在无绑定窗口，"
+                             "未计入分母")
         return entry
 
     passive = [build_row(spec) for spec in _HEALTH_PASSIVE]
@@ -3687,11 +3886,26 @@ def health_summary(
 
     tool_row = next(row for row in passive if row["tool"] == "tool")
     if tool_row["events"]:
-        missing_work = tool_row["missing_fields"].get("work_id")
-        if missing_work:
+        judged = tool_row.get("judged") or {}
+        split = tool_row.get("missing_split") or {}
+        in_binding = judged.get("missing_in_binding", split.get("in_binding", 0))
+        excluded = judged.get("excluded_no_binding", split.get("no_binding_window", 0))
+        missing_work = tool_row["missing_fields"].get("work_id") or in_binding
+        if in_binding:
+            judged_cov = judged.get("coverage")
+            if judged_cov is None or judged_cov < HEALTH_COVERAGE_OK["call"]:
+                evidence = f"近 48h 已绑定窗口内仍有 {in_binding} 条 tool 事件缺 work_id"
+                if excluded:
+                    evidence += f"；另有 {excluded} 条在无绑定窗口（开工前/收尾后），不计入分母"
+                diag("warn", "tool", "工具调用没有归属到工作", evidence,
+                     "record_tool 依赖 resolve_binding；窗口内缺归属说明绑定在调用前没建立或已过期",
+                     tool_row["card"])
+        elif not split.get("has_windows"):
+            # No block data to classify (old or foreign events): keep the raw
+            # warning rather than pretending the gap is gone.
             diag("warn", "tool", "工具调用没有归属到工作",
                  f"{missing_work}/{tool_row['events']} 条 tool 事件缺 work_id，时间会算到错误的账上",
-                 "record_tool 只写 sid/name/is_error，没有解析当前绑定", tool_row["card"])
+                 "record_tool 依赖 resolve_binding，调用前没有活跃绑定", tool_row["card"])
     if report_row is not None and closure is not None and closure < HEALTH_CLOSURE_OK:
         ids = sorted({work for _, work in unclosed})
         sample = "、".join(ids[:5])
