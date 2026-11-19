@@ -112,6 +112,47 @@ class EstimateLadderTest(unittest.TestCase):
         # 把预期改小后不该在同一分钟直接 overdue，先给一个冷静窗口
         self.assertEqual(self.core.maybe_work_reminder(self.sid), "")
 
+    # -- revision grace and ladder resume (#68) ---------------------------
+    def test_revision_grace_scales_with_the_estimate(self):
+        config = self.core.load_config()
+        self.assertEqual(self.core._revision_grace_min({"expect_min": 5}, config), 1.0)
+        self.assertAlmostEqual(self.core._revision_grace_min({"expect_min": 60}, config), 12.0)
+        self.assertEqual(self.core._revision_grace_min({"expect_min": 200}, config), 15.0)
+        self.assertEqual(self.core._revision_grace_min({}, config), 15.0)
+
+    def test_revised_short_task_resumes_at_yellow_not_overdue(self):
+        self.start_work(expect_min=5)
+        revised = self.core.now_ms() - 2 * 60000  # past the 1-minute grace for E=5
+        self.core.work_health = lambda work_id=None: {
+            "work_id": "est-work", "goal": "做点事", "minutes": 15.5,
+            "baseline": 30.0, "ratio": 3.1, "level": "red",
+            "expect_min": 5.0, "expect_why": "", "expect_changes": 1,
+            "expect_revised_at": revised,
+        }
+        text = self.core.maybe_work_reminder(self.sid)
+        self.assertIn("[crop]", text)
+        tiers = [e.get("tier") for e in self.core.load_events(sid=self.sid)
+                 if e.get("ev") == "reminder"]
+        self.assertEqual(tiers[-1], "yellow", "改口后的第一鞭不能跳过阶梯直接 overdue")
+        # Still one nudge per remind_min: no immediate second hit.
+        self.assertEqual(self.core.maybe_work_reminder(self.sid), "")
+
+    def test_revision_tiers_climb_one_notch_at_a_time(self):
+        now = self.core.now_ms()
+        self.assertEqual(
+            self.core._cap_tier_after_revision(self.sid, "est-work", now, "overdue"),
+            "yellow")
+        self.core.append_event({"ev": "reminder", "sid": self.sid, "work_id": "est-work",
+                                "tier": "yellow", "t": now + 1})
+        self.assertEqual(
+            self.core._cap_tier_after_revision(self.sid, "est-work", now, "overdue"),
+            "red")
+        self.core.append_event({"ev": "reminder", "sid": self.sid, "work_id": "est-work",
+                                "tier": "red", "t": now + 2})
+        self.assertEqual(
+            self.core._cap_tier_after_revision(self.sid, "est-work", now, "overdue"),
+            "overdue")
+
     def test_report_returns_the_revision_for_the_tool_result(self):
         self.start_work(expect_min=40)
         record = self.core.record_report(
