@@ -1087,8 +1087,14 @@ export function apply(ctx, config = {}) {
         if (emotionHint) notes.push(emotionHint);
       }
 
-      const pendingHint = callCore({ op: 'pending_confirm_hint', context: { sid, workspace } });
-      if (pendingHint) notes.push(pendingHint);
+      // Pending-confirm reminders are a turn-start nudge, not a per-step
+      // broadcast: the old unconditional call re-read the ledger on every
+      // step, and the core's cross-session fallback let another session's
+      // pending card leak in (#84).
+      if (payload.step === 1) {
+        const pendingHint = callCore({ op: 'pending_confirm_hint', context: { sid, workspace } });
+        if (pendingHint) notes.push(pendingHint);
+      }
 
       const reminder = callCore({ op: 'maybe_reminder', context: { sid, workspace } });
       if (reminder) notes.push(reminder);
