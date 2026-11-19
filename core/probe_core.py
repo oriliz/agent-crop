@@ -1440,6 +1440,25 @@ def _nudge_meta(health: dict, config: dict) -> dict:
 _NUDGE_TIER_ORDER = ("warm", "yellow", "red", "overdue")
 
 
+def _reminder_cooldown_min(health: dict, config: dict) -> float:
+    """Spacing between two work nudges, scaled to the estimate (#68).
+
+    A flat 15-minute cooldown collapses the ladder for short works: with
+    ``E=5`` the tiers sit at 4 / 5 / 7.5 / 12.5 minutes, so a single 15-minute
+    silence skips straight to overdue. ``0.2E`` is the narrowest gap in the
+    ladder (warm -> yellow), so a cooldown at or below it lets every notch
+    fire; the global cadence stays the ceiling for long works.
+    """
+    base = float(config.get("remind_min", 15.0))
+    expect = health.get("expect_min")
+    if not expect:
+        return base
+    try:
+        return min(base, max(1.0, 0.2 * float(expect)))
+    except Exception:
+        return base
+
+
 def _revision_grace_min(health: dict, config: dict) -> float:
     """How long a revised estimate gets before the ladder resumes (#68).
 
@@ -1521,7 +1540,14 @@ def maybe_work_reminder(sid: str) -> str:
         return ""
     if revised_at:
         tier = _cap_tier_after_revision(sid, task_id, int(revised_at), tier)
-    if _cooldown_active(sid, float(config["remind_min"]), tier, work_id=task_id):
+    # Upgrade the tier on the scaled cadence, but repeat the same tier on the
+    # global one: a short work may climb warm -> yellow -> red quickly, while
+    # a stuck overdue does not become a once-a-minute drum.
+    cooldown_min = _reminder_cooldown_min(health, config)
+    last_tier = _last_tier_since(sid, task_id, 0)
+    if last_tier and last_tier == tier:
+        cooldown_min = max(cooldown_min, float(config["remind_min"]))
+    if _cooldown_active(sid, cooldown_min, tier, work_id=task_id):
         return ""
     persona = str(config.get("persona") or "owner")
     if persona == "free":
