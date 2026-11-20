@@ -76,6 +76,7 @@ git push -u origin fix/status-line-claim
 ```
 
 - **一个 PR 一件事。** 顺手重构请另开一个 PR，评审时好判断
+- **改联动先过矩阵。** 计时、状态、提醒、绑定类改动，先在 `docs/INTERACTIONS.md` 圈出受影响的行/列，PR 里回答三问；只改代码不补格子，就是下一次返工
 - **PR 必须 CI 绿。** `.github/workflows/ci.yml` 跑的就是你本地那三条：Python 3.10 / 3.12 / 3.13 的 `unittest`、Node 22 / 24 的 `node --test`，再加 smoke 与 `npm pack` 打包清单断言。本地绿了 CI 一般不会挂
 - **行为变了就补测试。** Python 侧进 `tests/test_crop_cli.py`，Node 侧进 `dsh/test/index.test.mjs`
 - **PR 描述写清两件事：** 为什么改（问题是什么）、怎么验证的（跑了什么、看到什么）。不用贴长日志
